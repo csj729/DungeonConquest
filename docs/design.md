@@ -18,11 +18,21 @@
 |---|---|
 | 시뮬레이션 코어 | **C++** — static lib, 클라이언트·서버 공유 |
 | 클라이언트 프레젠테이션 | **Unity / C# / URP** |
-| 서버 | **C++** — epoll(Linux) / IOCP(Windows), MySQL |
+| 서버 | **C# / ASP.NET Core** — 검증 시 C++ 코어를 P/Invoke, MySQL (Linux) |
 | 플랫폼 서비스 | Steamworks (업적·클라우드 세이브·리더보드) |
 
-결정론 코어를 Unity C#가 아닌 C++에 두는 이유는 **서버와 물리적으로 동일한 코드를 실행**하기
-위해서다. 두 언어로 각각 구현하면 결과 일치를 보장할 수 없고, 리플레이 검증이 성립하지 않는다.
+### 언어 선택 기준
+
+**C++는 결정론 코어에만 쓴다.** 언어 선호가 아니라 요구사항이 강제하는 범위까지만이다.
+
+- **코어가 C++인 이유**: 서버와 클라이언트가 **물리적으로 동일한 코드**를 실행해야 한다.
+  두 언어로 각각 구현하면 결과 일치를 보장할 수 없고 리플레이 검증이 성립하지 않는다.
+  고정소수점 정수 시뮬은 C++의 강점 영역이기도 하다.
+- **서버가 C#인 이유**: 리더보드 제출·검증은 사실상 작은 HTTP 엔드포인트다.
+  epoll 서버를 직접 구현할 이유가 없다. Unity용으로 만든 **C ABI를 서버가 그대로
+  P/Invoke**하므로 시뮬 구현은 여전히 하나뿐이고, 검증 속도도 C++ 코어 그대로다
+  (P/Invoke 오버헤드는 틱당이 아니라 런당 1회).
+- 네트워킹·DB·툴링은 생산성이 높은 쪽을 고른다. 그 영역까지 C++로 끌고 가지 않는다.
 
 ---
 
@@ -145,7 +155,7 @@
 | `AttackSpeed`, `MoveSpeed` | 진행 중 애니메이션·쿨다운 타이머 처리 필요 |
 | `Range` | 타겟팅 캐시 무효화 |
 | `AuraRadius` | **모디파이어 대상 아님** (아래 참조) |
-| `MaxHealth` | 현재 HP 유지 정책 + 조건부 제외 (아래 참조) |
+| `MaxHealth` | 없음 — 현재 HP를 `damageTaken`으로 저장하므로 부수효과가 발생하지 않는다 (아래 참조) |
 
 ### 연산 종류
 
@@ -161,14 +171,33 @@
 ### 적용 순서 (고정)
 
 ```
-1. Flat
-2. PercentAdd
-3. PercentMult
-4. Override
+1. Flat        — 누적합           (순서 무관)
+2. PercentAdd  — 누적합 후 1회 적용 (순서 무관)
+3. PercentMult — sourceId 오름차순 (순서 의존)
+4. Override    — sourceId 최소값 하나만 적용, 나머지 무시
 ```
 
-- 동일 단계 내에서는 **`sourceId` 정렬로 순서 고정** (결정론 요구사항)
-- `Override`가 복수면 `sourceId` 최소값 하나만 적용, 나머지 무시
+`Fixed`는 정수이므로 **덧셈에 결합·교환 법칙이 성립한다**(부동소수와 다른 점).
+따라서 `Flat` / `PercentAdd`는 정렬이 필요 없고, 순서 고정이 실제로 필요한 것은
+`PercentMult`와 `Override`뿐이다.
+
+```cpp
+struct StatCache {
+    Fixed accumFlat;                     // 추가/제거 시 O(1) 가감
+    Fixed accumPctAdd;                   // 추가/제거 시 O(1) 가감
+    SmallVec<MultMod, 4>     mults;      // sourceId 오름차순 불변식 유지
+    SmallVec<OverrideMod, 2> overrides;  // sourceId 오름차순, front()만 적용
+    Fixed cached;
+    bool  dirty;
+};
+```
+
+- 모디파이어 추가/제거는 누적값 가감이므로 **O(1)이고 재계산조차 필요 없다.**
+  정수이므로 "제거 시 빼기"가 정확한 역연산이 된다
+- `mults` / `overrides`는 원소가 소수(≤4)이므로 **삽입으로 정렬 불변식을 유지**한다.
+  재계산마다 정렬 알고리즘을 호출하지 않는다
+- `PercentAdd` 누적합이 하한을 넘어가는 경우(예: -100% 이하)는 **스탯별 하한을 데이터로
+  정의하고 클램프**한다. 하드코딩 분기 금지
 - `sourceId`는 전역 단조 증가 카운터로 발급
 
 ### 조건부 모디파이어
@@ -184,6 +213,11 @@
 | 공간 의존 (`InAura`) | **슬롯 할당 변경 / 오라 소스 사망 / 오라 소스 무력화(기절·침묵)** |
 | 대상 의존 (`TargetTag`) | 타겟 변경 시 |
 | 시간 의존 (`TimeElapsed`) | 해당 틱 1회 |
+
+**`MaxHealth`에 `HealthThreshold` 조건을 거는 것은 금지한다.**
+`HealthThreshold` → 현재 HP 참조 → `maxHp - damageTaken` → `maxHp`로 고리가 닫히는
+순환 의존이다 (`AuraRadius`를 모디파이어 대상에서 뺀 것과 같은 이유).
+`Always` / `InAura` / `TargetTag` / `TimeElapsed` 조건은 `MaxHealth`에도 허용된다.
 
 - 스탯별 dirty 비트 + 캐시된 최종값. 읽을 때 dirty면 재계산 (지연 평가)
 - `TimeElapsed`는 전수 스캔하지 않는다. **만료 틱을 키로 하는 최소 힙**으로 관리하고
@@ -205,31 +239,51 @@ struct AuraTable {
 };
 ```
 
-### 최대 HP 정책
+### 체력 표현 — 누적 피해량
 
-- 최대 HP 변경 시 **현재 HP는 그대로 유지**한다 (비율 스케일 없음, 절대값 증분 없음)
-- 최대 HP가 내려가 현재 HP가 초과하면 클램프
-- **`MaxHealth`는 조건부 모디파이어 대상에서 제외한다.** 장비·분기 등 무조건 소스로만 변경 가능
-  → 조건 토글로 클램프가 반복되어 HP가 계속 깎이는 문제를 방지
-- 오라는 슬롯 기반 사전 계산이라 전투 중 토글되지 않으므로 안전
+현재 HP를 직접 저장하지 않는다. **누적 피해량 `damageTaken`을 저장하고 현재 HP는 파생**한다.
+
+```cpp
+Fixed damageTaken;                                   // 저장값, 항상 >= 0
+Fixed currentHp() const {                            // 파생값
+    return max(Fixed::Zero, maxHp() - damageTaken);
+}
+bool  isDead() const { return maxHp() <= damageTaken; }
+```
+
+- 최대 HP가 오르내려도 **손실이 발생하지 않는다.** 현재 HP를 저장하고 클램프하는 방식은
+  최대 HP가 내려갔다 올라올 때 클램프된 만큼이 영구 소실된다
+- 클램프는 `damageTaken >= 0` 하나뿐이다 (회복 시 오버힐 방지).
+  `damageTaken`을 최대 HP로 파괴적으로 클램프하지 않는다 → 조건 토글에 대해 가역적이다
+- 체크섬 입력은 파생값이 아니라 저장값 `damageTaken`을 쓴다
+- 최대 HP 감소로 `currentHp()`가 0이 되면 사망한다. 이는 버그가 아니라 설계된 결과이며,
+  "체력 상한 감소"가 즉사 벡터가 될 수 있음을 밸런싱 시 인지할 것
+- 이 표현 덕분에 **`MaxHealth`를 조건부 모디파이어 대상에서 제외할 필요가 없다**
+  (단 `HealthThreshold` 조건은 위 순환 의존 때문에 금지)
 
 ---
 
 ## 6. 아키텍처
 
 ```
-[C++ 결정론 코어]  static lib, 고정 20Hz
-  World       틱 카운터, RNG, 엔티티 저장소
-  StatBlock   모디파이어 스택, dirty 캐시
-  Formation   슬롯 좌표, 오라 테이블
-  Targeting / Combat / Movement
-        │
-        ├────────────────────────► [C++ 서버]  epoll, MySQL — 리플레이 검증
-        │
-        ▼  C ABI: SoA 상태 버퍼 포인터 + EventQueue (틱 번호 포함, 단방향)
-        │
-[Unity 클라이언트]  C# / URP — 가변 프레임, 히트스톱, 카메라, VFX, UI
+        [C++ 결정론 코어]  static lib, 고정 20Hz
+          World       틱 카운터, RNG, 엔티티 저장소
+          StatBlock   모디파이어 스택, dirty 캐시
+          Formation   슬롯 좌표, 오라 테이블
+          Targeting / Combat / Movement
+                      │
+        C ABI (extern "C") — 하나를 양쪽이 재사용
+              ┌───────┴────────┐
+   SoA 상태 버퍼 + EventQueue   headless run → checksum
+   (틱 번호 포함, 단방향)        (렌더·버퍼 없음)
+              ▼                ▼
+   [Unity 클라이언트]      [C# 서버]  ASP.NET Core, MySQL
+    C# / URP                리플레이 검증 · 리더보드
+    가변 프레임, 히트스톱,
+    카메라, VFX, UI
 ```
+
+클라이언트용 표면과 서버용 표면은 **같은 ABI의 두 진입점**이다. 코어는 한 번만 구현한다.
 
 ### 기반 타입
 
@@ -353,7 +407,7 @@ uint64_t World::checksum() const;   // 전 엔티티 상태 해시 (자체 FNV-1
 - 오클루전 대응: 열마다 Y 오프셋(단차), 가려진 아군 아웃라인
 - 후방 물량 LOD, 프러스텀 컬링
 
-### C++ ↔ Unity 경계
+### C ABI 경계 (Unity · 서버 공용)
 
 **매 틱 구조체 마샬링 금지.** 이 프로젝트의 유일한 실질적 성능 함정이다.
 
@@ -367,7 +421,11 @@ uint64_t World::checksum() const;   // 전 엔티티 상태 해시 (자체 FNV-1
 - 에디터에서 `[DllImport]`로 로드한 네이티브 DLL은 언로드되지 않아 재컴파일마다 에디터 재시작이
   필요하다. **개발 중에는 수동 `LoadLibrary` / `FreeLibrary` + 함수 포인터 델리게이트 바인딩
   래퍼**를 사용한다
-- 빌드: CMake → `core.dll`(Windows) / `libcore.so`(Linux) → `Assets/Plugins/<platform>/`
+- 빌드: CMake → `core.dll`(Windows) / `libcore.so`(Linux).
+  클라이언트는 `Assets/Plugins/<platform>/`, 서버는 런타임 디렉터리에 배치
+- **서버 진입점은 별도다.** 상태 버퍼·이벤트 큐 없이
+  `run_headless(seed, roster, inputLog) → checksum` 하나만 노출한다.
+  P/Invoke 오버헤드는 틱당이 아니라 런당 1회이므로 검증 처리량에 영향이 없다
 
 ### 직교 투영을 쓰는 이유
 
@@ -387,7 +445,7 @@ uint64_t World::checksum() const;   // 전 엔티티 상태 해시 (자체 FNV-1
 4. 통과한 결과만 랭킹 반영
 
 이 하나로 권위 서버 검증, 안티치트, 리플레이, 리더보드를 동시에 얻는다.
-결정론 코어를 서버·클라이언트가 **같은 C++ 소스로 공유**하므로 추가 비용이 거의 없다.
+결정론 코어를 서버·클라이언트가 **같은 C++ 바이너리로 공유**하므로 추가 비용이 거의 없다.
 
 ### 검증 비용 (7절 물량 상한 기준)
 
@@ -403,7 +461,14 @@ uint64_t World::checksum() const;   // 전 엔티티 상태 해시 (자체 FNV-1
 
 ### 스택
 
-epoll(Linux) / IOCP(Windows), MySQL, Steamworks (업적·클라우드 세이브·리더보드)
+- **C# / ASP.NET Core** (Linux) — 제출 API, 랭킹 조회
+- **C++ 코어를 P/Invoke** — `run_headless(seed, roster, inputLog) → checksum` 단일 진입점
+- **MySQL** (MySqlConnector)
+- **Steamworks** — 업적·클라우드 세이브·리더보드
+
+epoll 서버를 직접 구현하지 않는다. 제출·검증은 작은 HTTP 엔드포인트이고,
+이 프로젝트의 기술적 주제는 소켓 처리가 아니라 **결정론 코어의 공유와 재실행 검증**이다.
+검증 연산 자체는 C++ 코어가 수행하므로 서버 언어가 검증 성능을 좌우하지 않는다.
 
 ---
 
@@ -461,15 +526,3 @@ epoll(Linux) / IOCP(Windows), MySQL, Steamworks (업적·클라우드 세이브�
 
 50~60° 범위. Unity 프리미티브 프로토타입에서 물량을 뿌린 상태로 실측해 확정한다.
 확인 기준: 열이 구분되는가 / 아군이 물량에 묻히지 않는가.
-
-### 모디파이어 누적 캐시
-
-`Flat` / `PercentAdd`는 정수 합이라 순서 무관이므로 정렬 없이 누적값 하나로 유지 가능하다는
-제안이 있음. 채택 시 5절 "동일 단계 내 `sourceId` 정렬" 문구를 `PercentMult` / `Override`
-한정으로 수정해야 한다. **미결정.**
-
-### 현재 HP 표현
-
-현재 HP 대신 **누적 피해량(`damageTaken`)** 으로 저장하면 최대 HP 증감 시 손실이 발생하지 않아
-`MaxHealth`를 조건부 대상에서 제외할 필요가 없어진다는 제안이 있음. 채택 시 5절 최대 HP 정책을
-전면 수정해야 한다. **미결정.**

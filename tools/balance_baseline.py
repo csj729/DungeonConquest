@@ -8,7 +8,7 @@
 """
 
 TICK_HZ = 20
-FIXED_MAX = 32768  # Fixed 16.16 (int32_t raw) 표현 상한
+FIXED_MAX = 524288  # Fixed 20.12 (int32_t raw) 표현 상한
 
 # ── 전사 기준선 ────────────────────────────────────────────────
 HERO = {
@@ -212,7 +212,7 @@ def report():
     print(f"  → 마지막 웨이브에서도 원샷하려면 공격력 {final:.1f}배 성장이 필요하다")
     print(f"     **잡몹 원샷 구조에서 공격력 성장이 체감되는 지점이 여기다**\n")
 
-    print("=== 목표 11: 모든 수치가 Fixed 16.16 범위 안 ===")
+    print("=== 목표 11: 모든 수치가 Fixed 20.12 범위 안 ===")
     worst = max(HERO["max_hp"],
                 final_hp * WAVE_TRASH_COUNT,
                 effective_hp(BOSS["hp"], BOSS["armor"]),

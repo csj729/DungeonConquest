@@ -13,7 +13,7 @@ FIXED_MAX = 32768  # Fixed 16.16 (int32_t raw) 표현 상한
 # ── 전사 기준선 ────────────────────────────────────────────────
 HERO = {
     "attack_power": 10,        # 기준 단위 — 모든 수치를 이 배수로 읽는다
-    "attack_interval_ticks": 10,  # 0.5초
+    "attack_interval_ticks": 20,  # 1.0초
     "crit_chance": 0.10,
     "crit_mult": 1.5,
     "max_hp": 300,
@@ -31,13 +31,14 @@ SKILLS = {                 # (기본 공격 대비 배율, 가중치, 광역 여
 
 # ── 일반 몹 (역산 대상) ────────────────────────────────────────
 TRASH = {
-    "hp": 20,                  # 기본 공격 2대
+    "hp": 10,                  # 기본 공격 1대 — 물량을 시원하게 정리하는 감각 우선
     "damage": 5,
     "windup_ticks": 20,        # 사거리 진입 → 첫 공격까지 1.0초
     "cooldown_ticks": 30,      # 이후 1.5초 주기
 }
 
 WAVE_TRASH_COUNT = 38          # 웨이브 전체 몹 수 (동시 표시 30~60과는 다름)
+HITS_TO_KILL_TRASH = 1         # 목표: 일반 몹은 기본 공격 몇 대에 죽는가
 SURROUND_COUNT = 5             # 영웅에게 동시에 붙을 수 있는 몹 수 가정
 
 
@@ -64,11 +65,11 @@ def report():
     print(f"  → 단일 대상 총 DPS {dps:.1f}")
     print()
 
-    print("=== 목표 1: 일반 몹은 기본 공격 2대에 죽는다 ===")
+    print(f"=== 목표 1: 일반 몹은 기본 공격 {HITS_TO_KILL_TRASH}대에 죽는다 ===")
     hits = TRASH["hp"] / HERO["attack_power"]
     print(f"  몹 HP {TRASH['hp']} / 공격력 {HERO['attack_power']} = {hits:g}대")
-    ok &= (hits == 2)
-    print(f"  {'PASS' if hits == 2 else 'FAIL'}\n")
+    ok &= (hits == HITS_TO_KILL_TRASH)
+    print(f"  {'PASS' if hits == HITS_TO_KILL_TRASH else 'FAIL'}\n")
 
     print("=== 목표 2: 광역기는 일반 몹을 한 방에 정리한다 ===")
     for name, (mult, _w, is_aoe) in SKILLS.items():
@@ -102,7 +103,14 @@ def report():
     ok &= (3 <= qte <= 5)
     print(f"  스킬 발동 {procs:.1f}회 (초당 {aps:g}회 공격 × {clear:.1f}초 × proc {PROC_RATE:.0%})")
     print(f"  QTE 쿨다운 {QTE_COOLDOWN_SEC:g}초 적용 → {qte:.1f}회  {'PASS' if 3 <= qte <= 5 else 'FAIL'}")
-    print(f"  ※ 쿨다운이 없으면 {procs:.1f}회로 예산 초과\n")
+    if procs > 5:
+        print(f"  ※ 쿨다운이 상한을 강제하고 있다 (없으면 {procs:.1f}회로 예산 초과)")
+    else:
+        # 기준선에서는 proc 빈도 자체가 예산 안이라 쿨다운이 거의 걸리지 않는다.
+        # 공속이 오르면(전투 광란·아이템) 그때부터 상한을 잡는 안전장치로 작동한다.
+        speedup = 5 / procs
+        print(f"  ※ 기준선에서는 쿨다운이 거의 걸리지 않는다. 공속이 {speedup:.1f}배 오르면 작동")
+    print()
 
     print("=== 목표 6: 모든 수치가 Fixed 16.16 범위 안 ===")
     worst = max(HERO["max_hp"], TRASH["hp"] * WAVE_TRASH_COUNT,

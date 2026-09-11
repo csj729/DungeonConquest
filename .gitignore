@@ -1,0 +1,21 @@
+# Python (tools/ 측정 스크립트 실행 시 생성)
+__pycache__/
+*.py[cod]
+
+# C++ 빌드 산출물
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# 벤치마크 실행 파일 (tools/*.cpp를 직접 컴파일한 결과)
+tools/*_bench
+tools/*_bench.out
+
+# 에디터 · OS
+.vscode/
+.idea/
+.DS_Store

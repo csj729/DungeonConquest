@@ -61,7 +61,8 @@ def effective_hp(hp, armor):
 # 스테이지가 진행될수록 몹 체력이 오른다. 완만한 지수로 잡아 Fixed 상한에
 # 부딪히지 않게 한다. 보스는 고정 등장이므로 스케일링 대상이 아니다.
 HP_SCALE_PER_WAVE = 1.12
-TOTAL_WAVES = 15               # 룸 5개 x 웨이브 3개
+TOTAL_WAVES = 15               # 풀 게임 규모 참고값. 수직 슬라이스는 8웨이브
+                               # (맵 1개, verify_waves.py). 맵 수는 §15 미결정
 
 
 def hp_scale(wave):

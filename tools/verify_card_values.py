@@ -75,10 +75,12 @@ UNPRICED = {
 }
 
 
-# 아직 확정하지 않은 것 — 수치가 아니라 구조를 먼저 정해야 한다
-PENDING = {
-    "E_CRIT": "기준선 치확 10% / 치피 1.5가 약해 치명타 축이 예산을 담지 못한다",
+# 빌드 종속 각인 — 기준선이 아니라 **플레이어가 그 축에 투자한 뒤** 값이 선다.
+# 기준선 예산비만 보면 약해 보이므로 별도로 잰다.
+BUILD_SCALED = {
+    "E_CRIT": ("치명타", (0.40, 2.5), "치명타 빌드 중반 (치확 40% / 치피 2.5)"),
 }
+BUILD_SCALED_MIN = 0.45    # 투자 후 예산비 하한
 
 
 def ref_skill_dps():
@@ -176,8 +178,8 @@ def report():
         ratio = d / budget
         if eid in UNPRICED:
             flag = "  ※ 상황 가치"
-        elif eid in PENDING:
-            flag = "  ← 미결"
+        elif eid in BUILD_SCALED:
+            flag = "  ※ 빌드 종속"
         elif abs(ratio - 1) > BUDGET_TOL:
             flag = "  ← 편차"
             ok = False
@@ -214,27 +216,34 @@ def report():
         print(f"  {rid:<10} 고급: " + fmt.format(v=v))
     print()
 
+    print("=== 빌드 종속 각인 — 투자 후에 값이 선다 ===")
+    for eid, (axis, (c0, m0), label) in BUILD_SCALED.items():
+        name, _f, v = ENGRAVINGS[eid]
+        base = engraving_delta(eid, v) / budget
+        f0 = 1 + c0 * (m0 - 1)
+        c2, m2 = c0 + v, m0 + 2 * v
+        if c2 > 1.0:
+            m2 += 2 * (c2 - 1.0)
+            c2 = 1.0
+        grown = skill_dps * ((1 + c2 * (m2 - 1)) / f0 - 1) / budget
+        good = grown >= BUILD_SCALED_MIN
+        ok &= good
+        print(f"  {eid} {name} — {axis} 축")
+        print(f"    기준선(아이템 0)     예산비 {base:>4.0%}")
+        print(f"    {label}  예산비 {grown:>4.0%}  "
+              f"(하한 {BUILD_SCALED_MIN:.0%}) {'PASS' if good else 'FAIL'}")
+    print("  ※ 치명타는 확률 × 배수의 **곱셈 축**이라, 기준선(치확 10% / 치피 1.5)에서는")
+    print("     구조적으로 예산을 못 채운다. 아이템이 치확·치피를 올려둔 상태에서 값이 선다")
+    print("  ※ **전제: 아이템 조합 트리에 치명타 경로가 실제로 있어야 한다.**")
+    print("     없으면 이 각인은 영원히 기준선 값에 머문다 — 아이템 수치 확정 시 확인할 것")
+    print("  ※ 등급 간 증가가 **1 : 2 : 4보다 가파르다**(곱셈 축이므로).")
+    print("     예산 균형은 어긋나지만 잭팟 체감에는 유리한 방향이다\n")
+
     print("=== 상한 초과분 전환 ===")
     for k, rule in OVERFLOW.items():
         print(f"  {k}: {rule}")
     print("  ※ 상한에서 잘라버리면 그 카드가 죽은 선택지가 되고, 상한 없이 두면")
     print("     '뒤의 적에게 400% 피해' 같은 표현이 나온다. 같은 축 안에서 넘긴다\n")
-
-    print("=== 미결 ===")
-    for k, why in PENDING.items():
-        name, _f, v = ENGRAVINGS[k]
-        print(f"  {k} {name}: {why}")
-        print(f"    현재값(치확 +{v:.0%}/치피 +{2*v:.0%}p)은 예산의 "
-              f"{engraving_delta(k, v)/budget:.0%}뿐이다. 선택지:")
-        c = HERO["crit_chance"]
-        print(f"    ① 각인 유지 + 값 인상 → 고급 치확 +35% 필요. "
-              f"영웅(×4)이면 치확 +140%로 상한을 넘는다")
-        print(f"    ② 기준선 치명타 인상(치확 25%/치피 2.0) → 기준선 DPS가 "
-              f"12.98 → 15.45. 몹·보스 HP 전부 재역산")
-        print(f"    ③ **유물로 옮긴다(전역 작동)** → 치확 +7.5%/치피 +7.5%p로 "
-              f"예산 96%. 영웅(×4)도 치확 40%로 여유")
-        print("    → ③ 추천. 각인은 스킬 하나(총 DPS의 11%)에만 걸려 치명타 같은")
-        print("       곱셈 축을 담기엔 파이가 작다. 대신 공통 각인 자리가 하나 빈다\n")
 
     print("=== 예산으로 환산하지 않는 것 ===")
     for k, why in UNPRICED.items():

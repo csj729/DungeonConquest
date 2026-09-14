@@ -37,7 +37,8 @@ TRASH = {
     "cooldown_ticks": 30,      # 이후 1.5초 주기
 }
 
-WAVE_TRASH_COUNT = 38          # 웨이브 전체 몹 수 (동시 표시 30~60과는 다름)
+WAVE_TRASH_COUNT = 38          # 1웨이브 몹 수. 웨이브가 진행되며 늘어난다
+                               # (verify_waves.py: 38 → 78)
 HITS_TO_KILL_TRASH = 1         # 목표: 일반 몹은 기본 공격 몇 대에 죽는가
 SURROUND_COUNT = 5             # 영웅에게 동시에 붙을 수 있는 몹 수 가정
 # 주의: 탑다운 전환으로 영웅이 이동하게 되면서 이 가정이 약해졌다.
@@ -57,12 +58,55 @@ def effective_hp(hp, armor):
     return hp * (ARMOR_K + armor) / ARMOR_K
 
 
+# ── 경험치 · 레벨업 ────────────────────────────────────────────
+# 레벨업 1회 = 카드 선택 1회 = 뽑기 기회 1회다 (design.md §4). "자주 레벨업"이
+# 설계 목표이므로, 곡선은 **레벨업 횟수를 먼저 정하고 역산**한다.
+#
+# 경험치 수입은 몹 체력에 비례하고 몹 체력은 웨이브마다 지수로 오른다.
+# 따라서 필요 경험치도 지수여야 레벨업 간격이 일정하게 유지된다 —
+# 선형 곡선을 쓰면 후반에 레벨업이 폭주한다.
+EXP_PER_EHP = 1.0              # 몹 경험치 = 실효 체력 × 이 계수 (정수로 절삭)
+LEVEL_NEED_BASE = 180          # need(1)
+LEVEL_NEED_RATIO = 1.095       # need(n) = BASE × RATIO^(n-1)
+
+# 레벨업 1회당 유효 위력 성장. 레벨업이 아이템 뽑기/스펙업 카드의 **유일한**
+# 관문이므로(§4), 이 한 수치가 런 전체의 성장을 전부 담는다.
+POWER_PER_LEVELUP = 0.07
+
+CARD_PICK_SEC = 2.5            # 카드 1회 선택에 쓰는 시간 가정 (UI 요구사항)
+MODAL_BUDGET = 0.15            # 런 전체에서 선택 모달이 차지해도 되는 비율 상한
+
+
+def level_need(n):
+    """레벨 n → n+1에 필요한 경험치. 런타임에서는 이 값을 int32_t 테이블로 굽는다."""
+    return round(LEVEL_NEED_BASE * LEVEL_NEED_RATIO ** (n - 1))
+
+
+def power_mult(levelups):
+    """레벨업 n회 시점의 영웅 위력 배율."""
+    return (1 + POWER_PER_LEVELUP) ** levelups
+
+
+def monster_exp(base_ehp, wave):
+    """몹 1마리가 주는 경험치.
+
+    런타임에서는 `int32_t expValue × 웨이브 배율(정수 퍼밀) / 1000`이며
+    **0방향 절삭**으로 고정한다. 여기서도 같은 절삭을 적용해 검산이 어긋나지
+    않게 한다 — 실수로 계산하면 레벨업 타이밍이 한두 웨이브씩 밀린다.
+    """
+    return int(base_ehp * hp_scale(wave) * EXP_PER_EHP)
+
+
 # ── 웨이브 스케일링 ────────────────────────────────────────────
-# 스테이지가 진행될수록 몹 체력이 오른다. 완만한 지수로 잡아 Fixed 상한에
-# 부딪히지 않게 한다. 보스는 고정 등장이므로 스케일링 대상이 아니다.
-HP_SCALE_PER_WAVE = 1.12
-TOTAL_WAVES = 15               # 풀 게임 규모 참고값. 수직 슬라이스는 8웨이브
-                               # (맵 1개, verify_waves.py). 맵 수는 §15 미결정
+# 스테이지가 진행될수록 몹 체력이 오른다.
+# **이 값은 POWER_PER_LEVELUP에 종속이다.** 클리어 시간이 웨이브마다
+# 완만히 늘어나려면 몹 체력 증가율이 영웅 성장률을 조금 웃돌아야 한다:
+#   클리어 시간 배율/웨이브 = HP_SCALE_PER_WAVE / (1+g)^(웨이브당 레벨업)
+# 웨이브당 약 1.8~3회 레벨업이므로 성장은 웨이브당 약 1.15배,
+# 여기에 1.026배를 더 얹어 1.18로 잡았다.
+HP_SCALE_PER_WAVE = 1.18
+TOTAL_WAVES = 24               # 풀 게임 = 맵 3개 × 8웨이브 (design.md §2)
+                               # 수직 슬라이스는 맵 1개 = 8웨이브
 
 
 def hp_scale(wave):
@@ -81,7 +125,7 @@ ARCHER_WINDUP_TICKS = 60       # 궁병대장 조준 — QTE를 볼 수 있어�
 
 # ── 보스 ───────────────────────────────────────────────────────
 BOSS = {
-    "hp": 3000,
+    "hp": 25000,
     "armor": 50,
     "phase2_at": 0.5,          # HP 50%에서 페이즈 2 추가
     "patterns": {              # (타수, 타당 데미지)
@@ -90,7 +134,11 @@ BOSS = {
         "돌진 찌르기": (2, 20),
     },
 }
-BOSS_GROWTH_MULT = 4.0         # 보스 조우 시점의 영웅 위력 성장 배율 가정
+# 최종 보스 조우 시점의 레벨업 누적 횟수 — verify_exp_curve.py의 풀 게임 투영값.
+# 성장 배율은 감이 아니라 이 횟수에서 파생된다.
+TOTAL_LEVELUPS = 56
+BOSS_LEVELUPS = 54
+BOSS_GROWTH_MULT = power_mult(BOSS_LEVELUPS)
 BOSS_TARGET_SEC = (60, 90)
 
 
@@ -214,7 +262,15 @@ def report():
         h = TRASH["hp"] * hp_scale(w)
         print(f"    웨이브 {w:>2}: 몹 HP {h:>5.1f}  (기본 공격 {h/HERO['attack_power']:.1f}대)")
     print(f"  → 마지막 웨이브에서도 원샷하려면 공격력 {final:.1f}배 성장이 필요하다")
-    print(f"     **잡몹 원샷 구조에서 공격력 성장이 체감되는 지점이 여기다**\n")
+    print(f"     **잡몹 원샷 구조에서 공격력 성장이 체감되는 지점이 여기다**")
+    grown = power_mult(TOTAL_LEVELUPS)
+    gap = final / grown
+    good = 0.7 <= gap <= 1.5
+    ok &= good
+    print(f"  몹 체력 {final:.1f}배 vs 레벨업 {TOTAL_LEVELUPS}회 성장 {grown:.1f}배 "
+          f"→ 격차 {gap:.2f}배  {'PASS' if good else 'FAIL'}")
+    print("  ※ 이 격차가 1을 넘는 만큼 후반 웨이브가 길어진다. 1보다 작으면"
+          " 후반이 오히려 쉬워져 성장 곡선이 무너진다\n")
 
     print("=== 목표 11: 모든 수치가 Fixed 20.12 범위 안 ===")
     worst = max(HERO["max_hp"],

@@ -4,25 +4,30 @@
 **전설 0회로 끝나는 판이 얼마나 자주 나오는가.** 너무 잦으면 캐릭터 정체성을
 한 판 내내 못 보고, 너무 드물면 천장을 둔 것과 다를 게 없다.
 
-레벨업 횟수는 아직 미정(§15)이므로 범위로 감도를 본다.
+레벨업 횟수는 `verify_exp_curve.py`에서 확정됐다(한 판 56회 = 카드 168장).
+**장수가 늘면 전설이 흔해진다** — 곡선을 바꿀 때마다 이 파일도 다시 돌려야 한다.
 """
+import sys
+sys.path.insert(0, "tools")
 
 # ── 등급별 확률 ────────────────────────────────────────────────
 RATES = {
     "일반": 0.42,
-    "고급": 0.31,
-    "희귀": 0.17,
-    "영웅": 0.06,
-    "전설": 0.04,
+    "고급": 0.30,
+    "희귀": 0.19,
+    "영웅": 0.075,
+    "전설": 0.015,
 }
 
 CARDS_PER_LEVEL = 3        # 레벨업당 성장 카드 3장 (맨 왼쪽 고정 슬롯 제외)
-LEVELUPS = 20              # 한 판 기준 가정
-LEVELUP_RANGE = (15, 25)   # §15 미결정이므로 범위로 확인
+LEVELUPS = 56              # 풀 게임 한 판 (tools/verify_exp_curve.py)
+SLICE_LEVELUPS = 25        # 맵 1개 = 수직 슬라이스
+LEVELUP_RANGE = (45, 65)   # 곡선이 흔들릴 여지
 
 # 목표
-LEGEND_EXPECTED = (1.2, 2.6)   # 한 판 전설 기대 장수
-LEGEND_ZERO_MAX = 0.20         # 전설 0회 판의 비율 상한
+LEGEND_EXPECTED = (1.5, 3.5)   # 한 판 전설 기대 장수
+LEGEND_ZERO_MAX = 0.15         # 전설 0회 판의 비율 상한
+LEGEND_ZERO_MIN = 0.04         # 하한 — 이보다 낮으면 사실상 천장이 생긴 것이다
 ENGRAVE_SLOTS = 9              # 스킬 3종 × 3칸
 
 
@@ -52,11 +57,18 @@ def report():
 
     print("=== 목표 2: 전설 0회 판의 비율 ===")
     zero = (1 - RATES["전설"]) ** cards
-    good = zero <= LEGEND_ZERO_MAX
+    good = LEGEND_ZERO_MIN <= zero <= LEGEND_ZERO_MAX
     ok &= good
-    print(f"  {zero:.1%} (상한 {LEGEND_ZERO_MAX:.0%})  {'PASS' if good else 'FAIL'}")
+    print(f"  {zero:.1%} (목표 {LEGEND_ZERO_MIN:.0%}~{LEGEND_ZERO_MAX:.0%})  "
+          f"{'PASS' if good else 'FAIL'}")
     print("  ※ 이 비율만큼의 판은 고유 각인을 한 번도 못 본다.")
-    print("     '전설 0회 판도 클리어 가능해야 한다'는 불변조건이 여기에 걸린다 (§4)\n")
+    print("     '전설 0회 판도 클리어 가능해야 한다'는 불변조건이 여기에 걸린다 (§4)")
+    print("  ※ **하한이 있는 이유**: 0회 판이 거의 없으면 천장을 둔 것과 같아진다.")
+    print("     천장 없이 가기로 한 이상(§4), 안 나오는 판이 실제로 있어야 한다")
+    zs = (1 - RATES["전설"]) ** (SLICE_LEVELUPS * CARDS_PER_LEVEL)
+    print(f"  ※ 수직 슬라이스(맵 1개, 카드 {SLICE_LEVELUPS*CARDS_PER_LEVEL}장)만 보면 "
+          f"0회 판 {zs:.0%} — 맵 1개는 런의 앞부분일 뿐이므로 정상이다.")
+    print("     슬라이스 플레이테스트에서 전설 연출을 확인하려면 확률을 임시로 올릴 것\n")
 
     print("=== 목표 3: 각인·유물 카드가 슬롯보다 많이 나온다 ===")
     # 각인·유물이 나오는 등급: 고급 이상. 그중 절반가량이 각인·유물이라 본다

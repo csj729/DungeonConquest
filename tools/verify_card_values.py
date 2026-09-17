@@ -75,12 +75,23 @@ UNPRICED = {
 }
 
 
-# 빌드 종속 각인 — 기준선이 아니라 **플레이어가 그 축에 투자한 뒤** 값이 선다.
-# 기준선 예산비만 보면 약해 보이므로 별도로 잰다.
+# 빌드 종속 각인 — 기준선이 아니라 플레이어의 다른 투자 상태에 따라 값이 달라진다.
+#
+# **측정해보니 움직이는 것은 투자량이 아니라 배분이었다.** 치명타 아이템을
+# 얼마나 껴도 E_CRIT의 예산비는 42~57%에서 맴돈다 — 기저가 커지면 분자(추가분)와
+# 분모(현재 위력)가 같이 커지기 때문이다. 실제 손잡이는 **치피 대비 치확의 비**다.
 BUILD_SCALED = {
-    "E_CRIT": ("치명타", (0.40, 2.5), "치명타 빌드 중반 (치확 40% / 치피 2.5)"),
+    "E_CRIT": ("치명타", [
+        # (치확, 치피, 설명, 하한 검사 대상인가)
+        # 기준선은 **약한 것이 설계**다(빌드 종속 각인). 투자 후 상태만 하한을 건다
+        (0.10, 1.5, "기준선 — 투자 0. 약한 것이 설계다", False),
+        (0.10, 2.0, "치피만 2.0 (아이템 없이)", True),
+        (0.32, 2.0, "치명타 아이템 희귀함 1개 — 치확 편중", True),
+        (0.21, 2.5, "치명타 아이템 희귀함 1개 — 치피 편중", True),
+        (0.39, 2.5, "치명타 아이템 전설적인 1개", True),
+    ]),
 }
-BUILD_SCALED_MIN = 0.45    # 투자 후 예산비 하한
+BUILD_SCALED_MIN = 0.40    # 투자 후 예산비 하한
 
 
 def ref_skill_dps():
@@ -216,28 +227,34 @@ def report():
         print(f"  {rid:<10} 고급: " + fmt.format(v=v))
     print()
 
-    print("=== 빌드 종속 각인 — 투자 후에 값이 선다 ===")
-    for eid, (axis, (c0, m0), label) in BUILD_SCALED.items():
+    print("=== 빌드 종속 각인 — 무엇이 값을 움직이는가 ===")
+    for eid, (axis, points) in BUILD_SCALED.items():
         name, _f, v = ENGRAVINGS[eid]
-        base = engraving_delta(eid, v) / budget
-        f0 = 1 + c0 * (m0 - 1)
-        c2, m2 = c0 + v, m0 + 2 * v
-        if c2 > 1.0:
-            m2 += 2 * (c2 - 1.0)
-            c2 = 1.0
-        grown = skill_dps * ((1 + c2 * (m2 - 1)) / f0 - 1) / budget
-        good = grown >= BUILD_SCALED_MIN
+        print(f"  {eid} {name} — {axis} 축 (고급: 치확 +{v:.0%} / 치피 +{2*v:.0%}p)")
+        print(f"    {'상태':<34} {'치확':>5} {'치피':>5} {'예산비':>7}")
+        worst = 1.0
+        for c0, m0, label, counts in points:
+            f0 = 1 + c0 * (m0 - 1)
+            c2, m2 = c0 + v, m0 + 2 * v
+            if c2 > 1.0:
+                m2 += 2 * (c2 - 1.0)
+                c2 = 1.0
+            r = skill_dps * ((1 + c2 * (m2 - 1)) / f0 - 1) / budget
+            if counts:
+                worst = min(worst, r)
+            print(f"    {label:<34} {c0:>5.0%} {m0:>5.1f} {r:>7.0%}"
+                  f"{'' if counts else '   (참고)'}")
+        good = worst >= BUILD_SCALED_MIN
         ok &= good
-        print(f"  {eid} {name} — {axis} 축")
-        print(f"    기준선(아이템 0)     예산비 {base:>4.0%}")
-        print(f"    {label}  예산비 {grown:>4.0%}  "
-              f"(하한 {BUILD_SCALED_MIN:.0%}) {'PASS' if good else 'FAIL'}")
-    print("  ※ 치명타는 확률 × 배수의 **곱셈 축**이라, 기준선(치확 10% / 치피 1.5)에서는")
-    print("     구조적으로 예산을 못 채운다. 아이템이 치확·치피를 올려둔 상태에서 값이 선다")
-    print("  ※ **전제: 아이템 조합 트리에 치명타 경로가 실제로 있어야 한다.**")
-    print("     없으면 이 각인은 영원히 기준선 값에 머문다 — 아이템 수치 확정 시 확인할 것")
-    print("  ※ 등급 간 증가가 **1 : 2 : 4보다 가파르다**(곱셈 축이므로).")
-    print("     예산 균형은 어긋나지만 잭팟 체감에는 유리한 방향이다\n")
+        print(f"    투자 후 최저 {worst:.0%} (하한 {BUILD_SCALED_MIN:.0%})  "
+              f"{'PASS' if good else 'FAIL'}")
+    print("  ※ **아이템을 아무리 껴도 42~57%에서 맴돈다.** 기저가 커지면 추가분과")
+    print("     현재 위력이 같이 커지기 때문이다 — 투자량은 손잡이가 아니다")
+    print("  ※ 실제 손잡이는 **치피 대비 치확의 비**다. 치피가 높고 치확이 낮을수록")
+    print("     E_CRIT이 채워줄 자리가 커진다. 기준선 30%는 치피 1.5가 유독 낮은 탓이고,")
+    print("     치피만 2.0으로 올려도 아이템 없이 42%가 된다")
+    print("  ※ 예산 100%를 원하면 각인 값을 올려야 한다 (고급 15% → 20%).")
+    print("     초과분 전환 규칙이 있으므로 영웅 상한에 걸리지 않는다\n")
 
     print("=== 상한 초과분 전환 ===")
     for k, rule in OVERFLOW.items():

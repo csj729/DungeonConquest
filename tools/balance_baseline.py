@@ -7,17 +7,22 @@
 분포가 필요해지면 C++ 코어가 나온 뒤 헤드리스로 돌린다.
 """
 
-TICK_HZ = 20
+from gamedata import (
+    HERO as _HERO, SKILLS_DATA as _SKILLS, MONSTERS as _MON,
+    PROGRESSION as _PROG, SPAWN as _SPAWN, pm,
+)
+
+TICK_HZ = _PROG["tick_hz"]
 FIXED_MAX = 524288  # Fixed 20.12 (int32_t raw) 표현 상한
 
 # ── 전사 기준선 ────────────────────────────────────────────────
 HERO = {
-    "attack_power": 10,        # 기준 단위 — 모든 수치를 이 배수로 읽는다
-    "attack_interval_ticks": 20,  # 1.0초
-    "crit_chance": 0.10,
-    "crit_mult": 1.5,
-    "corruption_max": 1250,    # HP가 아니라 **잠식 게이지** — 차오르면 게임오버
-    "armor": 0,
+    "attack_power": _HERO["attack_power"],
+    "attack_interval_ticks": _HERO["attack_interval_ticks"],
+    "crit_chance": pm(_HERO["crit_chance_permille"]),
+    "crit_mult": pm(_HERO["crit_mult_permille"]),
+    "corruption_max": _HERO["corruption_max"],   # HP가 아니라 **잠식 게이지**
+    "armor": _HERO["armor"],
 }
 
 # ── 잠식 게이지 (design.md §2) ─────────────────────────────────
@@ -27,9 +32,9 @@ HERO = {
 #   충전 = 피격량 + f(전장의 몹 수)
 #
 # 두 번째 항이 "시간 초과" 게임오버까지 흡수한다 — 가만히 있어도 몹이 있으면 찬다.
-CORRUPTION_THRESHOLD = 20      # 이 수까지는 물량 충전 없음 (전투 소강 구간)
-CORRUPTION_PER_MOB = 0.6       # 임계 초과 1마리당 초당 충전
-CORRUPTION_OVERFLOW_MULT = 3.0  # 동시 생존 상한을 넘기면 가속
+CORRUPTION_THRESHOLD = _PROG["corruption_threshold"]
+CORRUPTION_PER_MOB = pm(_PROG["corruption_per_mob_permille"])
+CORRUPTION_OVERFLOW_MULT = pm(_PROG["corruption_overflow_mult_permille"])
 
 
 def corruption_from_mass(alive, cap):
@@ -40,26 +45,20 @@ def corruption_from_mass(alive, cap):
         rate += CORRUPTION_PER_MOB * (alive - cap) * (CORRUPTION_OVERFLOW_MULT - 1)
     return rate
 
-PROC_RATE = 0.15           # 통합 proc (design.md §3)
-QTE_COOLDOWN_SEC = 6.0     # 스킬 발동과 별개로 QTE에 거는 자체 쿨다운
+PROC_RATE = pm(_HERO["proc_rate_permille"])        # 통합 proc (design.md §3)
+QTE_COOLDOWN_SEC = _HERO["qte_cooldown_ticks"] / TICK_HZ
 
-SKILLS = {                 # (기본 공격 대비 배율, 가중치, 광역 여부)
-    "분쇄 강타":   (3.0, 0.40, False),
-    "회전 베기":   (2.5, 0.35, True),
-    "대지 가르기": (2.0, 0.25, True),
+SKILLS = {                 # 이름 → (기본 공격 대비 배율, 가중치, 광역 여부)
+    k["name"]: (pm(k["mult_permille"]), pm(k["weight_permille"]), k["aoe"])
+    for k in _SKILLS["skills"]
 }
 
 # ── 일반 몹 (역산 대상) ────────────────────────────────────────
-TRASH = {
-    "hp": 20,                  # 기본 공격 2대. 원샷을 깬 이유는 아래 SPEED_GROWTH_SHARE 참조
-    "damage": 5,               # 근접(G_MELEE)
-    "ranged_damage": 2,        # 원거리(G_RANGED) — 포위 한계를 받지 않아 절반으로 잡는다
-    "windup_ticks": 0,         # 일반 몹은 사거리 진입 즉시 공격 (§3)
-    "cooldown_ticks": 30,      # 이후 1.5초 주기
-}
+TRASH = dict(_MON["trash"])    # hp / damage / ranged_damage / windup_ticks / cooldown_ticks
 
-SEGMENT_TRASH_COUNT = 21       # 1구간 몹 수. 구간이 진행되며 늘어난다
-                               # (verify_segments.py: 21 → 63)
+from gamedata import SEGMENTS_DATA as _SEGD
+SEGMENT_TRASH_COUNT = (_SEGD["segments"][0]["melee"]
+                       + _SEGD["segments"][0]["ranged"])   # 1구간 몹 수
 
 # ── 연속 스폰 — 동시 생존 상한 (design.md §2) ──────────────────
 # 스폰율을 고정하지 않고 동시 생존 수가 상한에 닿도록 채운다. 발산이 원천 차단되고
@@ -72,30 +71,32 @@ SEGMENT_TRASH_COUNT = 21       # 1구간 몹 수. 구간이 진행되며 늘어�
 #
 # **인덱스는 맵 안의 구간이 아니라 런 전체의 구간 번호(1~24)다.** 맵마다 리셋하면
 # 영웅이 58배 강해지는 동안 잠식 압박이 그대로여서 후반 맵이 무위험이 된다.
-CONCURRENT_CAP_TOP = 60
-TOTAL_SEGMENTS = 24         # 런 전체 구간 수 (TOTAL_WAVES와 같다)
+CONCURRENT_CAP_TOP = _SPAWN["concurrent_cap_top"]
+TOTAL_SEGMENTS = _PROG["total_segments"]   # 런 전체 구간 수
 
 
 def concurrent_cap(segment):
     """런 전체 구간 번호(1~24) 기준 동시 생존 상한."""
+    lo = _SPAWN["concurrent_cap_start"]
     t = (segment - 1) / (TOTAL_SEGMENTS - 1)
-    return round(30 * (CONCURRENT_CAP_TOP / 30) ** t)
+    return round(lo * (CONCURRENT_CAP_TOP / lo) ** t)
 
 
-CONCURRENT_CAP = {i: round(30 * (60 / 30) ** ((i - 1) / 23)) for i in range(1, 25)}
-CONCURRENT_PEAK = 150       # 보스 직전 버스트 · 돌발 이벤트 "서두름"(§6)
+CONCURRENT_CAP = {i: concurrent_cap(i) for i in range(1, 25)}
+CONCURRENT_PEAK = _SPAWN["concurrent_peak"]   # 보스 직전 버스트 · 돌발 이벤트(§6)
 
 # 스폰 배치 — 한 번에 몇 마리가 같이 들어오는가.
 # **배치는 리듬을, 상한은 밀도를 정한다.** 정상 상태의 스폰량은 처치량과 같으므로
 # (죽은 만큼 채운다) 배치를 키운다고 총량이 늘지는 않는다. 대신 초반엔 두세 마리씩
 # 꾸준히, 후반엔 여덟 마리씩 우르르 — 같은 총량이 전혀 다르게 체감된다.
-SPAWN_INTERVAL_TICKS = 40   # 2.0초마다 한 배치
-SPAWN_DIRECTIONS = 4        # 사방 스폰 (§13). 배치를 방향에 균등 배분한다
+SPAWN_INTERVAL_TICKS = _SPAWN["interval_ticks"]
+SPAWN_DIRECTIONS = _SPAWN["directions"]   # 사방 스폰 (§13)
 
 
 def spawn_batch(segment):
     """구간 i의 배치 크기. 2 → 8로 증가한다."""
-    return round(2 + 6 * (segment - 1) / 7)
+    lo, hi = _SPAWN["batch_start"], _SPAWN["batch_end"]
+    return round(lo + (hi - lo) * (segment - 1) / 7)
 
 
 def spawn_per_direction(segment):
@@ -134,7 +135,7 @@ SURROUND_COUNT = 5             # 영웅에게 동시에 붙을 수 있는 몹 �
 # 감산(데미지 - Armor)을 쓰지 않는 이유: 아이템 조합으로 위력이 곱해지는
 # 게임이라 후반에 Armor가 완전히 무의미해진다. 비율은 배율 성장과 무관하게
 # 일정 비율을 유지한다.
-ARMOR_K = 100
+ARMOR_K = _PROG["armor_k"]
 
 
 def effective_hp(hp, armor):
@@ -149,13 +150,13 @@ def effective_hp(hp, armor):
 # 경험치 수입은 몹 체력에 비례하고 몹 체력은 웨이브마다 지수로 오른다.
 # 따라서 필요 경험치도 지수여야 레벨업 간격이 일정하게 유지된다 —
 # 선형 곡선을 쓰면 후반에 레벨업이 폭주한다.
-EXP_PER_EHP = 1.0              # 몹 경험치 = 실효 체력 × 이 계수 (정수로 절삭)
-LEVEL_NEED_BASE = 340          # need(1)
-LEVEL_NEED_RATIO = 1.072       # need(n) = BASE × RATIO^(n-1)
+EXP_PER_EHP = pm(_PROG["exp_per_ehp_permille"])   # 몹 경험치 = 실효 체력 × 이 계수
+LEVEL_NEED_BASE = _PROG["level_need_base"]
+LEVEL_NEED_RATIO = pm(_PROG["level_need_ratio_permille"])
 
 # 레벨업 1회당 유효 위력 성장. 레벨업이 아이템 뽑기/스펙업 카드의 **유일한**
 # 관문이므로(§4), 이 한 수치가 런 전체의 성장을 전부 담는다.
-POWER_PER_LEVELUP = 0.07
+POWER_PER_LEVELUP = pm(_PROG["power_per_levelup_permille"])
 
 # 그 성장이 **어디로 가는가.** 공격력으로 가면 잡몹은 계속 원샷이라 치명타도
 # 공격력 성장도 오버킬로 버려진다(tools/verify_crit_axis.py). 공속으로 실으면
@@ -173,7 +174,7 @@ POWER_PER_LEVELUP = 0.07
 # 피해를 따라가야(타수 유지) 하므로 처치율은 정확히 공속 배율만큼 오른다.
 # 처치율이 안 오르면 전장이 고인다(평균 생존 = 동시 생존 상한 / 처치율).
 # **기준선 공속은 1초 1회 그대로다** — 성장분만 공속으로 실린다.
-SPEED_GROWTH_SHARE = 0.50   # 성장 중 공속이 가져가는 몫 (나머지는 한 대 피해)
+SPEED_GROWTH_SHARE = pm(_PROG["speed_growth_share_permille"])
 TRASH_HITS_BAND = (1.8, 5.0)   # 판 내내 유지되어야 할 잡몹 타수
 
 CARD_PICK_SEC = 2.5            # 카드 1회 선택에 쓰는 시간 가정 (UI 요구사항)
@@ -217,8 +218,8 @@ def monster_exp(base_ehp, wave):
 #   클리어 시간 배율/웨이브 = HP_SCALE_PER_WAVE / (1+g)^(웨이브당 레벨업)
 # 웨이브당 약 1.8~3회 레벨업이므로 성장은 웨이브당 약 1.15배,
 # 여기에 1.026배를 더 얹어 1.18로 잡았다.
-HP_SCALE_PER_WAVE = 1.09
-TOTAL_WAVES = 24               # 풀 게임 = 맵 3개 × 8구간 (design.md §2)
+HP_SCALE_PER_WAVE = pm(_PROG["trash_hp_scale_per_segment_permille"])
+TOTAL_WAVES = _PROG["total_segments"]   # 풀 게임 = 맵 3개 × 8구간 (design.md §2)
                                # 수직 슬라이스는 맵 1개 = 8구간
 
 
@@ -243,13 +244,12 @@ def elite_scale(segment):
 
 # ── 엘리트 (등장 웨이브 스케일링 적용 전 기준값) ───────────────
 ELITES = {
-    "고블린 궁병대장": {"hp": 120, "armor": 0,   "damage": 167, "target_sec": (7, 12)},
-    "고블린 방패병":   {"hp": 100, "armor": 200, "damage": 33,  "target_sec": (18, 30)},
-    "고블린 주술사":   {"hp": 90,  "armor": 0,   "damage": 21,  "target_sec": (5, 10)},
-    "미친 고블린":     {"hp": 150, "armor": 0,   "damage": 13,  "target_sec": (9, 16)},
+    e["name"]: {"hp": e["hp"], "armor": e["armor"], "damage": e["damage"],
+                "target_sec": (e["target_sec_min"], e["target_sec_max"])}
+    for e in _MON["elites"]
 }
 
-ARCHER_WINDUP_TICKS = 60       # 궁병대장 조준 — QTE를 볼 수 있어야 한다
+ARCHER_WINDUP_TICKS = _MON["archer_windup_ticks"]   # 궁병대장 조준
 
 # ── 타겟 우선순위 (design.md §3) ───────────────────────────────
 # **오토 배틀이므로 플레이어는 대상을 고르지 않는다.** 그래서 타겟 규칙이 곧
@@ -267,21 +267,17 @@ def elite_damage_share():
 
 # ── 보스 ───────────────────────────────────────────────────────
 BOSS = {
-    "hp": 33000,
-    "armor": 50,
-    "phase2_at": 0.5,          # HP 50%에서 페이즈 2 추가
-    "patterns": {              # (타수, 타당 데미지)
-        "삼연격": (3, 63),
-        "대곤봉 강타": (1, 293),
-        "돌진 찌르기": (2, 84),
-    },
+    "hp": _MON["boss"]["hp"],
+    "armor": _MON["boss"]["armor"],
+    "phase2_at": pm(_MON["boss"]["phase2_at_permille"]),
+    "patterns": {p["name"]: (p["hits"], p["damage"]) for p in _MON["boss"]["patterns"]},
 }
 # 최종 보스 조우 시점의 레벨업 누적 횟수 — verify_exp_curve.py의 풀 게임 투영값.
 # 성장 배율은 감이 아니라 이 횟수에서 파생된다.
 TOTAL_LEVELUPS = 60
 BOSS_LEVELUPS = 58
 BOSS_GROWTH_MULT = power_mult(BOSS_LEVELUPS)
-BOSS_TARGET_SEC = (60, 90)
+BOSS_TARGET_SEC = (_MON["boss"]["target_sec_min"], _MON["boss"]["target_sec_max"])
 
 
 def hero_dps():

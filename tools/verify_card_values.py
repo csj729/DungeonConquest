@@ -23,8 +23,10 @@ from balance_baseline import (
 from verify_card_rates import RATES
 
 # ── 등급별 파워 예산 ───────────────────────────────────────────
-GRADE_UNIT = {"일반": 0.6, "고급": 1, "희귀": 2, "영웅": 4, "전설": 10}
-GRADE_BUDGET = {"일반": 0.03, "고급": 0.05, "희귀": 0.10, "영웅": 0.20, "전설": 0.50}
+from gamedata import CARDS as _CARDS, pm as _pm
+
+GRADE_UNIT = {g["name"]: _pm(g["value_unit_permille"]) for g in _CARDS["grades"]}
+GRADE_BUDGET = {g["name"]: _pm(g["power_budget_permille"]) for g in _CARDS["grades"]}
 BUDGET_TOL = 0.30          # 각인별 편차 허용폭 (예산 대비 ±30%)
 
 REF_SKILL = "회전 베기"
@@ -40,32 +42,15 @@ BOLT_PERIOD = 6.0          # 뇌전 주기(초)
 ELITE_SHARE = 0.30         # 전투 시간 중 엘리트·보스를 때리는 비중
 
 # ── 확정 수치 (고급 기준. 희귀 ×2, 영웅 ×4) ────────────────────
-ENGRAVINGS = {
-    "E_PIERCE": ("관통",   "뒤의 적에게 {v:.0%} 피해",            0.25),
-    "E_CHAIN":  ("연타",   "총 피해 +{v:.0%} (2회 분할)",          0.45),
-    "E_DECAY":  ("부식",   "초당 공격력의 {v:.0%}, 4초",           0.30),
-    "E_LEECH":  ("흡혈",   "그 스킬 피해의 {v:.0%} 회복",          0.50),
-    "E_SWARM":  ("군집",   "주변 적 1명당 +{v:.0%} (최대 10명)",   0.09),
-    "E_CRIT":   ("예리함", "치확 +{v:.0%}, 치피 +{v2:.0%}p",       0.20),
-    "E_REND":   ("파쇄",   "대상 Armor {v:.0%} 무시",              0.25),
-    "E_WIDE":   ("확장",   "광역 반경 +{v:.0%} / 단일 여파 {v:.0%}", 0.20),
-}
+ENGRAVINGS = {e["id"]: (e["name"], e["desc"], _pm(e["uncommon_permille"]))
+              for e in _CARDS["engravings"]}
 
-RELICS = {
-    "R_RAGE":   ("분노의 토템",     "피격 시 공격력 +{v:.0%} (최대 10중첩)", 0.01),
-    "R_BOLT":   ("뇌전의 성물",     "6초마다 공격력의 {v:.0%} 피해",         0.40),
-    "R_FROST":  ("서리 오라",       "반경 내 적 이동속도 −{v:.0%}",          0.10),
-    "R_BEACON": ("추적의 신호탄",   "엘리트·보스 피해 +{v:.0%}",             0.15),
-    "R_TIDE":   ("밀물의 인장",     "웨이브 중 초당 공격력 +{v:.1%}",        0.003),
-    "R_GREED":  ("탐욕의 주머니",   "골드 획득 +{v:.0%}",                    0.20),
-}
+RELICS = {r["id"]: (r["name"], r["desc"], _pm(r["uncommon_permille"]))
+          for r in _CARDS["relics"]}
 
 # 상한이 있는 수치는 초과분을 같은 축의 다른 수치로 전환한다.
 # 상한에서 잘라버리면 그 카드가 죽은 선택지가 되고, 상한 없이 두면 표현이 깨진다.
-OVERFLOW = {
-    "E_CRIT":   "치확 100% 초과분 1%p → 치피 +2%p",
-    "E_PIERCE": "뒤의 적 피해 100% 초과분 100%p → 관통 대상 +1",
-}
+OVERFLOW = _CARDS["overflow_rules"]
 
 # 예산으로 환산할 수 없는 것 — 억지로 숫자를 붙이지 않고 따로 표시한다
 UNPRICED = {

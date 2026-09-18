@@ -28,20 +28,21 @@ from verify_segments import SEGMENTS, simulate, SEGMENT_TARGET_SEC
 # ── 화면 · 거리 (타일 단위) ────────────────────────────────────
 # PPU와 화면 픽셀 크기는 에셋 단계에서 정한다(§11 · §15). 여기서는 **타일 수**로
 # 잡는다 — 타일이 게임플레이의 실제 단위이고, PPU는 그걸 픽셀로 옮기는 배율일 뿐이다.
+from gamedata import SPAWN as _SPAWN
+
+# 화면 크기와 여유는 **모델 가정**이다 (PPU·화면 픽셀은 §15 미결).
+# 여기서 나온 스폰 반경만 data/spawn.json에 확정값으로 들어간다.
 SCREEN_TILES = (30, 17)        # 16:9 기준 화면에 보이는 타일 수
 SPAWN_MARGIN = 1.15            # 화면 밖 여유 — 1.0이면 화면 경계에서 튀어나온다
 
-# 스폰 후 영웅에게 닿기까지의 목표 시간. **이 값이 이동속도를 결정한다.**
-APPROACH_SEC = 8.0
-
-MIN_SEPARATION = 1.5           # 같은 배치 몹 사이 최소 간격(타일)
+APPROACH_SEC = _SPAWN["approach_ticks"] / TICK_HZ
+MIN_SEPARATION = _SPAWN["min_separation_millitile"] / 1000
 SURVIVE_TARGET_SEC = 15.0      # 목표 5와 같은 기준
 LIFETIME_BAND = (10.0, 45.0)   # 몹 평균 생존 시간 — 넘으면 전장이 고인다
 
 
 def spawn_radius():
-    w, h = SCREEN_TILES
-    return math.hypot(w / 2, h / 2) * SPAWN_MARGIN
+    return _SPAWN["radius_millitile"] / 1000
 
 
 def approach_speed():

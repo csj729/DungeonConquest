@@ -22,13 +22,15 @@ sys.path.insert(0, "tools")
 from verify_card_rates import RATES, CARDS_PER_LEVEL, LEVELUPS, SLICE_LEVELUPS
 
 # ── 풀 구성 ────────────────────────────────────────────────────
-SKILLS = 3                 # 액티브 3종 (heroes_vertical_slice.md)
-COMMON_ENGRAVINGS = 8      # cards_vertical_slice.md §1
-RELICS = 6                 # §2 일반 유물
-LEGEND_POOL = 6 + 3        # 고유 각인 6 + 전설 유물 3
+from gamedata import CARDS as _CARDS, SKILLS_DATA as _SK
+
+SKILLS = len(_SK["skills"])
+COMMON_ENGRAVINGS = len(_CARDS["engravings"])
+RELICS = len(_CARDS["relics"])
+LEGEND_POOL = _CARDS["legend_pool_size"]   # 고유 각인 6 + 전설 유물 3
 GRADE_WEIGHT = {"고급": 1, "희귀": 2, "영웅": 4}   # 한 장이 더해주는 증가량 비
 
-ENGRAVE_SLOTS_PER_SKILL = 3
+ENGRAVE_SLOTS_PER_SKILL = _CARDS["engrave_slots_per_skill"]
 ENGRAVE_SLOTS = SKILLS * ENGRAVE_SLOTS_PER_SKILL
 
 # 각인·유물이 아닌 카드(스탯·조합 지원·골드)가 고급 이상에서 차지하는 몫

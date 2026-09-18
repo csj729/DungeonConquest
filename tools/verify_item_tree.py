@@ -4,53 +4,23 @@ design.md §5 규칙 1(재료당 최소 2회 등장), 2(축당 최소 3경로),
 4(경로 간 재료 공유)를 수작업 계산이 아니라 스크립트로 확인한다.
 트리 내용을 바꿀 때마다 재실행할 것.
 """
+import sys
+sys.path.insert(0, "tools")
+
 from collections import Counter
 
-# 흔함 9종
-COMMONS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9"]
+from gamedata import load as _load
 
-# 안흔함 12종 — 흔함 2개 조합, (재료, 축)
-UNCOMMON = {
-    "Af1": (["C1", "C2"], "화력"), "Af2": (["C1", "C3"], "화력"), "Af3": (["C2", "C5"], "화력"),
-    "Ac1": (["C4", "C5"], "CC"),   "Ac2": (["C4", "C6"], "CC"),   "Ac3": (["C5", "C7"], "CC"),
-    "Aa1": (["C3", "C4"], "광역"), "Aa2": (["C3", "C6"], "광역"), "Aa3": (["C6", "C1"], "광역"),
-    "As1": (["C7", "C8"], "생존"), "As2": (["C8", "C2"], "생존"), "As3": (["C7", "C1"], "생존"),
-}
+_ITEMS = _load("items")
+_BY_GRADE = {}
+for _r in _ITEMS["recipes"]:
+    _BY_GRADE.setdefault(_r["grade"], {})[_r["id"]] = (_r["ingredients"], _r["axis"])
 
-# 특별함 8종 — 안흔함 2개(+일부 C9) 조합
-SPECIAL = {
-    "Bf1": (["Af1", "Af2", "C9"], "화력"), "Bf2": (["Af3", "Af1"], "화력"),
-    "Bc1": (["Ac1", "Ac2", "C9"], "CC"),   "Bc2": (["Ac2", "Ac3"], "CC"),
-    "Ba1": (["Aa1", "Aa2"], "광역"),       "Ba2": (["Aa2", "Aa3"], "광역"),
-    "Bs1": (["As1", "As2"], "생존"),       "Bs2": (["As2", "As3"], "생존"),
-}
-
-# 희귀함 10종 — 특별함 2개 조합(8) + 안흔함×3 스킵(2, 특별함을 건너뜀)
-RARE = {
-    "Cf1": (["Bf1", "Bf2"], "화력"),           "Cf2": (["Bf2", "Ba2"], "화력"),
-    "Cc1": (["Bc1", "Bc2"], "CC"),             "Cc2": (["Bc2", "Ba1"], "CC"),
-    "Ca1": (["Ba1", "Ba2"], "광역"),           "Ca2": (["Ba1", "Bf2"], "광역"),
-    "Cs1": (["Bs1", "Bs2"], "생존"),           "Cs2": (["Bs1", "Ba2"], "생존"),
-    "Rskip_f": (["Af3", "Af3", "Af3"], "화력"),  # 3연성 스킵: 안흔함 → 희귀함
-    "Rskip_s": (["As3", "As3", "As3"], "생존"),  # 3연성 스킵: 안흔함 → 희귀함
-}
-
-# 전설적인 12종 — 희귀함 2개 조합(8) + 특별함×3 스킵(2, 희귀함을 건너뜀)
-LEGEND = {
-    "Ef1": (["Cf1", "Cf2"], "화력"),
-    "Ef2": (["Cf1", "Rskip_f"], "화력"),
-    "Ef3": (["Cf2", "Rskip_f"], "화력"),
-    "Ec1": (["Cc1", "Cc2"], "CC"),
-    "Ec2": (["Cc2", "Ca1"], "CC"),
-    "Ea1": (["Ca1", "Ca2"], "광역"),
-    "Ea2": (["Ca2", "Cs1"], "광역"),
-    "Es1": (["Cs1", "Cs2"], "생존"),
-    "Es2": (["Cs1", "Rskip_s"], "생존"),
-    "Es3": (["Cs2", "Rskip_s"], "생존"),
-    "Eskip_c": (["Bc1", "Bc1", "Bc1"], "CC"),    # 3연성 스킵: 특별함 → 전설적인
-    "Eskip_a": (["Ba2", "Ba2", "Ba2"], "광역"),  # 3연성 스킵: 특별함 → 전설적인
-}
-
+COMMONS = [c["id"] for c in _ITEMS["commons"]]
+UNCOMMON = _BY_GRADE["안흔함"]
+SPECIAL = _BY_GRADE["특별함"]
+RARE = _BY_GRADE["희귀함"]
+LEGEND = _BY_GRADE["전설적인"]
 
 # ── 화력 축 하위 테마 (치명타 경로 확인용) ────────────────────
 # design.md §5의 축은 화력·CC·광역·생존 넷이고 **치명타 축은 없다.**
@@ -60,21 +30,13 @@ LEGEND = {
 # 전설적인 화력 3종이 희귀함 화력 3종 {Cf1, Cf2, Rskip_f}의 **3가지 쌍**이라는
 # 구조를 이용한다. 희귀함 셋에 하위 테마를 하나씩 배정하면 전설 3종이 자동으로
 # "테마 2개씩 조합"이 되고, 각 테마가 3경로 중 2경로에 실린다.
-FIRE_SUBTHEME = {
-    "Cf1": "치명타",      # 처형인의 낫 — 이름이 이미 맞는다
-    "Cf2": "화염 지속",   # 폭염의 창 (광역 교차)
-    "Rskip_f": "공격 속도",  # 폭풍의 화신 (질풍의 낙뢰 ×3)
-}
-# 치명타 계보 — 흔함부터 이어지는 사슬. 조합식으로 실제로 연결되는지 검증한다
-CRIT_LINEAGE = ["C2", "Af1", "Bf1", "Cf1"]   # 짐승의 이빨 → 톱니 발톱 → 광전사의 쌍검 → 처형인의 낫
+FIRE_SUBTHEME = _ITEMS["fire_subthemes"]
 
-NAMES = {
-    "C1": "낡은 강철 조각", "C2": "짐승의 이빨", "C9": "정령의 눈물",
-    "Af1": "톱니 발톱", "Af2": "작열하는 검", "Af3": "질풍의 낙뢰",
-    "Bf1": "광전사의 쌍검", "Bf2": "연쇄 베기",
-    "Cf1": "처형인의 낫", "Cf2": "폭염의 창", "Rskip_f": "폭풍의 화신",
-    "Ef1": "종말의 인도자", "Ef2": "검은 폭풍의 재앙", "Ef3": "타오르는 폭군",
-}
+# 치명타 계보 — 흔함부터 이어지는 사슬. 조합식으로 실제로 연결되는지 검증한다
+CRIT_LINEAGE = _ITEMS["crit_lineage"]   # 짐승의 이빨 → 톱니 발톱 → 광전사의 쌍검 → 처형인의 낫
+
+NAMES = {**{c["id"]: c["name"] for c in _ITEMS["commons"]},
+         **{r["id"]: r["name"] for r in _ITEMS["recipes"]}}
 
 
 def all_items():
@@ -138,7 +100,7 @@ def coverage(recipes, pool):
     return c
 
 
-def main():
+def report():
     crit_ok = check_crit_path()
     print("=== 규칙 1: 흔함 9종은 각각 최소 2개 조합식에 등장해야 한다 ===")
     cov_uncommon = coverage(UNCOMMON, COMMONS)
@@ -174,6 +136,8 @@ def main():
     total_recipes = len(UNCOMMON) + len(SPECIAL) + len(RARE) + len(LEGEND)
     print(f"\n총 아이템 {total_items}종, 총 조합식 {total_recipes}개")
 
+    return crit_ok
+
 
 if __name__ == "__main__":
-    main()
+    report()

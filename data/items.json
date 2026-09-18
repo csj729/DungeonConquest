@@ -1,0 +1,493 @@
+{
+  "_": "조합 트리 51종 · 조합식 42개. 등급·축·조합식만 확정이고 효과 수치는 미정이다.",
+  "grades": [
+    "흔함",
+    "안흔함",
+    "특별함",
+    "희귀함",
+    "전설적인"
+  ],
+  "axes": [
+    "화력",
+    "CC",
+    "광역",
+    "생존"
+  ],
+  "commons": [
+    {
+      "id": "C1",
+      "name": "낡은 강철 조각"
+    },
+    {
+      "id": "C2",
+      "name": "짐승의 이빨"
+    },
+    {
+      "id": "C3",
+      "name": "C3"
+    },
+    {
+      "id": "C4",
+      "name": "C4"
+    },
+    {
+      "id": "C5",
+      "name": "C5"
+    },
+    {
+      "id": "C6",
+      "name": "C6"
+    },
+    {
+      "id": "C7",
+      "name": "C7"
+    },
+    {
+      "id": "C8",
+      "name": "C8"
+    },
+    {
+      "id": "C9",
+      "name": "정령의 눈물"
+    }
+  ],
+  "recipes": [
+    {
+      "id": "Af1",
+      "name": "톱니 발톱",
+      "grade": "안흔함",
+      "axis": "화력",
+      "ingredients": [
+        "C1",
+        "C2"
+      ]
+    },
+    {
+      "id": "Af2",
+      "name": "작열하는 검",
+      "grade": "안흔함",
+      "axis": "화력",
+      "ingredients": [
+        "C1",
+        "C3"
+      ]
+    },
+    {
+      "id": "Af3",
+      "name": "질풍의 낙뢰",
+      "grade": "안흔함",
+      "axis": "화력",
+      "ingredients": [
+        "C2",
+        "C5"
+      ]
+    },
+    {
+      "id": "Ac1",
+      "name": "Ac1",
+      "grade": "안흔함",
+      "axis": "CC",
+      "ingredients": [
+        "C4",
+        "C5"
+      ]
+    },
+    {
+      "id": "Ac2",
+      "name": "Ac2",
+      "grade": "안흔함",
+      "axis": "CC",
+      "ingredients": [
+        "C4",
+        "C6"
+      ]
+    },
+    {
+      "id": "Ac3",
+      "name": "Ac3",
+      "grade": "안흔함",
+      "axis": "CC",
+      "ingredients": [
+        "C5",
+        "C7"
+      ]
+    },
+    {
+      "id": "Aa1",
+      "name": "Aa1",
+      "grade": "안흔함",
+      "axis": "광역",
+      "ingredients": [
+        "C3",
+        "C4"
+      ]
+    },
+    {
+      "id": "Aa2",
+      "name": "Aa2",
+      "grade": "안흔함",
+      "axis": "광역",
+      "ingredients": [
+        "C3",
+        "C6"
+      ]
+    },
+    {
+      "id": "Aa3",
+      "name": "Aa3",
+      "grade": "안흔함",
+      "axis": "광역",
+      "ingredients": [
+        "C6",
+        "C1"
+      ]
+    },
+    {
+      "id": "As1",
+      "name": "As1",
+      "grade": "안흔함",
+      "axis": "생존",
+      "ingredients": [
+        "C7",
+        "C8"
+      ]
+    },
+    {
+      "id": "As2",
+      "name": "As2",
+      "grade": "안흔함",
+      "axis": "생존",
+      "ingredients": [
+        "C8",
+        "C2"
+      ]
+    },
+    {
+      "id": "As3",
+      "name": "As3",
+      "grade": "안흔함",
+      "axis": "생존",
+      "ingredients": [
+        "C7",
+        "C1"
+      ]
+    },
+    {
+      "id": "Bf1",
+      "name": "광전사의 쌍검",
+      "grade": "특별함",
+      "axis": "화력",
+      "ingredients": [
+        "Af1",
+        "Af2",
+        "C9"
+      ]
+    },
+    {
+      "id": "Bf2",
+      "name": "연쇄 베기",
+      "grade": "특별함",
+      "axis": "화력",
+      "ingredients": [
+        "Af3",
+        "Af1"
+      ]
+    },
+    {
+      "id": "Bc1",
+      "name": "Bc1",
+      "grade": "특별함",
+      "axis": "CC",
+      "ingredients": [
+        "Ac1",
+        "Ac2",
+        "C9"
+      ]
+    },
+    {
+      "id": "Bc2",
+      "name": "Bc2",
+      "grade": "특별함",
+      "axis": "CC",
+      "ingredients": [
+        "Ac2",
+        "Ac3"
+      ]
+    },
+    {
+      "id": "Ba1",
+      "name": "Ba1",
+      "grade": "특별함",
+      "axis": "광역",
+      "ingredients": [
+        "Aa1",
+        "Aa2"
+      ]
+    },
+    {
+      "id": "Ba2",
+      "name": "Ba2",
+      "grade": "특별함",
+      "axis": "광역",
+      "ingredients": [
+        "Aa2",
+        "Aa3"
+      ]
+    },
+    {
+      "id": "Bs1",
+      "name": "Bs1",
+      "grade": "특별함",
+      "axis": "생존",
+      "ingredients": [
+        "As1",
+        "As2"
+      ]
+    },
+    {
+      "id": "Bs2",
+      "name": "Bs2",
+      "grade": "특별함",
+      "axis": "생존",
+      "ingredients": [
+        "As2",
+        "As3"
+      ]
+    },
+    {
+      "id": "Cf1",
+      "name": "처형인의 낫",
+      "grade": "희귀함",
+      "axis": "화력",
+      "ingredients": [
+        "Bf1",
+        "Bf2"
+      ]
+    },
+    {
+      "id": "Cf2",
+      "name": "폭염의 창",
+      "grade": "희귀함",
+      "axis": "화력",
+      "ingredients": [
+        "Bf2",
+        "Ba2"
+      ]
+    },
+    {
+      "id": "Cc1",
+      "name": "Cc1",
+      "grade": "희귀함",
+      "axis": "CC",
+      "ingredients": [
+        "Bc1",
+        "Bc2"
+      ]
+    },
+    {
+      "id": "Cc2",
+      "name": "Cc2",
+      "grade": "희귀함",
+      "axis": "CC",
+      "ingredients": [
+        "Bc2",
+        "Ba1"
+      ]
+    },
+    {
+      "id": "Ca1",
+      "name": "Ca1",
+      "grade": "희귀함",
+      "axis": "광역",
+      "ingredients": [
+        "Ba1",
+        "Ba2"
+      ]
+    },
+    {
+      "id": "Ca2",
+      "name": "Ca2",
+      "grade": "희귀함",
+      "axis": "광역",
+      "ingredients": [
+        "Ba1",
+        "Bf2"
+      ]
+    },
+    {
+      "id": "Cs1",
+      "name": "Cs1",
+      "grade": "희귀함",
+      "axis": "생존",
+      "ingredients": [
+        "Bs1",
+        "Bs2"
+      ]
+    },
+    {
+      "id": "Cs2",
+      "name": "Cs2",
+      "grade": "희귀함",
+      "axis": "생존",
+      "ingredients": [
+        "Bs1",
+        "Ba2"
+      ]
+    },
+    {
+      "id": "Rskip_f",
+      "name": "폭풍의 화신",
+      "grade": "희귀함",
+      "axis": "화력",
+      "ingredients": [
+        "Af3",
+        "Af3",
+        "Af3"
+      ]
+    },
+    {
+      "id": "Rskip_s",
+      "name": "Rskip_s",
+      "grade": "희귀함",
+      "axis": "생존",
+      "ingredients": [
+        "As3",
+        "As3",
+        "As3"
+      ]
+    },
+    {
+      "id": "Ef1",
+      "name": "종말의 인도자",
+      "grade": "전설적인",
+      "axis": "화력",
+      "ingredients": [
+        "Cf1",
+        "Cf2"
+      ]
+    },
+    {
+      "id": "Ef2",
+      "name": "검은 폭풍의 재앙",
+      "grade": "전설적인",
+      "axis": "화력",
+      "ingredients": [
+        "Cf1",
+        "Rskip_f"
+      ]
+    },
+    {
+      "id": "Ef3",
+      "name": "타오르는 폭군",
+      "grade": "전설적인",
+      "axis": "화력",
+      "ingredients": [
+        "Cf2",
+        "Rskip_f"
+      ]
+    },
+    {
+      "id": "Ec1",
+      "name": "Ec1",
+      "grade": "전설적인",
+      "axis": "CC",
+      "ingredients": [
+        "Cc1",
+        "Cc2"
+      ]
+    },
+    {
+      "id": "Ec2",
+      "name": "Ec2",
+      "grade": "전설적인",
+      "axis": "CC",
+      "ingredients": [
+        "Cc2",
+        "Ca1"
+      ]
+    },
+    {
+      "id": "Ea1",
+      "name": "Ea1",
+      "grade": "전설적인",
+      "axis": "광역",
+      "ingredients": [
+        "Ca1",
+        "Ca2"
+      ]
+    },
+    {
+      "id": "Ea2",
+      "name": "Ea2",
+      "grade": "전설적인",
+      "axis": "광역",
+      "ingredients": [
+        "Ca2",
+        "Cs1"
+      ]
+    },
+    {
+      "id": "Es1",
+      "name": "Es1",
+      "grade": "전설적인",
+      "axis": "생존",
+      "ingredients": [
+        "Cs1",
+        "Cs2"
+      ]
+    },
+    {
+      "id": "Es2",
+      "name": "Es2",
+      "grade": "전설적인",
+      "axis": "생존",
+      "ingredients": [
+        "Cs1",
+        "Rskip_s"
+      ]
+    },
+    {
+      "id": "Es3",
+      "name": "Es3",
+      "grade": "전설적인",
+      "axis": "생존",
+      "ingredients": [
+        "Cs2",
+        "Rskip_s"
+      ]
+    },
+    {
+      "id": "Eskip_c",
+      "name": "Eskip_c",
+      "grade": "전설적인",
+      "axis": "CC",
+      "ingredients": [
+        "Bc1",
+        "Bc1",
+        "Bc1"
+      ]
+    },
+    {
+      "id": "Eskip_a",
+      "name": "Eskip_a",
+      "grade": "전설적인",
+      "axis": "광역",
+      "ingredients": [
+        "Ba2",
+        "Ba2",
+        "Ba2"
+      ]
+    }
+  ],
+  "fire_subthemes": {
+    "Cf1": "치명타",
+    "Cf2": "화염 지속",
+    "Rskip_f": "공격 속도"
+  },
+  "crit_lineage": [
+    "C2",
+    "Af1",
+    "Bf1",
+    "Cf1"
+  ]
+}

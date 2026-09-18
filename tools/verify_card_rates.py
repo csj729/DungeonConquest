@@ -11,15 +11,10 @@ import sys
 sys.path.insert(0, "tools")
 
 # ── 등급별 확률 ────────────────────────────────────────────────
-RATES = {
-    "일반": 0.42,
-    "고급": 0.30,
-    "희귀": 0.19,
-    "영웅": 0.075,
-    "전설": 0.015,
-}
+from gamedata import CARDS as _CARDS, pm
 
-CARDS_PER_LEVEL = 3        # 레벨업당 성장 카드 3장 (맨 왼쪽 고정 슬롯 제외)
+RATES = {g["name"]: pm(g["rate_permille"]) for g in _CARDS["grades"]}
+CARDS_PER_LEVEL = _CARDS["cards_per_level"]   # 맨 왼쪽 고정 슬롯 제외
 LEVELUPS = 60              # 풀 게임 한 판 (tools/verify_exp_curve.py)
 SLICE_LEVELUPS = 20        # 맵 1개 = 수직 슬라이스
 LEVELUP_RANGE = (45, 65)   # 곡선이 흔들릴 여지
@@ -28,7 +23,7 @@ LEVELUP_RANGE = (45, 65)   # 곡선이 흔들릴 여지
 LEGEND_EXPECTED = (1.5, 3.5)   # 한 판 전설 기대 장수
 LEGEND_ZERO_MAX = 0.15         # 전설 0회 판의 비율 상한
 LEGEND_ZERO_MIN = 0.04         # 하한 — 이보다 낮으면 사실상 천장이 생긴 것이다
-ENGRAVE_SLOTS = 9              # 스킬 3종 × 3칸
+ENGRAVE_SLOTS = _CARDS["engrave_slots_per_skill"] * 3   # 스킬 3종 × 슬롯
 
 # ── 수직 슬라이스 플레이테스트 전용 임시 확률 ──────────────────
 # 슬라이스는 맵 1개(카드 75장)라 출하 확률 그대로면 전설 0회 판이 32%가 된다.
@@ -38,7 +33,7 @@ ENGRAVE_SLOTS = 9              # 스킬 3종 × 3칸
 #   p_slice = 1 - (1 - p_full)^(풀 런 카드수 / 슬라이스 카드수)
 # 잭팟이 얼마나 자주 비껴가는지가 보존되므로, 슬라이스에서 읽은 "전설 없이도
 # 클리어되는가"(§4 불변조건)가 풀 런에서도 그대로 성립한다.
-PLAYTEST_DONOR = "일반"        # 늘어난 몫을 어디서 빼는가
+PLAYTEST_DONOR = _CARDS["playtest_donor_grade"]   # 늘어난 몫을 어디서 빼는가
 
 
 def report():

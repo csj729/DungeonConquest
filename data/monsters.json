@@ -1,0 +1,77 @@
+{
+  "_": "몬스터 기준값. 체력 스케일링 곡선은 progression.json 참조.",
+  "trash": {
+    "hp": 20,
+    "damage": 5,
+    "ranged_damage": 2,
+    "windup_ticks": 0,
+    "cooldown_ticks": 30
+  },
+  "elites": [
+    {
+      "id": "GE_ARCHER",
+      "name": "고블린 궁병대장",
+      "hp": 120,
+      "armor": 0,
+      "damage": 167,
+      "target_sec_min": 7,
+      "target_sec_max": 12
+    },
+    {
+      "id": "GE_SHIELD",
+      "name": "고블린 방패병",
+      "hp": 100,
+      "armor": 200,
+      "damage": 33,
+      "target_sec_min": 18,
+      "target_sec_max": 30
+    },
+    {
+      "id": "GE_SHAMAN",
+      "name": "고블린 주술사",
+      "hp": 90,
+      "armor": 0,
+      "damage": 21,
+      "target_sec_min": 5,
+      "target_sec_max": 10
+    },
+    {
+      "id": "GE_MAD",
+      "name": "미친 고블린",
+      "hp": 150,
+      "armor": 0,
+      "damage": 13,
+      "target_sec_min": 9,
+      "target_sec_max": 16
+    }
+  ],
+  "archer_windup_ticks": 60,
+  "boss": {
+    "id": "GB_WARCHIEF",
+    "hp": 33000,
+    "armor": 50,
+    "phase2_at_permille": 500,
+    "patterns": [
+      {
+        "name": "삼연격",
+        "hits": 3,
+        "damage": 63
+      },
+      {
+        "name": "대곤봉 강타",
+        "hits": 1,
+        "damage": 293
+      },
+      {
+        "name": "돌진 찌르기",
+        "hits": 2,
+        "damage": 84
+      }
+    ],
+    "target_sec_min": 60,
+    "target_sec_max": 90
+  },
+  "slice_boss_armor": 50,
+  "slice_boss_hp": 2100,
+  "map_boss_target_ticks": 1500
+}

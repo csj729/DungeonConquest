@@ -1,0 +1,19 @@
+{
+  "_": "연속 스폰 규칙. 거리 단위는 타일의 1/1000 (millitile).",
+  "concurrent_cap_start": 30,
+  "concurrent_cap_top": 60,
+  "concurrent_peak": 150,
+  "interval_ticks": 40,
+  "directions": 4,
+  "direction_order": [
+    "N",
+    "E",
+    "S",
+    "W"
+  ],
+  "batch_start": 2,
+  "batch_end": 8,
+  "radius_millitile": 19800,
+  "min_separation_millitile": 1500,
+  "approach_ticks": 160
+}

@@ -28,7 +28,9 @@ from verify_segments import SEGMENTS as WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, 
 from verify_card_values import GRADE_BUDGET, ref_skill_dps
 
 # 각인이었을 때의 값 — 비교 기준 (cards_vertical_slice.md §1)
-ENGRAVE_CRIT = 0.20
+from gamedata import CARDS as _CARDS, pm as _pm
+ENGRAVE_CRIT = _pm(next(e["uncommon_permille"]
+                       for e in _CARDS["engravings"] if e["id"] == "E_CRIT"))
 
 # 목표: 카드 한 장의 치확 증가량이 이 이하면 "스탯이 조금씩 오르는" 느낌이 산다
 INCREMENT_TARGET = 0.03

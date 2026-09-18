@@ -1,0 +1,17 @@
+{
+  "_": "성장·스케일링 곡선. 이 파일 하나가 밸런스의 축이다.",
+  "tick_hz": 20,
+  "total_segments": 24,
+  "power_per_levelup_permille": 70,
+  "speed_growth_share_permille": 500,
+  "level_need_base": 340,
+  "level_need_ratio_permille": 1072,
+  "exp_per_ehp_permille": 1000,
+  "trash_hp_scale_per_segment_permille": 1090,
+  "armor_k": 100,
+  "corruption_threshold": 20,
+  "corruption_per_mob_permille": 600,
+  "corruption_overflow_mult_permille": 3000,
+  "maps": 3,
+  "segments_per_map": 8
+}

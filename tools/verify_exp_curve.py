@@ -29,7 +29,9 @@ from verify_segments import (
     SEGMENTS as WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, SEGMENT_TARGET_SEC,
 )
 
-CARDS_PER_LEVEL = 3
+from gamedata import CARDS as _CARDS, PROGRESSION as _PROG, MONSTERS as _MON
+
+CARDS_PER_LEVEL = _CARDS["cards_per_level"]
 
 # 목표
 RUN_LEVELUPS = (45, 65)        # 풀 게임 한 판 총 레벨업 횟수
@@ -40,8 +42,8 @@ MAP_LEVEL_DECAY = 0.45         # 맵3 레벨업 / 맵1 레벨업의 하한
 
 # 풀 게임 투영: 맵 2·3의 웨이브 구성은 아직 미정이므로 맵 1 구성을 재사용하고
 # 웨이브 인덱스만 이어붙인다. 몹 수가 아니라 **곡선의 모양**을 보기 위한 투영이다.
-MAP_COUNT = 3
-BOSS_TARGET_SEC = 75.0   # 맵 보스 목표 처치 시간 — HP는 여기서 역산된다
+MAP_COUNT = _PROG["maps"]
+BOSS_TARGET_SEC = _MON["map_boss_target_ticks"] / 20   # HP는 여기서 역산된다
 
 
 def monster_exp(base_ehp, wave):

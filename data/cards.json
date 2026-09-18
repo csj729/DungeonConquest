@@ -1,0 +1,136 @@
+{
+  "_": "카드 등급·각인·유물 수치. permille = 1/1000. 각인·유물 수치는 고급 기준이며 희귀 ×2, 영웅 ×4.",
+  "cards_per_level": 3,
+  "engrave_slots_per_skill": 3,
+  "legend_pool_size": 9,
+  "grade_step": [
+    1,
+    2,
+    4
+  ],
+  "grades": [
+    {
+      "name": "일반",
+      "rate_permille": 420,
+      "power_budget_permille": 30,
+      "value_unit_permille": 600
+    },
+    {
+      "name": "고급",
+      "rate_permille": 300,
+      "power_budget_permille": 50,
+      "value_unit_permille": 1000
+    },
+    {
+      "name": "희귀",
+      "rate_permille": 190,
+      "power_budget_permille": 100,
+      "value_unit_permille": 2000
+    },
+    {
+      "name": "영웅",
+      "rate_permille": 75,
+      "power_budget_permille": 200,
+      "value_unit_permille": 4000
+    },
+    {
+      "name": "전설",
+      "rate_permille": 15,
+      "power_budget_permille": 500,
+      "value_unit_permille": 10000
+    }
+  ],
+  "playtest_donor_grade": "일반",
+  "engravings": [
+    {
+      "id": "E_PIERCE",
+      "name": "관통",
+      "uncommon_permille": 250,
+      "desc": "뒤의 적에게 {v:.0%} 피해"
+    },
+    {
+      "id": "E_CHAIN",
+      "name": "연타",
+      "uncommon_permille": 450,
+      "desc": "총 피해 +{v:.0%} (2회 분할)"
+    },
+    {
+      "id": "E_DECAY",
+      "name": "부식",
+      "uncommon_permille": 300,
+      "desc": "초당 공격력의 {v:.0%}, 4초"
+    },
+    {
+      "id": "E_LEECH",
+      "name": "흡혈",
+      "uncommon_permille": 500,
+      "desc": "그 스킬 피해의 {v:.0%} 회복"
+    },
+    {
+      "id": "E_SWARM",
+      "name": "군집",
+      "uncommon_permille": 90,
+      "desc": "주변 적 1명당 +{v:.0%} (최대 10명)"
+    },
+    {
+      "id": "E_CRIT",
+      "name": "예리함",
+      "uncommon_permille": 200,
+      "desc": "치확 +{v:.0%}, 치피 +{v2:.0%}p"
+    },
+    {
+      "id": "E_REND",
+      "name": "파쇄",
+      "uncommon_permille": 250,
+      "desc": "대상 Armor {v:.0%} 무시"
+    },
+    {
+      "id": "E_WIDE",
+      "name": "확장",
+      "uncommon_permille": 200,
+      "desc": "광역 반경 +{v:.0%} / 단일 여파 {v:.0%}"
+    }
+  ],
+  "relics": [
+    {
+      "id": "R_RAGE",
+      "name": "분노의 토템",
+      "uncommon_permille": 10,
+      "desc": "피격 시 공격력 +{v:.0%} (최대 10중첩)"
+    },
+    {
+      "id": "R_BOLT",
+      "name": "뇌전의 성물",
+      "uncommon_permille": 400,
+      "desc": "6초마다 공격력의 {v:.0%} 피해"
+    },
+    {
+      "id": "R_FROST",
+      "name": "서리 오라",
+      "uncommon_permille": 100,
+      "desc": "반경 내 적 이동속도 −{v:.0%}"
+    },
+    {
+      "id": "R_BEACON",
+      "name": "추적의 신호탄",
+      "uncommon_permille": 150,
+      "desc": "엘리트·보스 피해 +{v:.0%}"
+    },
+    {
+      "id": "R_TIDE",
+      "name": "밀물의 인장",
+      "uncommon_permille": 3,
+      "desc": "웨이브 중 초당 공격력 +{v:.1%}"
+    },
+    {
+      "id": "R_GREED",
+      "name": "탐욕의 주머니",
+      "uncommon_permille": 200,
+      "desc": "골드 획득 +{v:.0%}"
+    }
+  ],
+  "overflow_rules": {
+    "E_CRIT": "치확 100% 초과분 1%p → 치피 +2%p",
+    "E_PIERCE": "뒤의 적 피해 100% 초과분 100%p → 관통 대상 +1"
+  }
+}

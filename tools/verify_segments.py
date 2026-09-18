@@ -24,34 +24,26 @@ from balance_baseline import (
     EXP_PER_EHP, CARD_PICK_SEC, concurrent_cap, elite_scale, aoe_targets, effective_targets,
 )
 
+from gamedata import SEGMENTS_DATA as _SEG, MONSTERS as _MON
+
 # ── 클리어 게이지 (design.md §2) ───────────────────────────────
-TRASH_POINTS = 1            # 잡몹 처치 1점
-ELITE_POINTS = 10           # 엘리트 처치 10점 — "잡을까 무시할까"를 판단으로 만든다
+TRASH_POINTS = _SEG["trash_points"]
+ELITE_POINTS = _SEG["elite_points"]
 
 # ── 구간 구성 ──────────────────────────────────────────────────
 # (근접, 원거리, [엘리트], 이 구간이 새로 시험하는 것)
 #
 # 몹 수가 구간마다 늘어난다. 영웅이 레벨업으로 강해지는 만큼 물량을 더 얹지
 # 않으면 뒤 구간이 오히려 쉬워진다 — 수를 고정했던 이전 구성의 문제였다.
-SEGMENTS = [
-    (21,  0, [],                               "기본 전투 · 사방 스폰"),
-    (16,  7, [],                               "원거리 견제 — 사거리 이탈이 안 통하는 적"),
-    (16,  9, ["고블린 궁병대장"],               "첫 QTE — 텔레그래프 읽기"),
-    (17, 12, ["고블린 주술사"],                 "처치 우선순위 — 방치하면 물량이 불어난다"),
-    (19, 15, ["고블린 방패병"],                 "광역·방어 관통의 필요성"),
-    (24, 19, ["미친 고블린", "고블린 궁병대장"], "종합 — 지속 압박 + QTE"),
-    (28, 25, ["고블린 주술사", "고블린 방패병"], "최악의 조합 — 계속 불어나는데 잘 안 죽는다"),
-    (32, 34, ["고블린 궁병대장", "미친 고블린",
-              "고블린 주술사"],                  "최종 압박 — 보스 직전"),
-]
+SEGMENTS = [(x["melee"], x["ranged"], x["elites"], x["note"]) for x in _SEG["segments"]]
 
 # 수직 슬라이스용 보스 (풀 게임 최종 보스와 다르다)
-SLICE_BOSS_HP = 2100
-SLICE_BOSS_ARMOR = 50
+SLICE_BOSS_HP = _MON["slice_boss_hp"]   # 목표 처치 시간에서 역산
+SLICE_BOSS_ARMOR = _MON["slice_boss_armor"]
 
 SEGMENT_SEC_RANGE = (25, 60)   # 구간 하나의 목표 통과 시간
 # 위 구성은 이 목표 시간에서 몹 수를 역산해 푼 것이다. 맵 2·3도 같은 곡선을 쓴다.
-SEGMENT_TARGET_SEC = [25, 28, 31, 34, 38, 42, 46, 50]
+SEGMENT_TARGET_SEC = [x["target_ticks"] / TICK_HZ for x in _SEG["segments"]]
 RUN_MIN_RANGE = (5, 9)      # 맵 1개 목표 길이(분)
 SLICE_LEVELUPS = (15, 25)   # 맵 1개에서 기대하는 레벨업 횟수
 

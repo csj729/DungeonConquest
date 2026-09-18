@@ -1,0 +1,26 @@
+{
+  "_": "전사 액티브 3종. mult_permille은 기본 공격 대비 배율, weight_permille은 추첨 가중치.",
+  "skills": [
+    {
+      "id": "W_SMASH",
+      "name": "분쇄 강타",
+      "mult_permille": 3000,
+      "weight_permille": 400,
+      "aoe": false
+    },
+    {
+      "id": "W_WHIRL",
+      "name": "회전 베기",
+      "mult_permille": 2500,
+      "weight_permille": 350,
+      "aoe": true
+    },
+    {
+      "id": "W_CLEAVE",
+      "name": "대지 가르기",
+      "mult_permille": 2000,
+      "weight_permille": 250,
+      "aoe": true
+    }
+  ]
+}

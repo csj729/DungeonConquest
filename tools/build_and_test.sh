@@ -8,7 +8,7 @@
 set -u
 cd "$(dirname "$0")/.."
 
-TESTS="test_fixed test_rng test_entity_id test_entity_store test_world"
+TESTS="test_fixed test_rng test_entity_id test_entity_store test_world test_checksum"
 FAILED=0
 
 build() {   # build <dir> <build-type> <sanitizer>
@@ -31,8 +31,22 @@ for cfg in "release Release none" "debug Debug none" "ubsan Debug undefined" "as
     done
 done
 
-# Debug ↔ Release 출력 일치. 체크섬이 붙기 전까지는 테스트 출력이 그 대역이다.
-echo "== Debug / Release 일치"
+# CLAUDE.md: "Debug 빌드와 Release 빌드의 체크섬 일치를 CI에서 검증할 것."
+# 헤드리스 러너를 두 빌드로 돌려 매 구간 체크섬을 통째로 비교한다.
+echo "== Debug / Release 체크섬 일치"
+for seed in 1 20250918 18446744073709551615; do
+    d=$(./build/debug/core/dc_checksum   "$seed" 4000 500 | md5sum | cut -d' ' -f1)
+    r=$(./build/release/core/dc_checksum "$seed" 4000 500 | md5sum | cut -d' ' -f1)
+    u=$(./build/ubsan/core/dc_checksum   "$seed" 4000 500 | md5sum | cut -d' ' -f1)
+    if [ "$d" = "$r" ] && [ "$d" = "$u" ]; then
+        echo "   seed=$seed 일치 (4000틱)"
+    else
+        echo "   seed=$seed 불일치  Debug=$d  Release=$r  UBSan=$u"; FAILED=1
+    fi
+done
+
+# 테스트 출력도 함께 본다 — 체크섬이 못 보는 경로(경계 조건·거부 코드)를 덮는다.
+echo "== Debug / Release 테스트 출력 일치"
 for t in $TESTS; do
     d=$(./build/debug/core/$t | md5sum | cut -d' ' -f1)
     r=$(./build/release/core/$t | md5sum | cut -d' ' -f1)

@@ -16,6 +16,7 @@
 
 #include <cstdint>
 
+#include "checksum.h"
 #include "config.h"
 #include "entity_store.h"
 #include "fixed.h"
@@ -55,6 +56,19 @@ struct HeroState {
     }
     // 최대치가 내려가 누적값을 넘어도 게임오버다 — 설계된 결과다 (§9).
     bool dead() const { return corruptionMax.raw <= corruption.raw; }
+
+    void hashInto(Hasher& h) const {
+        h.feed(posX);
+        h.feed(posY);
+        h.feed(corruption);      // 저장값을 쓴다. corruptionLeft()는 [파생]이다
+        h.feed(corruptionMax);
+        h.feed(level);
+        h.feed(exp);
+        h.feed(attackCooldown);
+        h.feed(qteCooldown);
+        h.feed(prdTrials);       // §10이 명시적으로 요구하는 입력
+        h.feed(target);
+    }
 };
 
 // 런 진행 — 맵·구간·클리어 게이지 (§2).
@@ -72,6 +86,16 @@ struct RunState {
     int32_t globalSegment(int32_t segmentsPerMap) const {
         return mapIndex * segmentsPerMap + segmentIndex;
     }
+
+    void hashInto(Hasher& h) const {
+        h.feed(mapIndex);
+        h.feed(segmentIndex);
+        h.feed(clearPoints);
+        h.feed(killedTrash);
+        h.feed(killedElite);
+        h.feed(bossAlive);
+        // globalSegment()는 [파생] — mapIndex·segmentIndex의 함수다
+    }
 };
 
 // 스폰 (§2). 동시 생존 상한을 유지하는 방식이라 "다음 웨이브" 같은 상태가 없다.
@@ -79,6 +103,12 @@ struct SpawnState {
     int32_t  nextSpawnTick   = 0;
     uint32_t directionCursor = 0;   // 4방향 균등 배분. 나머지 배분 순서를 고정한다
     int32_t  spawnedTotal    = 0;
+
+    void hashInto(Hasher& h) const {
+        h.feed(nextSpawnTick);
+        h.feed(directionCursor);
+        h.feed(spawnedTotal);
+    }
 };
 
 class World {
@@ -116,6 +146,50 @@ public:
     // 틱 종료 일괄 압축. tick()이 부르지만, 시스템을 직접 돌리는 테스트·툴에서
     // 쓸 수 있도록 공개한다.
     uint32_t applyDeaths() { return entities.compact(); }
+
+    // 전 상태 해시 + 시스템별 부분 체크섬 (§10 검증 하네스).
+    //
+    // **호출 빈도는 용도가 정한다.** 재현성 하네스는 매 틱 부른다(최초로 갈라진
+    // 틱을 찾아야 하므로). 서버 리플레이 검증과 클라이언트는 런 종료 시점이나
+    // 일정 간격으로 부르면 된다 — 매 틱 부를 이유가 없다.
+    Checksums checksums() const {
+        Checksums c;
+        {
+            Hasher h;
+            entities.hashInto(h);
+            c.entities = h.value();
+        }
+        {
+            Hasher h;
+            hero.hashInto(h);
+            c.hero = h.value();
+        }
+        {
+            Hasher h;
+            run.hashInto(h);
+            c.run = h.value();
+        }
+        {
+            Hasher h;
+            spawn.hashInto(h);
+            c.spawn = h.value();
+        }
+        {
+            // 전역 스트림. 소비 횟수가 다르면 여기서 갈린다 —
+            // 결과가 아직 상태에 반영되기 전이라도 잡힌다는 뜻이다.
+            Hasher h;
+            h.feed(rngSpawn);
+            h.feed(rngCombat);
+            h.feed(rngCards);
+            h.feed(rngItems);
+            h.feed(rngEvents);
+            c.rng = h.value();
+        }
+        c.seal(static_cast<uint64_t>(static_cast<uint32_t>(tick_)), masterSeed_);
+        return c;
+    }
+
+    uint64_t checksum() const { return checksums().total; }
 
     int32_t  tickCount()  const { return tick_; }
     uint64_t masterSeed() const { return masterSeed_; }

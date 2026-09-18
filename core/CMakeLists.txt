@@ -52,3 +52,12 @@ dc_add_test(test_rng       tests/test_rng.cpp)
 dc_add_test(test_entity_id tests/test_entity_id.cpp)
 dc_add_test(test_entity_store tests/test_entity_store.cpp)
 dc_add_test(test_world      tests/test_world.cpp)
+dc_add_test(test_checksum   tests/test_checksum.cpp)
+
+# 헤드리스 체크섬 러너. CI가 Debug/Release 출력을 비교하는 대상이며,
+# 서버 리플레이 검증(headless run → checksum) 진입점의 원형이다.
+add_executable(dc_checksum tools/dc_checksum.cpp)
+target_link_libraries(dc_checksum PRIVATE dc_core)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(dc_checksum PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()

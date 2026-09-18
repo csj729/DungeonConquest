@@ -2,68 +2,21 @@
 //
 // 이 파일이 확인하는 건 "시뮬이 잘 도는가"가 아니다. 아직 시스템이 없다.
 // **World 안에 있는 것만으로 런을 재현할 수 있는가**를 본다.
-// 상태가 하나라도 밖에 새어 있으면 §14-2 체크섬이 갈리지 않는데 결과는 달라진다.
+// 상태가 하나라도 밖에 새어 있으면 checksum()은 같은데 결과는 달라진다.
 #include <cstring>
 #include <type_traits>
 
 #include "../include/dc/world.h"
+#include "../tools/dev_script.h"
 #include "test_main.h"
 
 using namespace dc;
 
-// 테스트용 상태 지문. **이건 §14-2의 checksum()이 아니다** — 패딩 없이
-// 의미 있는 필드만 접어 비교하려는 임시 수단이다.
-static uint64_t digest(const World& w) {
-    uint64_t h = FNV_OFFSET;
-    auto feed = [&h](uint64_t v) {
-        for (int b = 0; b < 8; ++b) h = fnv1a(h, static_cast<uint8_t>(v >> (b * 8)));
-    };
-    feed(static_cast<uint64_t>(static_cast<uint32_t>(w.tickCount())));
-    feed(w.masterSeed());
-    feed(w.rngSpawn.state());
-    feed(w.rngCombat.state());
-    feed(w.rngCards.state());
-    feed(w.rngItems.state());
-    feed(w.rngEvents.state());
-    feed(static_cast<uint64_t>(static_cast<uint32_t>(w.hero.corruption.raw)));
-    feed(static_cast<uint64_t>(static_cast<uint32_t>(w.hero.prdTrials)));
-    feed(static_cast<uint64_t>(w.hero.target.bits));
-    feed(static_cast<uint64_t>(static_cast<uint32_t>(w.run.clearPoints)));
-    feed(static_cast<uint64_t>(static_cast<uint32_t>(w.spawn.spawnedTotal)));
-    feed(static_cast<uint64_t>(w.entities.count()));
-    for (uint32_t i = 0; i < w.entities.count(); ++i) {
-        feed(static_cast<uint64_t>(w.entities.idAt(i).bits));
-        feed(static_cast<uint64_t>(static_cast<uint32_t>(w.entities.posX[i].raw)));
-        feed(static_cast<uint64_t>(static_cast<uint32_t>(w.entities.damageTaken[i].raw)));
-        feed(w.entities.rngState[i]);
-    }
-    return h;
-}
-
-// 시스템이 없으므로 각본으로 대신한다. 스폰·난수 소비·삭제를 섞어
-// 상태가 실제로 움직이게 만든다.
-static void runScript(World& w, int32_t ticks) {
-    for (int32_t t = 0; t < ticks; ++t) {
-        const uint32_t n = w.rngSpawn.range(3);
-        for (uint32_t i = 0; i < n; ++i) {
-            SpawnDesc d;
-            d.posX  = Fixed::fromRaw(static_cast<int32_t>(w.rngSpawn.nextU32() & 0xFFFF));
-            d.maxHp = Fixed(20);
-            (void)w.entities.spawn(d, w.tickCount(), w.masterSeed());
-            ++w.spawn.spawnedTotal;
-        }
-        if (w.entities.count() > 0 && w.rngCombat.chancePermille(400)) {
-            const uint32_t victim = w.rngCombat.range(w.entities.count());
-            if (w.entities.markDead(w.entities.idAt(victim))) {
-                ++w.run.killedTrash;
-                w.run.clearPoints += 1;
-            }
-        }
-        w.hero.corruption = w.hero.corruption + Fixed::fromRaw(3);
-        ++w.hero.prdTrials;
-        w.tick();
-    }
-}
+// 상태 비교는 실제 checksum()으로 한다. 예전에는 이 자리에 임시 지문 함수가
+// 있었는데, §14-3에서 checksum()이 붙으면서 필요가 없어졌다.
+// 틱 드라이버도 공용 임시 드라이버(core/tools/dev_script.h)를 쓴다.
+static uint64_t digest(const World& w) { return w.checksum(); }
+static void runScript(World& w, int32_t ticks) { dev::runScript(w, ticks); }
 
 int main() {
     printf("test_world\n");

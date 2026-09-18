@@ -18,6 +18,7 @@
 
 #include <cstdint>
 
+#include "checksum.h"
 #include "config.h"
 #include "entity_id.h"
 #include "fixed.h"
@@ -209,6 +210,52 @@ public:
         count_ = w;
         deadPending_ = 0;
         return removed;
+    }
+
+    // 체크섬 입력. **여기에 빠진 필드는 곧 거짓 음성이다** — 결과는 갈렸는데
+    // 해시는 같은 상태가 된다. 필드를 추가하면 여기도 반드시 추가할 것.
+    //
+    // 행 단위가 아니라 **배열 단위로 훑는다.** 결정론은 어느 쪽이든 같지만,
+    // 배열 단위는 19개 배열을 순차 스윕하고 행 단위는 19개 스트림을 교차한다.
+    void hashInto(Hasher& h) const {
+        h.feed(count_);
+        h.feed(deadPending_);
+
+        const uint32_t n = count_;
+        for (uint32_t i = 0; i < n; ++i) h.feed(denseId_[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(denseDead_[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(posX[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(posY[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(static_cast<uint8_t>(archetype[i]));
+        for (uint32_t i = 0; i < n; ++i) h.feed(flags[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(maxHp[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(damageTaken[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(armor[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(attackDamage[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(approachSpeed[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(attackCooldown[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(windupLeft[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(patternIndex[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(patternCooldown[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(ccGauge[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(ccGaugeMax[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(ccTriggerCount[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(typeId[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(spawnTick[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(rngState[i]);
+
+        // **자유 슬롯 목록은 상태다.** 다음 스폰이 어떤 EntityId를 받는지를
+        // 결정하므로, 두 런의 자유 목록이 어긋나면 다음 스폰부터 갈린다.
+        //
+        // 슬롯 번호와 세대를 따로 넣지 않고 `EntityId::make(slot, gen)`로 묶는다.
+        // 워드가 절반이고, 의미도 정확히 **"이 슬롯에서 다음에 나올 ID"** 다.
+        //
+        // slotToDense_는 [파생]이라 넣지 않는다 — denseId_와 count_에서 복원된다.
+        h.feed(freeCount_);
+        for (uint32_t i = 0; i < freeCount_; ++i) {
+            const uint32_t slot = freeSlots_[i];
+            h.feed(EntityId::make(slot, slotGen_[slot]));
+        }
     }
 
 private:

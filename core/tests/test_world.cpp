@@ -147,7 +147,9 @@ int main() {
     dctest::section("잠식 게이지");
     {
         HeroState h;
-        h.corruptionMax = Fixed(1250);
+        h.stats.init(nullptr, nullptr);
+        auto setMax = [&h](int32_t v) { h.stats.setBase(Stat::CorruptionMax, Fixed(v)); };
+        setMax(1250);
         h.corruption    = Fixed(0);
         CHECK(!h.dead());
         CHECK_EQ(h.corruptionLeft().raw, Fixed(1250).raw);
@@ -168,12 +170,12 @@ int main() {
         // **최대치가 내려가도 누적값은 손실되지 않는다** — 체력 모델이었다면
         // damageTaken을 다시 계산해야 했을 자리다 (§9 돌발 이벤트 A).
         h.corruption    = Fixed(600);
-        h.corruptionMax = Fixed(1250);
+        setMax(1250);
         CHECK(!h.dead());
-        h.corruptionMax = Fixed(2000);          // 최대치 증가
+        setMax(2000);          // 최대치 증가
         CHECK_EQ(h.corruption.raw, Fixed(600).raw);     // 누적값 그대로
         CHECK_EQ(h.corruptionLeft().raw, Fixed(1400).raw);
-        h.corruptionMax = Fixed(500);           // 누적값 아래로 감소 → 즉사
+        setMax(500);           // 누적값 아래로 감소 → 즉사
         CHECK(h.dead());
         CHECK_EQ(h.corruption.raw, Fixed(600).raw);     // 여전히 그대로
     }

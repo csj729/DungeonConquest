@@ -51,50 +51,12 @@
 #include <cstdint>
 
 #include "checksum.h"
+#include "condition.h"
 #include "fixed.h"
 #include "small_vec.h"
+#include "stat_id.h"
 
 namespace dc {
-
-// 모디파이어 대상 스탯. **뒤에만 덧붙인다** — 값이 바뀌면 리플레이가 깨진다.
-enum class Stat : uint8_t {
-    AttackPower   = 0,
-    AttackSpeed   = 1,   // 초당 공격 횟수. 간격(틱)은 여기서 파생된다
-    Armor         = 2,
-    Range         = 3,
-    CorruptionMax = 4,   // 옛 MaxHealth (§2에서 잠식 게이지로 통합)
-    CritChance    = 5,
-    CritMult      = 6,
-    ProcRate      = 7,   // 통합 proc 발동률 (§3)
-    MoveSpeed     = 8,
-    Count         = 9,
-};
-
-constexpr uint32_t STAT_COUNT = static_cast<uint32_t>(Stat::Count);
-constexpr uint32_t statIndex(Stat s) { return static_cast<uint32_t>(s); }
-
-inline const char* statName(Stat s) {
-    switch (s) {
-        case Stat::AttackPower:   return "attack_power";
-        case Stat::AttackSpeed:   return "attack_speed";
-        case Stat::Armor:         return "armor";
-        case Stat::Range:         return "range";
-        case Stat::CorruptionMax: return "corruption_max";
-        case Stat::CritChance:    return "crit_chance";
-        case Stat::CritMult:      return "crit_mult";
-        case Stat::ProcRate:      return "proc_rate";
-        case Stat::MoveSpeed:     return "move_speed";
-        case Stat::Count:         break;
-    }
-    return "?";
-}
-
-// 하한. **밸런스 다이얼이 아니라 불변식이다** — 나눗셈 분모가 0이 되거나 값이
-// 음수로 뒤집히는 것을 막는다. `data/stats.json`에서 온다.
-struct StatBounds {
-    Fixed minValue{};
-    Fixed minPctAddSum = Fixed::fromPermille(-1000);
-};
 
 // sourceId가 붙은 모디파이어. sourceId는 World의 전역 단조 증가 카운터가 발급한다.
 struct SourcedMod {
@@ -108,13 +70,31 @@ constexpr bool operator<(const SourcedMod& a, const SourcedMod& b) {
     return a.sourceId < b.sourceId;
 }
 
+// 조건부 모디파이어. 무조건 모디파이어와 달리 **개별로 저장해야 한다** —
+// 조건이 뒤집힐 때마다 켜고 꺼야 하므로 누적값으로 접어둘 수 없다.
+//
+// `active`는 [상태]다. 히스테리시스가 이전 상태를 읽으므로 저장이 필수이고,
+// 조건을 평가할 때 쓴 컨텍스트는 저장하지 않으므로 이 플래그가 유일한 기록이다.
+struct ConditionalMod {
+    uint32_t  sourceId = 0;
+    Fixed     value{};
+    Condition cond{};
+    ModOp     op     = ModOp::Flat;
+    uint8_t   active = 0;
+};
+
+constexpr bool operator<(const ConditionalMod& a, const ConditionalMod& b) {
+    return a.sourceId < b.sourceId;
+}
+
 struct StatEntry {
     // [상태]
     Fixed base{};
-    Fixed accumFlat{};      // Flat 누적합 — 추가/제거가 O(1) 가감
-    Fixed accumPctAdd{};    // PercentAdd 누적합 — 클램프 전 원값을 저장한다
-    SmallVec<SourcedMod, 8> mults{};
-    SmallVec<SourcedMod, 4> overrides{};
+    Fixed accumFlat{};      // 무조건 Flat 누적합 — 추가/제거가 O(1) 가감
+    Fixed accumPctAdd{};    // 무조건 PercentAdd 누적합 — 클램프 전 원값을 저장한다
+    SmallVec<SourcedMod, 8> mults{};        // 무조건 PercentMult, sourceId 오름차순
+    SmallVec<SourcedMod, 4> overrides{};    // 무조건 Override, sourceId 오름차순
+    SmallVec<ConditionalMod, 8> conditionals{};   // 조건부 전부, sourceId 오름차순
 
     // [파생] — 체크섬 제외
     mutable Fixed cached{};
@@ -132,6 +112,8 @@ public:
             bounds_[i]       = bounds != nullptr ? bounds[i] : StatBounds{};
             entries_[i].dirty = true;
         }
+        for (uint32_t k = 0; k < CONDITION_KIND_COUNT; ++k) statsUsingKind_[k] = 0;
+        nextExpiryTick_ = NO_EXPIRY;
     }
 
     void  setBase(Stat s, Fixed v) { entries_[statIndex(s)].base = v; markDirty(s); }
@@ -185,6 +167,122 @@ public:
         return true;
     }
 
+    // ── 조건부 모디파이어 ─────────────────────────────────────────
+    //
+    // 실패 사유는 셋이다. 전부 **조용히 넘어가지 않고 false**를 돌려준다:
+    //   - 순환 의존 (조건이 읽는 스탯에 그 조건을 걸었다)
+    //   - 히스테리시스 역전 (끄는 선이 켜는 선보다 위)
+    //   - sourceId 중복 · 0 · 용량 초과
+    bool addConditional(Stat s, uint32_t sourceId, ModOp op, Fixed v,
+                        const Condition& cond, const ConditionContext& ctx) {
+        if (sourceId == 0) return false;
+        if (op == ModOp::Count) return false;
+
+        // **순환 의존 차단.** §9가 금지한 구조를 등록 시점에 거부한다.
+        if (!conditionAllowedOn(cond.kind, s)) return false;
+
+        // 히스테리시스는 "켜는 선 >= 끄는 선"이어야 의미가 있다. 뒤집히면
+        // 경계에서 매 틱 토글하는 구조가 되어 애초 목적과 정반대가 된다.
+        if (cond.kind == ConditionKind::CorruptionThreshold && cond.paramB > cond.paramA) {
+            return false;
+        }
+
+        StatEntry& e = entries_[statIndex(s)];
+        if (findSource(e.conditionals, sourceId) >= 0) return false;
+
+        ConditionalMod m;
+        m.sourceId = sourceId;
+        m.value    = v;
+        m.cond     = cond;
+        m.op       = op;
+        m.active   = evaluateCondition(cond, ctx, false) ? 1u : 0u;
+        if (!e.conditionals.insertSorted(m)) return false;
+
+        statsUsingKind_[static_cast<uint32_t>(cond.kind)] |= statBit(s);
+        if (cond.kind == ConditionKind::TimeWindow && cond.paramA < nextExpiryTick_) {
+            nextExpiryTick_ = cond.paramA;
+        }
+        markDirty(s);
+        return true;
+    }
+
+    bool removeConditional(Stat s, uint32_t sourceId) {
+        StatEntry& e = entries_[statIndex(s)];
+        const int32_t at = findSource(e.conditionals, sourceId);
+        if (at < 0) return false;
+        e.conditionals.eraseAt(static_cast<uint32_t>(at));
+        rebuildKindIndex();
+        markDirty(s);
+        return true;
+    }
+
+    // 조건을 다시 평가한다. **kindMask에 해당하는 조건만** 본다 —
+    // "매 틱 전수 평가 금지"(§9)의 실체가 아래 조기 반환이다.
+    //
+    // 바뀐 스탯의 비트마스크를 돌려준다. active가 실제로 뒤집힌 것만 dirty로
+    // 표시하므로, 조건이 그대로면 재계산조차 일어나지 않는다.
+    uint16_t refreshConditions(const ConditionContext& ctx, uint16_t kindMask) {
+        uint16_t affected = 0;
+        for (uint32_t k = 0; k < CONDITION_KIND_COUNT; ++k) {
+            if ((kindMask & conditionKindBit(static_cast<ConditionKind>(k))) != 0) {
+                affected |= statsUsingKind_[k];
+            }
+        }
+        if (affected == 0) return 0;   // ← 조건부가 없으면 여기서 O(1)로 끝난다
+
+        uint16_t changed = 0;
+        for (uint32_t i = 0; i < STAT_COUNT; ++i) {
+            if ((affected & static_cast<uint16_t>(1u << i)) == 0) continue;
+            StatEntry& e = entries_[i];
+            for (uint32_t c = 0; c < e.conditionals.size(); ++c) {
+                ConditionalMod& m = e.conditionals[c];
+                if ((kindMask & conditionKindBit(m.cond.kind)) == 0) continue;
+                const bool was = m.active != 0;
+                const bool now = evaluateCondition(m.cond, ctx, was);
+                if (now != was) {
+                    m.active = now ? 1u : 0u;
+                    changed |= static_cast<uint16_t>(1u << i);
+                }
+            }
+        }
+        if ((kindMask & conditionKindBit(ConditionKind::TimeWindow)) != 0) {
+            recomputeNextExpiry();
+        }
+        for (uint32_t i = 0; i < STAT_COUNT; ++i) {
+            if ((changed & static_cast<uint16_t>(1u << i)) != 0) entries_[i].dirty = true;
+        }
+        return changed;
+    }
+
+    // 다음으로 만료가 걸리는 틱. **최소 힙을 쓰지 않는다.**
+    //
+    // §9는 "만료 틱을 키로 하는 최소 힙"이라고 적었지만, 원소가 최대
+    // STAT_COUNT × 8 = 72개다. 이 규모에서 힙은 삽입·삭제마다 불변식을 유지하는
+    // 비용과 타이 브레이커 구현 실수 위험만 늘린다. 스칼라 최소값 하나면
+    //   - 확인: O(1) (매 틱 하는 것이 이것뿐이다)
+    //   - 삽입: O(1) (min 갱신)
+    //   - 만료 시 재계산: O(72) — 드물게 일어난다
+    // 로 충분하고 더 단순하다. **엔티티마다 StatBlock이 생겨 원소가 수천 개가
+    // 되면 그때 힙으로 바꾼다.**
+    //
+    // 갱신 규칙상 이 값이 실제 만료보다 **늦어지는 일은 없다**(삽입 시 min을
+    // 내리고, 갱신 시 정확히 다시 구한다). 이르기만 하면 재평가를 한 번 더 할 뿐이다.
+    int32_t nextExpiryTick() const { return nextExpiryTick_; }
+    static constexpr int32_t NO_EXPIRY = 0x7FFFFFFF;
+
+    uint16_t statsUsingKind(ConditionKind k) const {
+        return statsUsingKind_[static_cast<uint32_t>(k)];
+    }
+
+    uint32_t conditionalCount(Stat s) const {
+        return entries_[statIndex(s)].conditionals.size();
+    }
+    bool conditionalActive(Stat s, uint32_t sourceId) const {
+        const StatEntry& e = entries_[statIndex(s)];
+        const int32_t at = findSource(e.conditionals, sourceId);
+        return at >= 0 && e.conditionals[static_cast<uint32_t>(at)].active != 0;
+    }
+
     // ── 읽기 — 지연 평가 ──────────────────────────────────────────
     Fixed value(Stat s) const {
         const StatEntry& e = entries_[statIndex(s)];
@@ -201,19 +299,64 @@ public:
         const StatEntry&  e = entries_[i];
         const StatBounds& b = bounds_[i];
 
-        Fixed v = e.base + e.accumFlat;
+        // 1. Flat — 무조건 누적 + 활성 조건부
+        Fixed flat = e.accumFlat;
+        for (uint32_t c = 0; c < e.conditionals.size(); ++c) {
+            const ConditionalMod& m = e.conditionals[c];
+            if (m.active != 0 && m.op == ModOp::Flat) flat += m.value;
+        }
+        Fixed v = e.base + flat;
 
+        // 2. PercentAdd — 누적 후 1회 적용.
         // **클램프는 저장이 아니라 읽을 때 한다.** 저장 시 클램프하면
         // add/remove가 정확한 역연산이 아니게 되고, 조건 토글에서 값이 샌다.
-        const Fixed pct = fixedMax(e.accumPctAdd, b.minPctAddSum);
+        Fixed pctSum = e.accumPctAdd;
+        for (uint32_t c = 0; c < e.conditionals.size(); ++c) {
+            const ConditionalMod& m = e.conditionals[c];
+            if (m.active != 0 && m.op == ModOp::PercentAdd) pctSum += m.value;
+        }
+        const Fixed pct = fixedMax(pctSum, b.minPctAddSum);
         v = v * (Fixed::one() + pct);
 
-        for (uint32_t k = 0; k < e.mults.size(); ++k) {
-            v = v * (Fixed::one() + e.mults[k].value);
+        // 3. PercentMult — sourceId 오름차순. 무조건 목록과 활성 조건부를
+        //    **병합하며** 곱한다. 두 목록 다 정렬돼 있고 sourceId가 유일하므로
+        //    두 포인터 병합으로 완전 순서가 나온다.
+        //    조건 하나가 켜졌다 꺼졌다 해도 나머지의 곱하는 순서는 변하지 않는다.
+        {
+            uint32_t a = 0, c = 0;
+            for (;;) {
+                while (c < e.conditionals.size()
+                       && !(e.conditionals[c].active != 0
+                            && e.conditionals[c].op == ModOp::PercentMult)) {
+                    ++c;
+                }
+                const bool haveA = a < e.mults.size();
+                const bool haveC = c < e.conditionals.size();
+                if (!haveA && !haveC) break;
+                if (haveA && (!haveC || e.mults[a].sourceId < e.conditionals[c].sourceId)) {
+                    v = v * (Fixed::one() + e.mults[a].value);
+                    ++a;
+                } else {
+                    v = v * (Fixed::one() + e.conditionals[c].value);
+                    ++c;
+                }
+            }
         }
 
-        // 오름차순이므로 front()가 sourceId 최소값이다.
-        if (!e.overrides.empty()) v = e.overrides[0].value;
+        // 4. Override — sourceId 최소값 하나만. 양쪽 다 오름차순이므로
+        //    각 목록의 첫 후보만 비교하면 된다.
+        {
+            bool     have = !e.overrides.empty();
+            uint32_t src  = have ? e.overrides[0].sourceId : 0u;
+            Fixed    val  = have ? e.overrides[0].value : Fixed{};
+            for (uint32_t c = 0; c < e.conditionals.size(); ++c) {
+                const ConditionalMod& m = e.conditionals[c];
+                if (m.active == 0 || m.op != ModOp::Override) continue;
+                if (!have || m.sourceId < src) { have = true; src = m.sourceId; val = m.value; }
+                break;   // 오름차순이므로 첫 활성 Override가 조건부 중 최소값이다
+            }
+            if (have) v = val;
+        }
 
         // **Override도 하한을 넘지 못한다.** 불변식은 무조건 성립해야 하므로.
         // 속박이 이동속도를 0으로 만들어야 하면 move_speed의 하한을 0으로 둔다.
@@ -229,7 +372,7 @@ public:
 
     uint32_t modCount(Stat s) const {
         const StatEntry& e = entries_[statIndex(s)];
-        return e.mults.size() + e.overrides.size();
+        return e.mults.size() + e.overrides.size() + e.conditionals.size();
     }
 
     // [파생]인 cached/dirty는 넣지 않는다 — 파일 상단 주석 참조.
@@ -249,6 +392,20 @@ public:
                 h.feed(e.overrides[k].sourceId);
                 h.feed(e.overrides[k].value);
             }
+            // 조건부. **active는 [상태]다** — 히스테리시스가 이전 상태를 읽고,
+            // 평가에 쓴 컨텍스트는 저장하지 않으므로 이 플래그가 유일한 기록이다.
+            // 반면 statsUsingKind_ / nextExpiryTick_은 여기서 복원되는 [파생]이라 뺀다.
+            h.feed(e.conditionals.size());
+            for (uint32_t k = 0; k < e.conditionals.size(); ++k) {
+                const ConditionalMod& m = e.conditionals[k];
+                h.feed(m.sourceId);
+                h.feed(m.value);
+                h.feed(static_cast<uint8_t>(m.op));
+                h.feed(static_cast<uint8_t>(m.cond.kind));
+                h.feed(m.cond.paramA);
+                h.feed(m.cond.paramB);
+                h.feed(m.active);
+            }
             h.feed(bounds_[i].minValue);
             h.feed(bounds_[i].minPctAddSum);
         }
@@ -257,16 +414,50 @@ public:
 private:
     void markDirty(Stat s) { entries_[statIndex(s)].dirty = true; }
 
-    template <uint32_t N>
-    static int32_t findSource(const SmallVec<SourcedMod, N>& v, uint32_t sourceId) {
+    // SourcedMod와 ConditionalMod 양쪽에 쓴다 — 둘 다 sourceId 필드를 갖는다.
+    template <typename M, uint32_t N>
+    static int32_t findSource(const SmallVec<M, N>& v, uint32_t sourceId) {
         for (uint32_t i = 0; i < v.size(); ++i) {
             if (v[i].sourceId == sourceId) return static_cast<int32_t>(i);
         }
         return -1;
     }
 
+    // 조건 종류 → 그 조건을 가진 스탯 비트마스크. 무효화를 O(1)로 만든다.
+    void rebuildKindIndex() {
+        for (uint32_t k = 0; k < CONDITION_KIND_COUNT; ++k) statsUsingKind_[k] = 0;
+        for (uint32_t i = 0; i < STAT_COUNT; ++i) {
+            const StatEntry& e = entries_[i];
+            for (uint32_t c = 0; c < e.conditionals.size(); ++c) {
+                statsUsingKind_[static_cast<uint32_t>(e.conditionals[c].cond.kind)]
+                    |= static_cast<uint16_t>(1u << i);
+            }
+        }
+        recomputeNextExpiry();
+    }
+
+    void recomputeNextExpiry() {
+        int32_t next = NO_EXPIRY;
+        for (uint32_t i = 0; i < STAT_COUNT; ++i) {
+            const StatEntry& e = entries_[i];
+            for (uint32_t c = 0; c < e.conditionals.size(); ++c) {
+                const ConditionalMod& m = e.conditionals[c];
+                // 이미 만료된 것은 다시 켜질 일이 없으므로 후보에서 뺀다.
+                if (m.cond.kind == ConditionKind::TimeWindow && m.active != 0
+                    && m.cond.paramA < next) {
+                    next = m.cond.paramA;
+                }
+            }
+        }
+        nextExpiryTick_ = next;
+    }
+
     StatEntry  entries_[STAT_COUNT]{};
     StatBounds bounds_[STAT_COUNT]{};
+
+    // [파생] — conditionals에서 복원된다. 체크섬에 넣지 않는다.
+    uint16_t statsUsingKind_[CONDITION_KIND_COUNT]{};
+    int32_t  nextExpiryTick_ = NO_EXPIRY;
 };
 
 }  // namespace dc

@@ -20,6 +20,7 @@ int main(int argc, char** argv) {
 
     World w;
     w.init(seed);
+    dev::setup(w);
 
     printf("seed=%llu ticks=%d\n", static_cast<unsigned long long>(seed), ticks);
     printf("%8s %18s %18s %18s %18s %18s %18s\n",

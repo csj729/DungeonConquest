@@ -107,7 +107,7 @@ int main() {
             {"hero.posX",        [](World& w){ w.hero.posX = Fixed(1); }},
             {"hero.posY",        [](World& w){ w.hero.posY = Fixed(1); }},
             {"hero.corruption",  [](World& w){ w.hero.corruption = w.hero.corruption + Fixed::fromRaw(1); }},
-            {"hero.corruptMax",  [](World& w){ w.hero.corruptionMax = Fixed(999); }},
+            {"hero.corruptMax",  [](World& w){ w.hero.stats.setBase(Stat::CorruptionMax, Fixed(999)); }},
             {"hero.level",       [](World& w){ w.hero.level += 1; }},
             {"hero.exp",         [](World& w){ w.hero.exp += 1; }},
             {"hero.atkCooldown", [](World& w){ w.hero.attackCooldown += 1; }},

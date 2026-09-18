@@ -11,7 +11,7 @@ import gamedata as gd
 
 CORE_INC = Path(__file__).resolve().parent.parent / "core" / "include" / "dc"
 CONFIG_H = CORE_INC / "config.h"
-STAT_BLOCK_H = CORE_INC / "stat_block.h"
+STAT_ID_H = CORE_INC / "stat_id.h"
 
 
 def read_constants():
@@ -59,7 +59,7 @@ def report():
 
 
 def _check_stats():
-    src = STAT_BLOCK_H.read_text(encoding="utf-8")
+    src = STAT_ID_H.read_text(encoding="utf-8")
     # statName()의 case 순서 = enum 순서
     cpp = re.findall(r'case Stat::\w+:\s*return "([a-z_]+)";', src)
     data = list(gd.load("stats")["stats"].keys())

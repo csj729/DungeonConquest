@@ -54,6 +54,7 @@ dc_add_test(test_entity_store tests/test_entity_store.cpp)
 dc_add_test(test_world      tests/test_world.cpp)
 dc_add_test(test_checksum   tests/test_checksum.cpp)
 dc_add_test(test_stat_block tests/test_stat_block.cpp)
+dc_add_test(test_condition  tests/test_condition.cpp)
 
 # 헤드리스 체크섬 러너. CI가 Debug/Release 출력을 비교하는 대상이며,
 # 서버 리플레이 검증(headless run → checksum) 진입점의 원형이다.

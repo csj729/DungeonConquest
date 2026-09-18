@@ -33,8 +33,11 @@ struct HeroState {
     // 잠식 게이지 — 체력의 자리를 대신한다 (§2·§9).
     // **누적값을 저장한다.** 체력처럼 `max - taken`으로 뒤집지 않으므로
     // 최대치가 이벤트로 오르내려도 손실이 없다.
+    //
+    // **최대치는 여기 없다.** `Stat::CorruptionMax`가 유일한 원천이다 —
+    // 돌발 이벤트(§6 A)가 최대치를 모디파이어로 건드리므로, 별도 필드를 두면
+    // 두 값이 갈라진다. 읽을 때는 corruptionMax()를 쓴다.
     Fixed    corruption{};
-    Fixed    corruptionMax{};
 
     int32_t  level        = 1;
     // 경험치는 Fixed가 아니다 (§4). 고정소수점 범위 ±524,288을 훨씬 넘고,
@@ -57,19 +60,32 @@ struct HeroState {
     // "지금 미리 만들 필요는 없다"고 한 것과 같은 판단이다.
     StatBlock stats{};
 
+    // 최대치는 모디파이어를 거친 스탯 값이다. 하한(stats.json)이 0보다 크므로
+    // 아래 나눗셈의 분모가 0이 되지 않는다.
+    Fixed corruptionMax() const { return stats.value(Stat::CorruptionMax); }
+
     // 게이지 잔량. 항상 0 이상으로 클램프한다.
     Fixed corruptionLeft() const {
-        const Fixed d = corruptionMax - corruption;
+        const Fixed d = corruptionMax() - corruption;
         return d.raw > 0 ? d : Fixed{};
     }
     // 최대치가 내려가 누적값을 넘어도 게임오버다 — 설계된 결과다 (§9).
-    bool dead() const { return corruptionMax.raw <= corruption.raw; }
+    bool dead() const { return corruptionMax().raw <= corruption.raw; }
+
+    // 잠식 비율(permille). CorruptionThreshold 조건이 읽는 값이다.
+    // **분모가 0이면 이미 죽은 것으로 본다** — 0 나눗셈은 UB다.
+    int32_t corruptionPermille() const {
+        const int32_t maxRaw = corruptionMax().raw;
+        if (maxRaw <= 0) return 1000;
+        return static_cast<int32_t>(
+            (static_cast<int64_t>(corruption.raw) * 1000) / maxRaw);
+    }
 
     void hashInto(Hasher& h) const {
         h.feed(posX);
         h.feed(posY);
         h.feed(corruption);      // 저장값을 쓴다. corruptionLeft()는 [파생]이다
-        h.feed(corruptionMax);
+                                 // 최대치는 stats(CorruptionMax)가 들고 있다
         h.feed(level);
         h.feed(exp);
         h.feed(attackCooldown);
@@ -150,7 +166,8 @@ public:
     // 아직 시스템이 없으므로 지금은 틱 전진과 일괄 압축만 수행한다.
     void tick() {
         ++tick_;
-        // TODO(§14-3~) Spawn::run / Targeting::run / Combat::run 이 여기 들어온다.
+        tickTimeConditions();   // §10 틱 루프의 drainConditionQueue 자리
+        // TODO(§14-6~) Spawn::run / Targeting::run / Combat::run 이 여기 들어온다.
         applyDeaths();
     }
 
@@ -202,6 +219,51 @@ public:
     }
 
     uint64_t checksum() const { return checksums().total; }
+
+    // ── 조건부 모디파이어 (§9) ────────────────────────────────────
+    //
+    // **매 틱 전수 평가를 하지 않는다.** 값이 바뀐 쪽만 알려주고, StatBlock이
+    // 역인덱스로 "그 조건을 가진 스탯"만 다시 본다. 조건부가 없으면 O(1)이다.
+
+    ConditionContext conditionContext() const {
+        ConditionContext ctx;
+        ctx.tick               = tick_;
+        ctx.corruptionPermille = hero.corruptionPermille();
+        const int32_t d = entities.denseOf(hero.target);
+        ctx.targetArchetype = (d >= 0)
+            ? static_cast<uint8_t>(entities.archetype[static_cast<uint32_t>(d)])
+            : uint8_t{0xFF};
+        return ctx;
+    }
+
+    // 잠식 게이지가 움직였을 때. 피격·물량 충전·흡혈 전부 여기로 온다.
+    uint16_t notifyCorruptionChanged() {
+        return hero.stats.refreshConditions(
+            conditionContext(), conditionKindBit(ConditionKind::CorruptionThreshold));
+    }
+
+    // 타겟이 바뀌었을 때 (§9 "대상 의존 — 타겟 변경 시").
+    uint16_t notifyTargetChanged() {
+        return hero.stats.refreshConditions(
+            conditionContext(), conditionKindBit(ConditionKind::TargetArchetype));
+    }
+
+    // 시간 조건. **만료 틱이 되기 전에는 아무것도 하지 않는다** —
+    // 매 틱 하는 일은 int 비교 하나뿐이다.
+    uint16_t tickTimeConditions() {
+        if (tick_ < hero.stats.nextExpiryTick()) return 0;
+        return hero.stats.refreshConditions(
+            conditionContext(), conditionKindBit(ConditionKind::TimeWindow));
+    }
+
+    // 스냅샷 로드나 데이터 재로드 직후처럼 무엇이 바뀌었는지 모를 때.
+    uint16_t refreshAllConditions() {
+        uint16_t mask = 0;
+        for (uint32_t k = 0; k < CONDITION_KIND_COUNT; ++k) {
+            mask |= conditionKindBit(static_cast<ConditionKind>(k));
+        }
+        return hero.stats.refreshConditions(conditionContext(), mask);
+    }
 
     // 모디파이어 sourceId 발급 (§9 "전역 단조 증가 카운터").
     //

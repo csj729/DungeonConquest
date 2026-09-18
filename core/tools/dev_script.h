@@ -13,6 +13,21 @@
 
 namespace dc::dev {
 
+// 런 시작 설정. 데이터 로더가 붙으면 hero.json / stats.json이 이 자리를 채운다.
+inline void setup(World& w) {
+    w.hero.stats.setBase(Stat::CorruptionMax, Fixed(1250));
+    w.hero.stats.setBase(Stat::AttackPower,   Fixed(10));
+    w.hero.stats.setBase(Stat::AttackSpeed,   Fixed(1));
+    for (uint32_t i = 0; i < STAT_COUNT; ++i) {
+        w.hero.stats.setBounds(static_cast<Stat>(i),
+                               StatBounds{Fixed{}, Fixed::fromPermille(-900)});
+    }
+    // 잠식 최대치는 하한이 있어야 비율 계산의 분모가 0이 되지 않는다.
+    w.hero.stats.setBounds(Stat::CorruptionMax,
+                           StatBounds{Fixed(1), Fixed::fromPermille(-900)});
+    w.refreshAllConditions();
+}
+
 // 한 틱. 시스템이 들어올 자리마다 상태를 건드린다.
 inline void scriptTick(World& w) {
     // Spawn 자리
@@ -52,16 +67,52 @@ inline void scriptTick(World& w) {
     if (w.rngCards.chancePermille(40)) {
         const uint32_t src = w.allocSourceId();
         const Stat s = static_cast<Stat>(w.rngCards.range(STAT_COUNT));
-        switch (w.rngCards.range(3)) {
-            case 0: w.hero.stats.addFlat(s, Fixed::fromRaw(static_cast<int32_t>(w.rngCards.range(4096)))); break;
-            case 1: w.hero.stats.addPctAdd(s, Fixed::fromPermille(static_cast<int32_t>(w.rngCards.range(200)))); break;
-            default: (void)w.hero.stats.addMult(s, src, Fixed::fromPermille(static_cast<int32_t>(w.rngCards.range(200)))); break;
+        const Fixed pm = Fixed::fromPermille(static_cast<int32_t>(w.rngCards.range(200)));
+        switch (w.rngCards.range(5)) {
+            case 0:
+                w.hero.stats.addFlat(s, Fixed::fromRaw(static_cast<int32_t>(w.rngCards.range(4096))));
+                break;
+            case 1:
+                w.hero.stats.addPctAdd(s, pm);
+                break;
+            case 2:
+                (void)w.hero.stats.addMult(s, src, pm);
+                break;
+            case 3: {
+                // 조건부 — 잠식 임계 (히스테리시스)
+                Condition c;
+                c.kind   = ConditionKind::CorruptionThreshold;
+                c.paramA = 500 + static_cast<int32_t>(w.rngCards.range(300));
+                c.paramB = c.paramA - static_cast<int32_t>(w.rngCards.range(100));
+                (void)w.hero.stats.addConditional(s, src, ModOp::PercentAdd, pm, c,
+                                                  w.conditionContext());
+                break;
+            }
+            default: {
+                // 조건부 — 시간 제한 버프
+                Condition c;
+                c.kind   = ConditionKind::TimeWindow;
+                c.paramA = w.tickCount() + 20 + static_cast<int32_t>(w.rngCards.range(200));
+                (void)w.hero.stats.addConditional(s, src, ModOp::Flat, pm, c,
+                                                  w.conditionContext());
+                break;
+            }
         }
     }
 
-    // 잠식 게이지 자리 — 물량 충전
+    // 오래된 모디파이어를 가끔 떼어낸다 — 착탈 경로도 체크섬이 덮도록
+    if (w.rngItems.chancePermille(20)) {
+        const Stat s = static_cast<Stat>(w.rngItems.range(STAT_COUNT));
+        const uint32_t src = 1 + w.rngItems.range(w.peekSourceId());
+        if (!w.hero.stats.removeConditional(s, src)) (void)w.hero.stats.removeMult(s, src);
+    }
+
+    // 잠식 게이지 자리 — 물량 충전. 값이 움직였으니 임계 조건을 다시 본다.
     w.hero.corruption = w.hero.corruption
                       + Fixed::fromRaw(static_cast<int32_t>(w.entities.count()));
+    if (w.hero.corruption.raw > w.hero.corruptionMax().raw) w.hero.corruption = Fixed{};
+    w.notifyCorruptionChanged();
+    w.notifyTargetChanged();
 
     // 진행 자리
     if (w.run.clearPoints >= 60) {
@@ -73,6 +124,7 @@ inline void scriptTick(World& w) {
 }
 
 inline void runScript(World& w, int32_t ticks) {
+    if (w.tickCount() == 0) setup(w);
     for (int32_t t = 0; t < ticks; ++t) scriptTick(w);
 }
 

@@ -20,6 +20,7 @@
 #include "config.h"
 #include "entity_store.h"
 #include "fixed.h"
+#include "inventory.h"
 #include "prd.h"
 #include "rng.h"
 #include "stat_block.h"
@@ -150,6 +151,10 @@ public:
         run   = RunState{};
         spawn = SpawnState{};
         hero.stats.init(nullptr, nullptr);   // 데이터 로더가 붙으면 여기로 값이 온다
+        // 인벤토리는 RecipeTable이 있어야 init할 수 있으므로 여기서는 완전 초기화만
+        // 한다. 호출자가 데이터를 로드한 뒤 inventory.init(table)을 부른다.
+        // **이걸 빠뜨리면 이전 런의 아이템이 다음 런에 샌다** (test_world가 잡는다).
+        inventory = Inventory{};
         nextSourceId_ = 1;                   // 0은 "없음" 예약
 
         rngSpawn  = Rng::derive(masterSeed, RngStream::Spawn);
@@ -193,6 +198,7 @@ public:
             Hasher h;
             hero.hashInto(h);
             h.feed(nextSourceId_);
+            inventory.hashInto(h);   // §10이 "인벤토리도 체크섬 입력"이라고 명시
             c.hero = h.value();
         }
         {
@@ -283,6 +289,9 @@ public:
     // ---- [상태] 여기부터 전부 체크섬 입력 ----
     EntityStore entities{};
     HeroState   hero{};
+    // 인벤토리 (§5). RecipeTable은 정적 데이터라 World 밖에 살고, 조회가 필요한
+    // 호출마다 인자로 받는다 — 포인터 멤버를 두면 memcpy 스냅샷이 깨진다.
+    Inventory   inventory{};
     RunState    run{};
     SpawnState  spawn{};
 

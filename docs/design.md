@@ -1546,6 +1546,48 @@ RecipeData[]  ── 데이터 저작 원본, 로드 시 1회 구축
   이미 저렴하고, 아이템 ID가 흩어져 있으면 워드 단위 스캔 오버헤드가 오히려 손해다
   (실측: `tools/recipe_structure_bench.cpp`, 근거는 `portfolio.md` §4)
 
+#### 구현 확정 사항
+
+**`RecipeTable`은 시뮬 상태가 아니다.** 조합식은 런마다 변하지 않는 정적 데이터라
+`World` 밖에 살고, 역인덱스도 거기 있다. 안에 넣으면 41KB짜리 표가 매 스냅샷에
+복사되고 체크섬이 런마다 같은 값을 반복해서 문다.
+
+대신 `Inventory`가 `dataHash()`를 들고 다닌다 — **서버와 클라가 다른 `items.json`을
+로드했으면 틱 0에서 체크섬이 갈린다.** `StatBounds`를 해시에 넣은 것과 같은 이유다.
+
+조회가 필요한 함수는 테이블을 **인자로** 받는다. `Inventory`가 `const RecipeTable*`를
+멤버로 들면 `World`가 trivially copyable을 잃고, memcpy 스냅샷을 복원했을 때 매달린
+포인터가 된다.
+
+| | 체크섬 |
+|---|---|
+| `counts_` · `tableHash_` · `itemTypeCount_` | **[상태]** |
+| `craftableBits_` | **[파생]** — counts와 테이블에서 복원된다 |
+| 역인덱스 (`RecipeTable` 안) | World 밖 |
+
+`counts_`는 **용량 전체(1024칸)가 아니라 실제 아이템 종류 수만큼만** 접는다.
+전체를 매번 접으면 체크섬 비용이 엔티티 전체와 맞먹는다.
+
+#### 갱신 전략이 모디파이어와 반대다 — 의도적이다
+
+| | 갱신 시점 | 이유 |
+|---|---|---|
+| 조건부 모디파이어 (`StatBlock`) | **지연(lazy)** — dirty만 세우고 읽을 때 재계산 | 쓰기가 잦고 읽기는 그때그때 |
+| 조합 가능 목록 (`Inventory`) | **즉시(eager)** — 인벤이 바뀌는 순간 재평가 | UI가 매 프레임 참조한다 |
+
+같은 코드베이스에 두 전략이 공존하므로 이름을 갈랐다. `StatBlock`은 `dirty()`를
+노출하고, `Inventory`는 `craftable()`이 항상 최신값을 준다 —
+**`Inventory`에는 dirty 개념이 아예 없다.**
+
+공통 원칙은 같다: **전수 평가 금지, 영향받는 것만 다시 계산.**
+
+#### 동일 등급 3연성의 두 가지 구현 귀결
+
+1. 판정이 "재료가 있는가"가 아니라 **"몇 개 있는가"**가 된다. 재료가 ≤3개라
+   중복을 세는 데 O(n²)를 써도 9번이라 임시 맵이 필요 없다
+2. 역인덱스에는 **중복을 제거하고 한 번만** 넣는다. 아니면 아이템 하나가 바뀔 때
+   같은 레시피를 세 번 재평가한다
+
 이 구조를 채택한 근거(실측 수치, 반직관적 발견)는 어필 서술까지 포함해
 `portfolio.md`에 정리했다.
 
@@ -2066,7 +2108,9 @@ SnapshotStatus snapshotLoad(World&, const void* src, uint32_t len);
    (역인덱스 O(1) 무효화 · 히스테리시스 · 순환 의존 이중 차단. 위 "조건부 모디파이어" 참조)
 6. **PRD** + 분산 측정 하네스 (`tools/prd_variance.py`의 C++ 이식) — **완료**
    (`core/tools/dc_prd`. C는 데이터에서 q16으로 오고 `tools/verify_prd.py`가 정합 검사)
-7. 인벤토리 + 조합식 평가
+7. 인벤토리 + 조합식 평가 — **완료**
+   (`RecipeTable`은 World 밖 정적 데이터, `Inventory`는 즉시 갱신 증분 캐시.
+   재측정은 `core/tools/dc_recipe_bench`)
 8. Spawn / Targeting / Combat
 9. **Unity 브리지** — C ABI, SoA 버퍼, `NativeArray` 래핑, prev/curr 보간,
    **틱 소비 제어**(배속 1x/2x/4x, 수동·자동 일시정지, §10)

@@ -56,6 +56,7 @@ dc_add_test(test_checksum   tests/test_checksum.cpp)
 dc_add_test(test_stat_block tests/test_stat_block.cpp)
 dc_add_test(test_condition  tests/test_condition.cpp)
 dc_add_test(test_prd        tests/test_prd.cpp)
+dc_add_test(test_inventory  tests/test_inventory.cpp)
 
 # 헤드리스 체크섬 러너. CI가 Debug/Release 출력을 비교하는 대상이며,
 # 서버 리플레이 검증(headless run → checksum) 진입점의 원형이다.
@@ -67,7 +68,12 @@ target_link_libraries(dc_checksum PRIVATE dc_core)
 add_executable(dc_prd tools/dc_prd.cpp)
 target_link_libraries(dc_prd PRIVATE dc_core)
 
+# 조합식 조회 구조 재측정. tools/recipe_structure_bench.cpp를 실제 코어 타입으로.
+add_executable(dc_recipe_bench tools/dc_recipe_bench.cpp)
+target_link_libraries(dc_recipe_bench PRIVATE dc_core)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(dc_checksum PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_prd PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(dc_recipe_bench PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()

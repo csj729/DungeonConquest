@@ -9,9 +9,43 @@
 #ifndef DC_DEV_SCRIPT_H
 #define DC_DEV_SCRIPT_H
 
+#include "../include/dc/item.h"
 #include "../include/dc/world.h"
 
 namespace dc::dev {
+
+// 임시 조합식 테이블. 데이터 로더가 붙으면 data/items.json이 이 자리를 채운다.
+// 흔함 9종 + 조합 결과 12종 = 21종, 조합식 12개 — 수직 슬라이스의 축소판이다.
+inline const RecipeTable& devRecipes() {
+    static RecipeTable table = [] {
+        RecipeData r[12];
+        auto mk = [](ItemId res, ItemId a, ItemId b, ItemId c) {
+            RecipeData d;
+            d.result = res;
+            d.ingredients[0] = a; d.ingredients[1] = b;
+            d.count = 2;
+            if (c != ITEM_NONE) { d.ingredients[2] = c; d.count = 3; }
+            return d;
+        };
+        // 흔함 0~8 → 안흔함 9~14 → 상위 15~20
+        r[0]  = mk(9,  0, 1, ITEM_NONE);
+        r[1]  = mk(10, 0, 2, ITEM_NONE);
+        r[2]  = mk(11, 1, 4, ITEM_NONE);
+        r[3]  = mk(12, 2, 3, ITEM_NONE);
+        r[4]  = mk(13, 3, 5, ITEM_NONE);
+        r[5]  = mk(14, 6, 7, ITEM_NONE);
+        r[6]  = mk(15, 9, 10, ITEM_NONE);
+        r[7]  = mk(16, 11, 12, ITEM_NONE);
+        r[8]  = mk(17, 13, 14, ITEM_NONE);
+        r[9]  = mk(18, 9, 9, 9);          // 동일 등급 3연성
+        r[10] = mk(19, 15, 16, ITEM_NONE);
+        r[11] = mk(20, 17, 18, 8);
+        RecipeTable t;
+        (void)t.build(r, 12, 21);
+        return t;
+    }();
+    return table;
+}
 
 // 런 시작 설정. 데이터 로더가 붙으면 hero.json / stats.json이 이 자리를 채운다.
 inline void setup(World& w) {
@@ -25,6 +59,7 @@ inline void setup(World& w) {
     // 잠식 최대치는 하한이 있어야 비율 계산의 분모가 0이 되지 않는다.
     w.hero.stats.setBounds(Stat::CorruptionMax,
                            StatBounds{Fixed(1), Fixed::fromPermille(-900)});
+    w.inventory.init(devRecipes());
     w.refreshAllConditions();
 }
 
@@ -104,6 +139,18 @@ inline void scriptTick(World& w) {
         const Stat s = static_cast<Stat>(w.rngItems.range(STAT_COUNT));
         const uint32_t src = 1 + w.rngItems.range(w.peekSourceId());
         if (!w.hero.stats.removeConditional(s, src)) (void)w.hero.stats.removeMult(s, src);
+    }
+
+    // 아이템 자리 — 뽑기(흔함만, §5)와 조합. 체크섬이 인벤 경로를 덮도록.
+    {
+        const RecipeTable& rt = devRecipes();
+        if (w.rngItems.chancePermille(300)) {
+            (void)w.inventory.add(rt, static_cast<ItemId>(w.rngItems.range(9)), 1);
+        }
+        // 조합 가능한 것 중 **가장 앞선 인덱스**를 만든다 — 순서를 고정한다.
+        for (uint32_t r = 0; r < rt.recipeCount(); ++r) {
+            if (w.inventory.craftable(r)) { (void)w.inventory.craft(rt, r); break; }
+        }
     }
 
     // 잠식 게이지 자리 — 물량 충전. 값이 움직였으니 임계 조건을 다시 본다.

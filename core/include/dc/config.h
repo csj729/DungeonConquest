@@ -29,6 +29,28 @@ static_assert(MAX_ENTITIES <= (1u << 12), "EntityId의 index 폭을 넘는다");
 // 스폰 방향 수 (spawn.json의 directions와 일치). 4방향 균등 배분에 쓴다.
 constexpr uint32_t SPAWN_DIRECTIONS = 4;
 
+// 아이템·조합식 (§5). 수직 슬라이스는 51종 / 42개다.
+// 인벤 슬롯은 제한하지 않으므로(§5) 여기 있는 건 슬롯 수가 아니라 **아이템 종류 수**다.
+//
+// 1024로 잡은 이유는 portfolio.md §4가 벤치마크한 **10배 성장(600종/500개)을
+// 실제로 담기 위해서**다. 256으로 잡았다가 그 시나리오를 돌릴 수 없다는 걸
+// dc_recipe_bench에서 발견했다 — 벤치가 표현하지 못하는 규모는 검증도 못 한다.
+//
+// RecipeTable은 약 41KB지만 **정적 데이터라 World 밖에 살고 런당 1회 로드**된다.
+// World가 무는 비용은 Inventory의 counts_ 2KB뿐이고, 체크섬은 실제 아이템 종류
+// 수만큼만 훑는다.
+constexpr uint32_t MAX_ITEM_TYPES = 1024;
+constexpr uint32_t MAX_RECIPES    = 1024;
+
+// 조합식 하나의 재료 수. §5의 다경로 설계가 2~3개를 쓰고, 동일 등급 3연성이
+// 같은 ItemId를 3번 넣는 형태라 3이면 충분하다.
+constexpr uint32_t MAX_RECIPE_INGREDIENTS = 3;
+
+// 역인덱스 하나의 칸 수 — "이 아이템을 재료로 쓰는 조합식" 개수 상한.
+// 현재 데이터의 최대 팬아웃은 6이다 (Ba2). 고정폭 inline 배열을 쓰는 이유는
+// unordered_map을 피하기 위해서다 (순회 금지 · 캐시 불리 — CLAUDE.md).
+constexpr uint32_t MAX_RECIPES_PER_ITEM = 16;
+
 }  // namespace dc::config
 
 #endif  // DC_CONFIG_H

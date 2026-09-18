@@ -31,7 +31,7 @@ SKILLS = {                 # (기본 공격 대비 배율, 가중치, 광역 여
 
 # ── 일반 몹 (역산 대상) ────────────────────────────────────────
 TRASH = {
-    "hp": 10,                  # 기본 공격 1대 — 물량을 시원하게 정리하는 감각 우선
+    "hp": 30,                  # 기본 공격 3대. 원샷을 깬 이유는 아래 SPEED_GROWTH_SHARE 참조
     "damage": 5,
     "windup_ticks": 0,         # 일반 몹은 사거리 진입 즉시 공격 (§3)
     "cooldown_ticks": 30,      # 이후 1.5초 주기
@@ -39,7 +39,7 @@ TRASH = {
 
 WAVE_TRASH_COUNT = 38          # 1웨이브 몹 수. 웨이브가 진행되며 늘어난다
                                # (verify_waves.py: 38 → 78)
-HITS_TO_KILL_TRASH = 1         # 목표: 일반 몹은 기본 공격 몇 대에 죽는가
+HITS_TO_KILL_TRASH = 3         # 목표: 일반 몹은 기본 공격 몇 대에 죽는가
 SURROUND_COUNT = 5             # 영웅에게 동시에 붙을 수 있는 몹 수 가정
 # 주의: 탑다운 전환으로 영웅이 이동하게 되면서 이 가정이 약해졌다.
 # 실제로는 포위를 벗어날 수 있으므로 목표 4는 "최악의 경우" 하한으로 읽어야 한다.
@@ -73,6 +73,23 @@ LEVEL_NEED_RATIO = 1.095       # need(n) = BASE × RATIO^(n-1)
 # 관문이므로(§4), 이 한 수치가 런 전체의 성장을 전부 담는다.
 POWER_PER_LEVELUP = 0.07
 
+# 그 성장이 **어디로 가는가.** 공격력으로 가면 잡몹은 계속 원샷이라 치명타도
+# 공격력 성장도 오버킬로 버려진다(tools/verify_crit_axis.py). 공속으로 실으면
+# 같은 성장이 "더 자주 때린다"가 되어, 잡몹이 여러 대 맞고 죽는 구조가 유지된다.
+#
+# **닫힌 식으로는 이 값의 효과를 정확히 못 잰다.** 기본 공격마다 proc을 굴리므로
+# 공속이 오르면 스킬 발동도 같이 늘고, 광역 스킬은 여러 마리를 동시에 때린다 —
+# 밀집도에 따라 클리어 속도가 공속보다 더 빠르게 오를 수 있다. 여기서는 선형으로만
+# 잡고, 실제 값은 §14-10 몬테카를로 하네스에서 측정한다.
+# **배분은 웨이브 시간을 바꾸지 못한다.** 처리량 = 공속 × 한 대 피해 = 성장 총량이므로
+# 어떻게 나누든 클리어 시간은 같다. 배분이 바꾸는 것은 **잡몹 타수**뿐이고,
+# 타수가 치명타·공격력 성장이 오버킬로 버려지는 정도를 정한다.
+#
+# 공속 몫을 키우면 한 대 피해가 덜 자라는데 잡몹 HP는 웨이브 스케일링으로 45배
+# 오르므로, 타수가 폭증한다 (0.7이면 마지막 웨이브에서 45대). 0.15가 상한에 가깝다.
+SPEED_GROWTH_SHARE = 0.12   # 성장 중 공속이 가져가는 몫 (나머지는 한 대 피해)
+TRASH_HITS_BAND = (2.0, 6.0)   # 판 내내 유지되어야 할 잡몹 타수
+
 CARD_PICK_SEC = 2.5            # 카드 1회 선택에 쓰는 시간 가정 (UI 요구사항)
 MODAL_BUDGET = 0.15            # 런 전체에서 선택 모달이 차지해도 되는 비율 상한
 
@@ -83,8 +100,18 @@ def level_need(n):
 
 
 def power_mult(levelups):
-    """레벨업 n회 시점의 영웅 위력 배율."""
+    """레벨업 n회 시점의 영웅 위력 배율 (공속 × 공격력 합산)."""
     return (1 + POWER_PER_LEVELUP) ** levelups
+
+
+def speed_mult(levelups):
+    """그중 공속 배율. 잡몹 타수를 좌우한다."""
+    return power_mult(levelups) ** SPEED_GROWTH_SHARE
+
+
+def damage_mult(levelups):
+    """그중 한 대의 피해 배율. 공속과 곱해 power_mult가 된다."""
+    return power_mult(levelups) ** (1 - SPEED_GROWTH_SHARE)
 
 
 def monster_exp(base_ehp, wave):
@@ -171,33 +198,62 @@ def report():
     ok &= (hits == HITS_TO_KILL_TRASH)
     print(f"  {'PASS' if hits == HITS_TO_KILL_TRASH else 'FAIL'}\n")
 
-    print("=== 목표 2: 광역기는 일반 몹을 한 방에 정리한다 ===")
+    print("=== 목표 2: 스킬 한 방이 일반 몹을 정리한다 ===")
     for name, (mult, _w, is_aoe) in SKILLS.items():
-        if not is_aoe:
-            continue
         dmg = HERO["attack_power"] * mult
         good = dmg >= TRASH["hp"]
         ok &= good
-        print(f"  {name}: {dmg:g} vs 몹 HP {TRASH['hp']} → {'PASS' if good else 'FAIL'}")
-    print()
+        tag = "광역" if is_aoe else "단일"
+        print(f"  {name}({tag}): {dmg:g} vs 몹 HP {TRASH['hp']} → "
+              f"{'PASS' if good else 'FAIL — 한 방에 못 죽인다'}")
+    print("  ※ 잡몹 HP를 올리면 여기가 먼저 깨진다. **광역기가 물량을 정리하지 못하면**")
+    print("     광역 축의 존재 이유가 사라지므로, 잡몹 HP의 실질 상한은 광역기 피해량이다\n")
 
-    print("=== 목표 3: 웨이브 클리어 20~30초 ===")
+    print(f"=== 목표 3: 잡몹 타수가 판 내내 {TRASH_HITS_BAND[0]:g}~{TRASH_HITS_BAND[1]:g}대 ===")
+    lo_h, hi_h = TRASH_HITS_BAND
+    print(f"  공속 몫 {SPEED_GROWTH_SHARE:.0%} → 런 종료 시 공속 "
+          f"{speed_mult(BOSS_LEVELUPS):.1f}배 / 한 대 피해 {damage_mult(BOSS_LEVELUPS):.1f}배")
+    print(f"  {'웨이브':>6} {'몹 HP':>9} {'한 대 피해':>10} {'타수':>6}")
+    hits_ok = True
+    for w, lv in ((1, 0), (8, 22), (16, 39), (TOTAL_WAVES, BOSS_LEVELUPS)):
+        dmg = HERO["attack_power"] * damage_mult(lv)
+        h = TRASH["hp"] * hp_scale(w) / dmg
+        hits_ok &= lo_h <= h <= hi_h
+        print(f"  {w:>6} {TRASH['hp']*hp_scale(w):>9.0f} {dmg:>10.1f} {h:>6.1f}"
+              f"{'' if lo_h <= h <= hi_h else '  ← 밴드 밖'}")
+    ok &= hits_ok
+    print(f"  {'PASS' if hits_ok else 'FAIL'}")
+    print("  ※ 타수가 1이면 치명타도 공격력 성장도 전부 오버킬로 버려진다")
+    print("     (tools/verify_crit_axis.py). 그래서 잡몹 HP를 10 → 30으로 올렸다\n")
+
+    print("=== 목표 4: 웨이브 클리어 20~30초 ===")
     # 광역기가 평균 몇 마리를 함께 정리하는지는 밀집도에 달렸다. 보수적으로 3마리 가정.
     aoe_weight = sum(w for _m, w, aoe in SKILLS.values() if aoe)
     effective_targets = 1 + PROC_RATE * aoe_weight * (3 - 1)
     clear = TRASH["hp"] * WAVE_TRASH_COUNT / (dps * effective_targets)
-    ok &= (20 <= clear <= 30)
+    good = 20 <= clear <= 30
+    ok &= good
     print(f"  몹 {WAVE_TRASH_COUNT}마리 × HP {TRASH['hp']} / (DPS {dps:.1f} × 동시타격 {effective_targets:.2f})")
-    print(f"  → {clear:.1f}초  {'PASS' if 20 <= clear <= 30 else 'FAIL'}\n")
+    print(f"  → {clear:.1f}초  {'PASS' if good else 'FAIL'}")
+    if not good:
+        need = HERO["attack_interval_ticks"] * 25.0 / clear
+        print(f"  ※ **미결.** 잡몹 HP를 3배로 올린 만큼 웨이브가 길어졌다. 성장 배분으로는")
+        print(f"     풀리지 않는다(웨이브 1에는 성장이 없다). 25초로 되돌리려면")
+        print(f"     기준선 공격 간격이 {HERO['attack_interval_ticks']}틱 → "
+              f"**{need:.0f}틱({TICK_HZ/need:.2f}회/초)** 이어야 한다")
+        print(f"     — 또는 웨이브 1 몹 수를 {WAVE_TRASH_COUNT} → "
+              f"{WAVE_TRASH_COUNT*25/clear:.0f}마리로 줄인다\n")
+    else:
+        print()
 
-    print("=== 목표 4: 둘러싸여도 15초 이상 버틴다 ===")
+    print("=== 목표 5: 둘러싸여도 15초 이상 버틴다 ===")
     incoming = TRASH["damage"] * SURROUND_COUNT / (TRASH["cooldown_ticks"] / TICK_HZ)
     survive = HERO["max_hp"] / incoming
     ok &= (survive >= 15)
     print(f"  {SURROUND_COUNT}마리 × {TRASH['damage']}딜 / {TRASH['cooldown_ticks']/TICK_HZ}초 = 초당 {incoming:.1f}")
     print(f"  HP {HERO['max_hp']} → {survive:.1f}초  {'PASS' if survive >= 15 else 'FAIL'}\n")
 
-    print("=== 목표 5: QTE 웨이브당 3~5회 ===")
+    print("=== 목표 6: QTE 웨이브당 3~5회 ===")
     procs = aps * clear * PROC_RATE
     qte = min(procs, clear / QTE_COOLDOWN_SEC)
     ok &= (3 <= qte <= 5)
@@ -212,7 +268,7 @@ def report():
         print(f"  ※ 기준선에서는 쿨다운이 거의 걸리지 않는다. 공속이 {speedup:.1f}배 오르면 작동")
     print()
 
-    print("=== 목표 6: 엘리트 처치 시간 ===")
+    print("=== 목표 7: 엘리트 처치 시간 ===")
     for name, e in ELITES.items():
         ehp = effective_hp(e["hp"], e["armor"])
         sec = ehp / dps
@@ -224,7 +280,7 @@ def report():
               f"(목표 {lo}~{hi}) {'PASS' if good else 'FAIL'}")
     print()
 
-    print("=== 목표 7: 궁병대장이 조준을 마치기 전에 죽지 않는다 ===")
+    print("=== 목표 8: 궁병대장이 조준을 마치기 전에 죽지 않는다 ===")
     a = ELITES["고블린 궁병대장"]
     kill_sec = effective_hp(a["hp"], a["armor"]) / dps
     windup_sec = ARCHER_WINDUP_TICKS / TICK_HZ
@@ -233,7 +289,7 @@ def report():
     print(f"  처치 {kill_sec:.1f}초 / 조준 {windup_sec:.1f}초 → 조준 완료 {shots}회")
     print(f"  {'PASS' if shots >= 2 else 'FAIL'}  (QTE를 최소 2회는 볼 수 있어야 한다)\n")
 
-    print("=== 목표 8: 보스 처치 시간 ===")
+    print("=== 목표 9: 보스 처치 시간 ===")
     bhp = effective_hp(BOSS["hp"], BOSS["armor"])
     grown_dps = dps * BOSS_GROWTH_MULT
     bsec = bhp / grown_dps
@@ -245,7 +301,7 @@ def report():
     print(f"  페이즈 2 진입: HP {BOSS['hp'] * BOSS['phase2_at']:.0f} "
           f"({bsec * BOSS['phase2_at']:.0f}초 지점)\n")
 
-    print("=== 목표 9: 보스 패턴 한 사이클이 영웅을 즉사시키지 않는다 ===")
+    print("=== 목표 10: 보스 패턴 한 사이클이 영웅을 즉사시키지 않는다 ===")
     cycle = sum(n * d for n, d in BOSS["patterns"].values())
     ratio = cycle / HERO["max_hp"]
     ok &= (ratio < 1.0)
@@ -254,7 +310,7 @@ def report():
     print(f"  한 사이클 합 {cycle} / 영웅 HP {HERO['max_hp']} = {ratio:.0%}"
           f"  {'PASS' if ratio < 1.0 else 'FAIL'}\n")
 
-    print("=== 목표 10: 웨이브 스케일링 ===")
+    print("=== 목표 11: 웨이브 스케일링 ===")
     final = hp_scale(TOTAL_WAVES)
     final_hp = TRASH["hp"] * final
     print(f"  웨이브당 x{HP_SCALE_PER_WAVE}, {TOTAL_WAVES}웨이브 → 최종 {final:.2f}배")
@@ -272,7 +328,7 @@ def report():
     print("  ※ 이 격차가 1을 넘는 만큼 후반 웨이브가 길어진다. 1보다 작으면"
           " 후반이 오히려 쉬워져 성장 곡선이 무너진다\n")
 
-    print("=== 목표 11: 모든 수치가 Fixed 20.12 범위 안 ===")
+    print("=== 목표 12: 모든 수치가 Fixed 20.12 범위 안 ===")
     worst = max(HERO["max_hp"],
                 final_hp * WAVE_TRASH_COUNT,
                 effective_hp(BOSS["hp"], BOSS["armor"]),

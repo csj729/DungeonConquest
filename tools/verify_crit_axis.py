@@ -13,6 +13,8 @@
    치명타 배수가 전부 오버킬로 버려지므로, 영웅이 넣는 피해의 절반 이상에서
    치명타가 무의미하다
 2. **기준선 치피가 1.5로 낮다.** 치확 1%가 올려주는 피해가 0.5%뿐이다
+
+1번은 잡몹 HP를 10 → 30으로 올려 해소했다. 남은 것은 2번이다.
 """
 import math
 import sys
@@ -20,7 +22,7 @@ import sys
 sys.path.insert(0, "tools")
 
 from balance_baseline import (
-    HERO, TRASH, hp_scale, effective_hp, ELITES, hero_dps,
+    HERO, TRASH, hp_scale, effective_hp, ELITES, hero_dps, damage_mult,
 )
 from verify_waves import WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, simulate
 from verify_card_values import GRADE_BUDGET, ref_skill_dps
@@ -32,8 +34,22 @@ ENGRAVE_CRIT = 0.20
 INCREMENT_TARGET = 0.03
 
 
+def trash_crit_util(rows):
+    """잡몹 쪽에서 치명타가 버려지지 않는 비율.
+
+    N대에 죽으면 마지막 한 대만 오버킬 위험이 있으므로 (N-1)/N로 잡는다.
+    N=1이면 0 — 치명타 배수가 통째로 버려진다.
+    """
+    hs = []
+    for i, _m, _r, _n, _e, _g, _s, _gain, cum in rows:
+        dmg = HERO["attack_power"] * damage_mult(cum)
+        hs.append(TRASH["hp"] * hp_scale(i) / dmg)
+    avg = sum(hs) / len(hs)
+    return max(avg - 1, 0) / avg, avg
+
+
 def crit_effective_share():
-    """영웅이 넣는 총 피해 중 **치명타가 실제로 값을 갖는** 비중."""
+    """영웅이 넣는 총 피해 중 **치명타가 실제로 값을 갖는** 비중 (잡몹은 전량 낭비 가정)."""
     trash = sum((m + r) * TRASH["hp"] * hp_scale(i)
                 for i, (m, r, _e, _n) in enumerate(WAVES, 1))
     elite = sum(effective_hp(ELITES[x]["hp"], ELITES[x]["armor"]) * hp_scale(i)
@@ -75,20 +91,22 @@ def report():
         ap = HERO["attack_power"] * g
         worst = max(worst, hp / ap)
         print(f"  {i:>2} {hp:>7.1f} {g:>8.2f}배 {ap:>11.1f} {hp / ap:>9.2f}")
-    one_shot = worst <= 1.15
-    print(f"  최대 필요 타수 {worst:.2f}  → {'전 구간 원샷' if one_shot else '원샷이 깨지는 구간 있음'}")
-    print("  ※ **치명타 배수가 잡몹에게는 전부 오버킬로 버려진다.** 이건 버그가 아니라")
-    print("     '물량을 시원하게 정리한다'(목표 1)를 택한 결과다\n")
+    util, avg_hits = trash_crit_util(rows)
+    good = avg_hits >= 2.0
+    ok &= good
+    print(f"  평균 필요 타수 {avg_hits:.2f}  {'PASS' if good else 'FAIL — 원샷이면 치명타가 버려진다'}")
+    print(f"  → 잡몹 쪽 치명타 활용률 {util:.0%} (N대에 죽으면 (N-1)/N)")
+    print("  ※ 잡몹 HP를 10 → 30으로 올린 것이 이 수치를 0%에서 끌어올린 변경이다\n")
 
-    trash, elite, boss, share = crit_effective_share()
+    trash, elite, boss, _old = crit_effective_share()
     tot = trash + elite + boss
+    share = (trash * util + elite + boss) / tot
     print("=== 구조 2: 그래서 치명타가 값을 갖는 피해 비중 ===")
-    for lbl, v in (("잡몹 — 원샷이라 치명타 무의미", trash),
-                   ("엘리트", elite), ("보스", boss)):
-        print(f"  {lbl:<30} {v:>8.0f} ({v / tot:>5.1%})")
-    print(f"  → **실효 비중 {share:.0%}**")
-    print("  ※ 치명타는 이 게임에서 구조적으로 **정예 특효 스탯**이다 —")
-    print("     유물 `R_BEACON`(엘리트·보스 피해 +X%)과 역할이 겹친다\n")
+    for lbl, v, u in (("잡몹", trash, util), ("엘리트", elite, 1.0), ("보스", boss, 1.0)):
+        print(f"  {lbl:<8} {v:>8.0f} ({v / tot:>5.1%})  치명타 활용 {u:>4.0%}")
+    print(f"  → **실효 비중 {share:.0%}**  (잡몹이 원샷이던 시절에는 46%였다)")
+    print("  ※ 잡몹을 여러 대 때려야 죽게 만든 것이 치명타를 '정예 특효'에서")
+    print("     '상시 유용한 스탯'으로 바꾼다 — 유물 `R_BEACON`과 역할이 갈린다\n")
 
     print("=== 각인 → 전역 스탯으로 옮기면 수치가 얼마나 줄어드는가 ===")
     print(f"  각인은 스킬 하나에만 걸린다 → 총 DPS의 {skill_dps / total:.0%}")
@@ -96,12 +114,10 @@ def report():
     print(f"  (다만 치명타는 실효 {share:.0%}라 그만큼 도로 커진다)\n")
 
     print("=== 예산을 채우는 전역 치확 증가량 (치피는 2배로 동반 상승) ===")
-    cases = [
-        ("현행 (치피 1.5, 오버킬 버림)", HERO["crit_mult"], share),
-        ("치피 3.0으로 인상", 3.0, share),
-        ("오버킬 이월 도입 (치피 1.5)", HERO["crit_mult"], 1.0),
-        ("**둘 다** (치피 3.0 + 오버킬 이월)", 3.0, 1.0),
-    ]
+    # 오버킬 이월은 검토 후 폐기했다 (새 메커니즘 비용 대비 이득이 작고,
+    # 잡몹 HP 인상이 같은 문제를 더 싸게 푼다). 남은 손잡이는 기준선 치피뿐이다.
+    cases = [("현행 (치피 1.5)", HERO["crit_mult"], share)] + \
+           [(f"기준선 치피 {m:.1f}로 인상", m, share) for m in (2.0, 2.5, 3.0, 4.0)]
     print(f"  {'구조':<34} " + " ".join(f"{g:>7}" for g in GRADE_BUDGET if g != "전설"))
     print("  " + "-" * 70)
     best = None

@@ -150,8 +150,8 @@ def effective_hp(hp, armor):
 # 따라서 필요 경험치도 지수여야 레벨업 간격이 일정하게 유지된다 —
 # 선형 곡선을 쓰면 후반에 레벨업이 폭주한다.
 EXP_PER_EHP = 1.0              # 몹 경험치 = 실효 체력 × 이 계수 (정수로 절삭)
-LEVEL_NEED_BASE = 300          # need(1)
-LEVEL_NEED_RATIO = 1.070       # need(n) = BASE × RATIO^(n-1)
+LEVEL_NEED_BASE = 340          # need(1)
+LEVEL_NEED_RATIO = 1.072       # need(n) = BASE × RATIO^(n-1)
 
 # 레벨업 1회당 유효 위력 성장. 레벨업이 아이템 뽑기/스펙업 카드의 **유일한**
 # 관문이므로(§4), 이 한 수치가 런 전체의 성장을 전부 담는다.
@@ -223,7 +223,22 @@ TOTAL_WAVES = 24               # 풀 게임 = 맵 3개 × 8구간 (design.md §2
 
 
 def hp_scale(wave):
+    """잡몹 체력 배율. **한 대 피해 성장**을 따라가 타수를 일정하게 유지한다."""
     return HP_SCALE_PER_WAVE ** (wave - 1)
+
+
+def elite_scale(segment):
+    """엘리트 체력 배율 — 잡몹과 다른 곡선을 탄다.
+
+    잡몹은 타수를 유지하려고 **한 대 피해**를 따라가지만, 엘리트는 **처치 시간**을
+    유지해야 한다. 처치 시간이 짧아지면 텔레그래프가 다 돌기 전에 죽어 QTE가
+    아예 발생하지 않는다 — 잡몹 배율(1.09)을 쓰면 마지막 구간에서 1.4초에 죽는다.
+
+    그래서 영웅의 **총 성장**을 그대로 따라간다. 보스 체력을 목표 처치 시간에서
+    역산하는 것과 같은 논리다.
+    """
+    lv = round(TOTAL_LEVELUPS * (segment - 1) / TOTAL_SEGMENTS)
+    return power_mult(lv)
 
 
 # ── 엘리트 (등장 웨이브 스케일링 적용 전 기준값) ───────────────
@@ -389,14 +404,22 @@ def report():
               f"(목표 {lo}~{hi}) {'PASS' if good else 'FAIL'}")
     print()
 
-    print("=== 목표 8: 궁병대장이 조준을 마치기 전에 죽지 않는다 ===")
+    print("=== 목표 8: 궁병대장이 조준을 마치기 전에 죽지 않는다 (런 전체) ===")
     a = ELITES["고블린 궁병대장"]
-    kill_sec = effective_hp(a["hp"], a["armor"]) / dps
     windup_sec = ARCHER_WINDUP_TICKS / TICK_HZ
-    shots = int(kill_sec / windup_sec)
-    ok &= (shots >= 2)
-    print(f"  처치 {kill_sec:.1f}초 / 조준 {windup_sec:.1f}초 → 조준 완료 {shots}회")
-    print(f"  {'PASS' if shots >= 2 else 'FAIL'}  (QTE를 최소 2회는 볼 수 있어야 한다)\n")
+    print(f"  {'구간':>4} {'성장':>8} {'엘리트 HP':>9} {'처치':>8} {'조준 완료':>9}")
+    shot_ok = True
+    for w in (1, 8, 16, TOTAL_SEGMENTS):
+        lv = round(TOTAL_LEVELUPS * (w - 1) / TOTAL_SEGMENTS)
+        ehp = effective_hp(a["hp"], a["armor"]) * elite_scale(w)
+        sec = ehp / (dps * power_mult(lv) * share)
+        shots = sec / windup_sec
+        shot_ok &= shots >= 2
+        print(f"  {w:>4} {power_mult(lv):>7.1f}배 {ehp:>9.0f} {sec:>7.1f}초 {shots:>8.1f}회")
+    ok &= shot_ok
+    print(f"  {'PASS' if shot_ok else 'FAIL'}  (QTE를 최소 2회는 볼 수 있어야 한다)")
+    print("  ※ 엘리트 체력이 잡몹 배율(1.09)을 타면 마지막 구간에서 1.4초에 죽어")
+    print("     텔레그래프가 다 돌기 전에 사라진다 — QTE 시스템이 후반에 소멸한다\n")
 
     print("=== 목표 9: 보스 처치 시간 ===")
     bhp = effective_hp(BOSS["hp"], BOSS["armor"])

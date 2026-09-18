@@ -21,7 +21,7 @@ sys.path.insert(0, "tools")
 from balance_baseline import (
     hero_dps, TRASH, hp_scale, PROC_RATE, SKILLS, ELITES,
     effective_hp, TICK_HZ, level_need, power_mult, monster_exp,
-    EXP_PER_EHP, CARD_PICK_SEC, concurrent_cap, aoe_targets, effective_targets,
+    EXP_PER_EHP, CARD_PICK_SEC, concurrent_cap, elite_scale, aoe_targets, effective_targets,
 )
 
 # ── 클리어 게이지 (design.md §2) ───────────────────────────────
@@ -57,7 +57,7 @@ SLICE_LEVELUPS = (15, 25)   # 맵 1개에서 기대하는 레벨업 횟수
 
 
 def elite_exp(names, seg_idx):
-    return sum(monster_exp(effective_hp(ELITES[n]["hp"], ELITES[n]["armor"]), seg_idx)
+    return sum(monster_exp(effective_hp(ELITES[n]["hp"], ELITES[n]["armor"]) * elite_scale(seg_idx) / hp_scale(seg_idx), seg_idx)
                for n in names)
 
 

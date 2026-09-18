@@ -23,7 +23,7 @@ from balance_baseline import (
     hero_dps, TRASH, hp_scale, effective_hp, ELITES, SKILLS, PROC_RATE,
     level_need, power_mult, EXP_PER_EHP, LEVEL_NEED_BASE, LEVEL_NEED_RATIO,
     POWER_PER_LEVELUP, CARD_PICK_SEC, MODAL_BUDGET, HP_SCALE_PER_WAVE,
-    TOTAL_WAVES, TOTAL_LEVELUPS, ARMOR_K, effective_targets,
+    TOTAL_WAVES, TOTAL_LEVELUPS, ARMOR_K, effective_targets, elite_scale,
 )
 from verify_segments import (
     SEGMENTS as WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, SEGMENT_TARGET_SEC,
@@ -72,7 +72,7 @@ def run_sim(maps):
             total_sec += sec
 
             carry += n * monster_exp(TRASH["hp"], w)
-            carry += sum(monster_exp(effective_hp(ELITES[e]["hp"], ELITES[e]["armor"]), w)
+            carry += sum(monster_exp(effective_hp(ELITES[e]["hp"], ELITES[e]["armor"]) * elite_scale(w) / hp_scale(w), w)
                          for e in elites)
             gained = 0
             while carry >= level_need(lv + 1):

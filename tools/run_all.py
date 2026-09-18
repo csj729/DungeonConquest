@@ -12,6 +12,7 @@ sys.path.insert(0, "tools")
 
 MODULES = [
     ("gamedata", "데이터 로드 · 정수 검사"),
+    ("verify_core_constants", "C++ 구조 상수 대조"),
     ("balance_baseline", "영웅·몬스터 기준선 12목표"),
     ("verify_segments", "구간 구성 6목표"),
     ("verify_exp_curve", "경험치 곡선 6목표"),

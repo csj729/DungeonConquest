@@ -56,6 +56,20 @@ public:
         return Rng(splitMix64(masterSeed ^ (static_cast<uint64_t>(stream) * 0x9E3779B97F4A7C15ull)));
     }
 
+    // **엔티티별 스트림.** 스폰 시 한 번 호출해 엔티티가 자기 상태를 들고 다닌다.
+    //
+    // 용도별 스트림 하나를 여러 엔티티가 공유하면 **소비 순서가 결과를 바꾼다** —
+    // 시스템 실행 순서를 바꾸거나 병렬화하는 순간 리플레이가 깨진다.
+    // 엔티티별 파생은 순서 독립이므로 그 제약에서 자유롭다.
+    //
+    // 입력에 EntityId.bits를 통째로 넣는다. generation이 섞이므로 **슬롯을
+    // 재사용해도 새 엔티티가 죽은 엔티티의 난수열을 물려받지 않는다.**
+    static constexpr Rng deriveEntity(uint64_t masterSeed, uint32_t entityBits) {
+        return Rng(splitMix64(masterSeed
+                              ^ (static_cast<uint64_t>(entityBits) << 32)
+                              ^ 0xD1B54A32D192ED03ull));   // 용도 스트림과 겹치지 않는 태그
+    }
+
     // xorshift64* — 상태 8바이트, 주기 2^64-1. 통계 품질은 게임 용도에 충분하고
     // 상태가 작아 체크섬에 넣기 좋다.
     constexpr uint64_t nextU64() {

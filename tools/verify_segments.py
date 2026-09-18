@@ -21,7 +21,7 @@ sys.path.insert(0, "tools")
 from balance_baseline import (
     hero_dps, TRASH, hp_scale, PROC_RATE, SKILLS, ELITES,
     effective_hp, TICK_HZ, level_need, power_mult, monster_exp,
-    EXP_PER_EHP, CARD_PICK_SEC, CONCURRENT_CAP, aoe_targets, effective_targets,
+    EXP_PER_EHP, CARD_PICK_SEC, concurrent_cap, aoe_targets, effective_targets,
 )
 
 # ── 클리어 게이지 (design.md §2) ───────────────────────────────
@@ -38,10 +38,10 @@ SEGMENTS = [
     (16,  7, [],                               "원거리 견제 — 사거리 이탈이 안 통하는 적"),
     (16,  9, ["고블린 궁병대장"],               "첫 QTE — 텔레그래프 읽기"),
     (17, 12, ["고블린 주술사"],                 "처치 우선순위 — 방치하면 물량이 불어난다"),
-    (20, 15, ["고블린 방패병"],                 "광역·방어 관통의 필요성"),
-    (24, 20, ["미친 고블린", "고블린 궁병대장"], "종합 — 지속 압박 + QTE"),
-    (28, 26, ["고블린 주술사", "고블린 방패병"], "최악의 조합 — 계속 불어나는데 잘 안 죽는다"),
-    (33, 34, ["고블린 궁병대장", "미친 고블린",
+    (19, 15, ["고블린 방패병"],                 "광역·방어 관통의 필요성"),
+    (24, 19, ["미친 고블린", "고블린 궁병대장"], "종합 — 지속 압박 + QTE"),
+    (28, 25, ["고블린 주술사", "고블린 방패병"], "최악의 조합 — 계속 불어나는데 잘 안 죽는다"),
+    (32, 34, ["고블린 궁병대장", "미친 고블린",
               "고블린 주술사"],                  "최종 압박 — 보스 직전"),
 ]
 
@@ -125,7 +125,7 @@ def report():
         prev_sec = sec
         mark = "" if good else "  ← FAIL"
         print(f"{i:>2} {cum[i-1]:>5.0%} {melee:>4} {ranged:>5} {n:>4} {ranged/n:>4.0%} "
-              f"{CONCURRENT_CAP[i]:>5} {aoe_targets(i):>7.1f} {growth:>5.2f}배 "
+              f"{concurrent_cap(i):>5} {aoe_targets(i):>7.1f} {growth:>5.2f}배 "
               f"{sec:>6.1f}초 {gained:>4} {lv:>4}  "
               f"{', '.join(elites) if elites else '—'}{mark}")
 

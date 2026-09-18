@@ -18,11 +18,12 @@ import sys
 sys.path.insert(0, "tools")
 
 from balance_baseline import (
-    HERO, TRASH, TICK_HZ, CONCURRENT_CAP, SURROUND_COUNT, hero_dps,
+    HERO, TRASH, TICK_HZ, concurrent_cap, SURROUND_COUNT, hero_dps,
     effective_targets, spawn_batch, SPAWN_DIRECTIONS, SPAWN_INTERVAL_TICKS,
-    corruption_from_mass, CORRUPTION_THRESHOLD,
+    corruption_from_mass, CORRUPTION_THRESHOLD, TOTAL_SEGMENTS,
+    TOTAL_LEVELUPS, hp_scale, power_mult,
 )
-from verify_segments import SEGMENTS, simulate
+from verify_segments import SEGMENTS, simulate, SEGMENT_TARGET_SEC
 
 # ── 화면 · 거리 (타일 단위) ────────────────────────────────────
 # PPU와 화면 픽셀 크기는 에셋 단계에서 정한다(§11 · §15). 여기서는 **타일 수**로
@@ -86,10 +87,10 @@ def report():
     for i, _m, _r, n, _e, _g, sec, _gn, _c, _et in rows:
         k = n / sec
         moving = k * APPROACH_SEC
-        engaged = CONCURRENT_CAP[i] - moving
-        life = CONCURRENT_CAP[i] / k
+        engaged = concurrent_cap(i) - moving
+        life = concurrent_cap(i) / k
         lifetimes.append(life)
-        print(f"  {i:>2} {CONCURRENT_CAP[i]:>5} {k:>6.2f}/초 {moving:>7.1f} "
+        print(f"  {i:>2} {concurrent_cap(i):>5} {k:>6.2f}/초 {moving:>7.1f} "
               f"{engaged:>7.1f} {life:>8.0f}초")
     lo, hi = LIFETIME_BAND
     good = all(lo <= x <= hi for x in lifetimes)
@@ -112,7 +113,7 @@ def report():
           f"{'합':>7} {'생존':>7}")
     worst = 1e9
     for i, (melee, ranged, _e, _n) in enumerate(SEGMENTS, 1):
-        cap = CONCURRENT_CAP[i]
+        cap = concurrent_cap(i)
         ratio = ranged / (melee + ranged)
         mel = min(SURROUND_COUNT, round(cap * (1 - ratio)))
         rng_ = round(cap * ratio)
@@ -133,6 +134,32 @@ def report():
         print(f"  ※ 잠식 최대치가 {need:.0f} 필요하다 "
               f"(현재 {HERO['corruption_max']})")
     print()
+
+    print("=== 런 전체(24구간) 압박 곡선 — 맵마다 리셋되지 않는가 ===")
+    print(f"  {'구간':>4} {'상한':>5} {'처치율':>8} {'평균생존':>8} {'잠식/초':>8} {'가득':>7}")
+    prev_press, mono = 0.0, True
+    for w in (1, 8, 16, TOTAL_SEGMENTS):
+        cap = concurrent_cap(w)
+        lv = round(TOTAL_LEVELUPS * (w - 1) / TOTAL_SEGMENTS)
+        j = (w - 1) % len(SEGMENTS)
+        n = round(SEGMENT_TARGET_SEC[j] * base * power_mult(lv)
+                  * effective_targets(j + 1) / (TRASH["hp"] * hp_scale(w)))
+        kill = n / SEGMENT_TARGET_SEC[j]
+        melee, ranged, _e, _n = SEGMENTS[j]
+        ratio = ranged / (melee + ranged)
+        mel = min(SURROUND_COUNT, round(cap * (1 - ratio)))
+        rng_ = round(cap * ratio)
+        press = (mel * TRASH["damage"] + rng_ * TRASH["ranged_damage"]) \
+            / (TRASH["cooldown_ticks"] / TICK_HZ) + corruption_from_mass(cap, cap)
+        mono &= press >= prev_press
+        prev_press = press
+        print(f"  {w:>4} {cap:>5} {kill:>6.2f}/초 {cap/kill:>7.0f}초 {press:>8.1f} "
+              f"{HERO['corruption_max']/press:>6.1f}초")
+    ok &= mono
+    print(f"  압박 단조 증가  {'PASS' if mono else 'FAIL'}")
+    print("  ※ 동시 생존 상한을 **맵 안의 구간이 아니라 런 전체 구간 번호**로 램프한다.")
+    print("     맵마다 리셋하면 영웅이 58배 강해지는 동안 위협이 그대로여서")
+    print("     후반 맵이 무위험이 된다\n")
 
     print("전체:", "PASS" if ok else "FAIL")
     return ok

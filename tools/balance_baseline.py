@@ -69,7 +69,20 @@ SEGMENT_TRASH_COUNT = 21       # 1구간 몹 수. 구간이 진행되며 늘어�
 # 상한은 §11의 **일반 구간 30~60**을 따른다. 150은 피크(보스 직전 버스트·돌발
 # 이벤트)용이지 정상 상태가 아니다 — 150을 정상 상태로 두면 전장에 떠 있는 몹이
 # 그 구간의 처치 목표보다 많아져 구성이 뒤집힌다.
-CONCURRENT_CAP = {i: round(30 * (40 / 30) ** ((i - 1) / 7)) for i in range(1, 9)}
+#
+# **인덱스는 맵 안의 구간이 아니라 런 전체의 구간 번호(1~24)다.** 맵마다 리셋하면
+# 영웅이 58배 강해지는 동안 잠식 압박이 그대로여서 후반 맵이 무위험이 된다.
+CONCURRENT_CAP_TOP = 60
+TOTAL_SEGMENTS = 24         # 런 전체 구간 수 (TOTAL_WAVES와 같다)
+
+
+def concurrent_cap(segment):
+    """런 전체 구간 번호(1~24) 기준 동시 생존 상한."""
+    t = (segment - 1) / (TOTAL_SEGMENTS - 1)
+    return round(30 * (CONCURRENT_CAP_TOP / 30) ** t)
+
+
+CONCURRENT_CAP = {i: round(30 * (60 / 30) ** ((i - 1) / 23)) for i in range(1, 25)}
 CONCURRENT_PEAK = 150       # 보스 직전 버스트 · 돌발 이벤트 "서두름"(§6)
 
 # 스폰 배치 — 한 번에 몇 마리가 같이 들어오는가.
@@ -103,7 +116,7 @@ AOE_TARGETS_MIN = 3.0          # 웨이브 방식의 옛 가정 — 하한으로
 
 def aoe_targets(segment):
     """해당 구간에서 광역기 1회가 때리는 몹 수."""
-    return max(AOE_TARGETS_MIN, CONCURRENT_CAP[segment] * AOE_TARGET_SHARE)
+    return max(AOE_TARGETS_MIN, concurrent_cap(segment) * AOE_TARGET_SHARE)
 
 
 def effective_targets(segment):

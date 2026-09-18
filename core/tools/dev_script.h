@@ -48,6 +48,17 @@ inline void scriptTick(World& w) {
         w.hero.target = w.entities.idAt(victim);
     }
 
+    // 모디파이어 자리 — 아이템·각인이 스탯을 만지는 경로를 체크섬이 덮도록
+    if (w.rngCards.chancePermille(40)) {
+        const uint32_t src = w.allocSourceId();
+        const Stat s = static_cast<Stat>(w.rngCards.range(STAT_COUNT));
+        switch (w.rngCards.range(3)) {
+            case 0: w.hero.stats.addFlat(s, Fixed::fromRaw(static_cast<int32_t>(w.rngCards.range(4096)))); break;
+            case 1: w.hero.stats.addPctAdd(s, Fixed::fromPermille(static_cast<int32_t>(w.rngCards.range(200)))); break;
+            default: (void)w.hero.stats.addMult(s, src, Fixed::fromPermille(static_cast<int32_t>(w.rngCards.range(200)))); break;
+        }
+    }
+
     // 잠식 게이지 자리 — 물량 충전
     w.hero.corruption = w.hero.corruption
                       + Fixed::fromRaw(static_cast<int32_t>(w.entities.count()));

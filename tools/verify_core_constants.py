@@ -9,7 +9,9 @@ from pathlib import Path
 
 import gamedata as gd
 
-CONFIG_H = Path(__file__).resolve().parent.parent / "core" / "include" / "dc" / "config.h"
+CORE_INC = Path(__file__).resolve().parent.parent / "core" / "include" / "dc"
+CONFIG_H = CORE_INC / "config.h"
+STAT_BLOCK_H = CORE_INC / "stat_block.h"
 
 
 def read_constants():
@@ -50,7 +52,39 @@ def report():
     ok &= good
     print(f"  {'OK ' if good else 'X  '} {'index 폭':<18} {cap} <= 4096 (EntityId 12비트)")
 
+    # 스탯 enum 순서와 stats.json 키 순서가 같아야 한다.
+    # **enum 값이 바뀌면 기존 리플레이가 전부 깨진다** — 순서까지 대조한다.
+    ok &= _check_stats()
     return bool(ok)
+
+
+def _check_stats():
+    src = STAT_BLOCK_H.read_text(encoding="utf-8")
+    # statName()의 case 순서 = enum 순서
+    cpp = re.findall(r'case Stat::\w+:\s*return "([a-z_]+)";', src)
+    data = list(gd.load("stats")["stats"].keys())
+
+    ok = cpp == data
+    print(f"  {'OK ' if ok else 'X  '} {'Stat enum 순서':<18} "
+          f"C++ {len(cpp)}종 == stats.json {len(data)}종")
+    if not ok:
+        print(f"      C++  : {cpp}")
+        print(f"      JSON : {data}")
+        return False
+
+    # 하한 값 자체도 대조한다. C++는 데이터 로더가 붙을 때까지 값을 갖지 않으므로
+    # 여기서는 "JSON 쪽이 규약을 지키는가"만 본다.
+    bad = []
+    for name, b in gd.load("stats")["stats"].items():
+        if b["min_pct_add_permille"] < -1000:
+            bad.append(f"{name}: min_pct_add {b['min_pct_add_permille']} < -1000permille")
+        if b["min_value_permille"] < 0:
+            bad.append(f"{name}: min_value {b['min_value_permille']} < 0")
+    for m in bad:
+        print(f"  X   {m}")
+    print(f"  {'OK ' if not bad else 'X  '} {'스탯 하한 규약':<18} "
+          f"min_pct_add >= -1000permille, min_value >= 0")
+    return not bad
 
 
 if __name__ == "__main__":

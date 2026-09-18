@@ -8,7 +8,7 @@
 set -u
 cd "$(dirname "$0")/.."
 
-TESTS="test_fixed test_rng test_entity_id test_entity_store test_world test_checksum"
+TESTS="test_fixed test_rng test_entity_id test_entity_store test_world test_checksum test_stat_block"
 FAILED=0
 
 build() {   # build <dir> <build-type> <sanitizer>

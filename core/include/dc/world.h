@@ -21,6 +21,7 @@
 #include "entity_store.h"
 #include "fixed.h"
 #include "rng.h"
+#include "stat_block.h"
 
 namespace dc {
 
@@ -49,6 +50,13 @@ struct HeroState {
 
     EntityId target{};             // 현재 타겟. stale이면 EntityStore가 걸러준다
 
+    // 모디파이어 컨테이너 (§9). 아이템·각인·유물·이벤트 효과가 전부 여기로 들어온다.
+    //
+    // **엔티티에는 아직 달지 않는다.** 보스 기믹이 실제로 스탯을 만질 때 달면 된다.
+    // 1024칸 전부에 미리 달면 1MB에 체크섬 비용도 그만큼 늘어난다 — §9가
+    // "지금 미리 만들 필요는 없다"고 한 것과 같은 판단이다.
+    StatBlock stats{};
+
     // 게이지 잔량. 항상 0 이상으로 클램프한다.
     Fixed corruptionLeft() const {
         const Fixed d = corruptionMax - corruption;
@@ -68,6 +76,7 @@ struct HeroState {
         h.feed(qteCooldown);
         h.feed(prdTrials);       // §10이 명시적으로 요구하는 입력
         h.feed(target);
+        stats.hashInto(h);
     }
 };
 
@@ -122,6 +131,8 @@ public:
         hero  = HeroState{};
         run   = RunState{};
         spawn = SpawnState{};
+        hero.stats.init(nullptr, nullptr);   // 데이터 로더가 붙으면 여기로 값이 온다
+        nextSourceId_ = 1;                   // 0은 "없음" 예약
 
         rngSpawn  = Rng::derive(masterSeed, RngStream::Spawn);
         rngCombat = Rng::derive(masterSeed, RngStream::Combat);
@@ -162,6 +173,7 @@ public:
         {
             Hasher h;
             hero.hashInto(h);
+            h.feed(nextSourceId_);
             c.hero = h.value();
         }
         {
@@ -191,6 +203,13 @@ public:
 
     uint64_t checksum() const { return checksums().total; }
 
+    // 모디파이어 sourceId 발급 (§9 "전역 단조 증가 카운터").
+    //
+    // PercentMult·Override의 적용 순서가 이 값으로 정해지므로 **발급 순서가
+    // 곧 결정론이다.** 포인터 값이나 주소를 키로 쓰지 않는 이유가 이것이다.
+    uint32_t allocSourceId() { return nextSourceId_++; }
+    uint32_t peekSourceId() const { return nextSourceId_; }
+
     int32_t  tickCount()  const { return tick_; }
     uint64_t masterSeed() const { return masterSeed_; }
 
@@ -212,6 +231,10 @@ public:
 private:
     int32_t  tick_       = 0;
     uint64_t masterSeed_ = 0;
+    // [상태] — 다음 모디파이어가 받을 적용 순서를 정한다.
+    // 지금은 영웅 스탯만 쓰므로 hero 영역에서 해시한다. 몬스터 모디파이어가
+    // 생기면 별도 영역으로 옮긴다.
+    uint32_t nextSourceId_ = 1;
 };
 
 }  // namespace dc

@@ -56,10 +56,11 @@ PROGRESSION = load("progression")
 SPAWN = load("spawn")
 SEGMENTS_DATA = load("segments")
 CARDS = load("cards")
+STATS = load("stats")
 
 for _n, _d in (("hero", HERO), ("skills", SKILLS_DATA), ("monsters", MONSTERS),
                ("progression", PROGRESSION), ("spawn", SPAWN),
-               ("segments", SEGMENTS_DATA), ("cards", CARDS)):
+               ("segments", SEGMENTS_DATA), ("cards", CARDS), ("stats", STATS)):
     _assert_integral(_d, f"data/{_n}.json")
 
 
@@ -72,7 +73,7 @@ def report():
     print("=== data/*.json ===")
     for name, d in (("hero", HERO), ("skills", SKILLS_DATA), ("monsters", MONSTERS),
                     ("progression", PROGRESSION), ("spawn", SPAWN),
-                    ("segments", SEGMENTS_DATA), ("cards", CARDS)):
+                    ("segments", SEGMENTS_DATA), ("cards", CARDS), ("stats", STATS)):
         keys = len(d) - (1 if "_" in d else 0)
         print(f"  {name + '.json':<18} 키 {keys:>2}개   {d.get('_', '')[:46]}")
     print("\n  부동소수점 검사: 통과 (전 파일 정수만)")
@@ -94,6 +95,7 @@ def report():
           f"{sum(s['melee'] + s['ranged'] for s in SEGMENTS_DATA['segments']) * SEGMENTS_DATA['trash_points'] + sum(len(s['elites']) for s in SEGMENTS_DATA['segments']) * SEGMENTS_DATA['elite_points']}점")
     print(f"  카드       등급 {len(CARDS['grades'])}단계 / 각인 {len(CARDS['engravings'])}종 / "
           f"유물 {len(CARDS['relics'])}종")
+    print(f"  스탯       {len(STATS['stats'])}종 (하한 = 불변식, 밸런스 다이얼 아님)")
     return True
 
 

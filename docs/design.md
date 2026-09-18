@@ -1257,20 +1257,59 @@ Fixed effectiveDamage = damage * K / (K + armor);
 정렬이 필요 없고, 순서 고정이 실제로 필요한 것은 `PercentMult`와 `Override`뿐이다.
 
 ```cpp
-struct StatCache {
-    Fixed accumFlat;                     // 추가/제거 시 O(1) 가감
-    Fixed accumPctAdd;                   // 추가/제거 시 O(1) 가감
-    SmallVec<MultMod, 4>     mults;      // sourceId 오름차순 불변식 유지
-    SmallVec<OverrideMod, 2> overrides;  // sourceId 오름차순, front()만 적용
-    Fixed cached;
-    bool  dirty;
+struct StatEntry {
+    // [상태]
+    Fixed base, accumFlat, accumPctAdd;     // 추가/제거 시 O(1) 가감
+    SmallVec<SourcedMod, 8> mults;          // sourceId 오름차순 불변식 유지
+    SmallVec<SourcedMod, 4> overrides;      // sourceId 오름차순, front()만 적용
+    // [파생] — 체크섬 제외
+    mutable Fixed cached;
+    mutable bool  dirty;
 };
 ```
+
+`cached`/`dirty`를 체크섬에 넣으면 **지연 평가한 World와 즉시 평가한 World가 다른
+해시를 내는 거짓 양성**이 된다. 둘은 관측 가능한 값이 완전히 같으므로 같은 해시여야
+한다. §10에서 정한 [상태]/[파생] 구분이 처음으로 실제 판단을 요구한 자리다.
 
 - 모디파이어 추가/제거는 누적값 가감이므로 **O(1)이고 재계산조차 필요 없다**
 - `mults` / `overrides`는 원소가 소수(≤4)이므로 **삽입으로 정렬 불변식을 유지**한다
 - `PercentAdd` 누적합 하한(예: −100% 이하)은 **스탯별 하한을 데이터로 정의하고 클램프**한다
-- `sourceId`는 전역 단조 증가 카운터로 발급
+  (`data/stats.json`)
+- `sourceId`는 전역 단조 증가 카운터로 발급. **발급 순서가 곧 적용 순서이고 곧
+  결정론이다** — 포인터 값이나 주소를 키로 쓰지 않는 이유가 이것이다
+
+#### 하한은 밸런스 다이얼이 아니라 불변식이다
+
+`data/stats.json`의 하한은 "이 스탯이 얼마나 약해질 수 있는가"를 조율하는 값이 아니라
+**나눗셈 분모가 0이 되거나 값이 음수로 뒤집히는 것을 막는 방어선**이다. 그래서
+`Override`도 하한을 넘지 못한다. 속박이 이동속도를 0으로 만들어야 하면 `move_speed`의
+하한을 0으로 두면 되고, 그러면 불변식과 기획이 충돌하지 않는다.
+
+**클램프는 저장이 아니라 읽을 때 한다.** 저장 시 클램프하면 `add`/`remove`가 정확한
+역연산이 아니게 되고, 조건부 모디파이어를 껐다 켤 때 값이 샌다.
+
+`Stat` enum 순서와 `stats.json` 키 순서는 `tools/verify_core_constants.py`가 대조한다.
+enum 값이 바뀌면 기존 리플레이가 전부 깨지므로 자동 검사를 건다.
+
+#### permille 변환 오차는 설계된 것이다
+
+`Fixed::fromPermille`은 0방향 절삭이라 `200permille + 300permille`이 정확히 0.5가
+아니다(819 + 1228 = 2047, 0.5는 2048). 그래서 `150 × (1 + 0.2 + 0.3)`은 225가 아니라
+224.96이 나온다.
+
+permille을 정수로 먼저 더하고 한 번만 변환하면 정확하지만, 모디파이어는 출처가
+제각각(아이템·각인·이벤트)이라 그럴 수 없다. 오차는 모디파이어 하나당 최대
+1/4096(0.024%)이고, 위에서 20.12를 고른 근거인 "1% 표현 오차 0.098%"와 같은 자리다.
+
+**파이썬 검증 도구는 float로 계산하므로 여기와 소수점 아래가 다르다.** 의도된
+차이다 — 파이썬은 밸런스 밴드를 판정하지 비트 일치를 판정하지 않는다.
+
+#### 모디파이어는 영웅에만 붙어 있다
+
+`StatBlock`은 현재 `HeroState`에만 있다. 보스 기믹이 실제로 스탯을 만질 때 엔티티에
+달면 되고, 1024칸 전부에 미리 달면 1MB에 체크섬 비용도 그만큼 는다. 위 "예외" 항목
+(오라·전역 디버프)과 같은 판단이다 — **그런 기믹이 실제로 생길 때 만든다.**
 
 ### 조건부 모디파이어
 
@@ -1919,7 +1958,8 @@ SnapshotStatus snapshotLoad(World&, const void* src, uint32_t len);
    체크섬 입력을 정의하므로 아래 3번보다 먼저다 (위 "World 상태 구조" 참조)
 3. `checksum()` + 재현성 테스트 하네스 + **상태 스냅샷 덤프/로드** — **완료**
    (위 "검증 하네스" 참조. `core/tools/dc_checksum`이 CI의 Debug/Release 비교 대상)
-4. `StatBlock` + 모디파이어 (조건 없이 `Always`만)
+4. `StatBlock` + 모디파이어 (조건 없이 `Always`만) — **완료**
+   (적용 순서 고정 · 지연 dirty 캐시 · `data/stats.json` 하한. 조건 시스템은 5번)
 5. 조건 시스템 + dirty 무효화
 6. **PRD** + 분산 측정 하네스 (`tools/prd_variance.py`의 C++ 이식)
 7. 인벤토리 + 조합식 평가

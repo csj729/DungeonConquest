@@ -47,7 +47,7 @@ inline void scriptTick(World& w) {
     if (w.entities.count() > 0) {
         const uint32_t victim = w.rngCombat.range(w.entities.count());
         w.entities.damageTaken[victim] = w.entities.damageTaken[victim] + Fixed(7);
-        ++w.hero.prdTrials;
+        (void)w.hero.proc.roll(w.rngCombat, 2112);   // data/hero.json: proc_prd_c_q16
         if (w.entities.damageTaken[victim].raw >= w.entities.maxHp[victim].raw) {
             if (w.entities.markDead(w.entities.idAt(victim))) {
                 if (w.entities.archetype[victim] == Archetype::Elite) {
@@ -57,7 +57,6 @@ inline void scriptTick(World& w) {
                     ++w.run.killedTrash;
                     w.run.clearPoints += 1;
                 }
-                w.hero.prdTrials = 0;
             }
         }
         w.hero.target = w.entities.idAt(victim);

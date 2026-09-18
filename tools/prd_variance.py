@@ -2,6 +2,17 @@
 
 포트폴리오용 근거 수치를 뽑기 위한 스크립트.
 동일 기대 발동률에서 '연속 실패 구간'이 얼마나 줄어드는지 비교한다.
+
+**출시 경로의 측정은 `core/tools/dc_prd`가 한다.** 여기는 모델(Mersenne Twister +
+float)이고, 그쪽은 실제 코어(xorshift64* + q16 절삭된 C)다. 둘이 어긋나면
+모델이 아니라 구현이 틀린 것이므로 그쪽을 믿는다.
+
+## 통계 정의 — 길이 0인 공백을 포함한다
+
+예전 버전은 `if cur:`로 길이 0인 공백(성공이 곧바로 나온 경우)을 목록에서 뺐다.
+그러면 P(공백>=K)가 아니라 **P(공백>=K | 공백>=1)** 을 재게 되어 모든 수치가 위로
+부풀고 손익분기 K도 앞으로 당겨진다(15%에서 8 vs 9). 플레이어는 공백 0도 겪으므로
+무조건 확률이 맞다.
 """
 import random
 
@@ -41,8 +52,7 @@ def run(target_p: float, trials: int, seed: int = 12345):
             p = target_p if mode == "pure" else min(1.0, c * (n_since + 1))
             if rng.random() < p:
                 procs += 1
-                if cur:
-                    streak.append(cur)
+                streak.append(cur)   # 길이 0도 포함한다 — 위 주석 참조
                 cur, n_since = 0, 0
             else:
                 cur += 1

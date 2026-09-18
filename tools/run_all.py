@@ -18,6 +18,7 @@ MODULES = [
     ("verify_exp_curve", "경험치 곡선 6목표"),
     ("verify_spawn", "스폰 좌표 · 전장 구성"),
     ("verify_card_rates", "카드 등급 확률 4목표"),
+    ("verify_prd", "PRD 상수 · 손익분기"),
     ("verify_card_values", "각인·유물 수치"),
     ("verify_duplicate_rules", "중복 규칙 4목표"),
     ("verify_crit_axis", "치명타 축 구조"),

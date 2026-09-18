@@ -112,7 +112,7 @@ int main() {
             {"hero.exp",         [](World& w){ w.hero.exp += 1; }},
             {"hero.atkCooldown", [](World& w){ w.hero.attackCooldown += 1; }},
             {"hero.qteCooldown", [](World& w){ w.hero.qteCooldown += 1; }},
-            {"hero.prdTrials",   [](World& w){ w.hero.prdTrials += 1; }},
+            {"hero.proc.trials", [](World& w){ w.hero.proc.trials += 1; }},
             {"hero.target",      [](World& w){ w.hero.target = EntityId::make(9, 9); }},
             {"run.mapIndex",     [](World& w){ w.run.mapIndex += 1; }},
             {"run.segmentIndex", [](World& w){ w.run.segmentIndex += 1; }},

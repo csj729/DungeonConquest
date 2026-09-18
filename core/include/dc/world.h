@@ -20,6 +20,7 @@
 #include "config.h"
 #include "entity_store.h"
 #include "fixed.h"
+#include "prd.h"
 #include "rng.h"
 #include "stat_block.h"
 
@@ -47,9 +48,10 @@ struct HeroState {
     int32_t  attackCooldown = 0;   // 남은 틱
     int32_t  qteCooldown    = 0;   // 남은 틱
 
-    // PRD 카운터 (§7). 마지막 성공 이후 시행 횟수 — 이게 없으면 확률 분포가 달라진다.
+    // PRD 채널 (§7). 통합 proc은 기본 공격당 판정을 한 번만 굴리므로(§3)
+    // 채널도 하나다. 어떤 스킬인지는 발동이 확정된 뒤 가중 추첨으로 고른다.
     // **체크섬 입력에 반드시 포함**된다 (§10 검증 하네스).
-    int32_t  prdTrials    = 0;
+    PrdChannel proc{};
 
     EntityId target{};             // 현재 타겟. stale이면 EntityStore가 걸러준다
 
@@ -90,7 +92,7 @@ struct HeroState {
         h.feed(exp);
         h.feed(attackCooldown);
         h.feed(qteCooldown);
-        h.feed(prdTrials);       // §10이 명시적으로 요구하는 입력
+        proc.hashInto(h);        // §10이 명시적으로 요구하는 입력
         h.feed(target);
         stats.hashInto(h);
     }

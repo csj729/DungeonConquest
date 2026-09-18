@@ -46,6 +46,9 @@ inline uint64_t fnv1aBytes(uint64_t h, const void* data, uint32_t len) {
     return h;
 }
 
+// 확률 고정 스케일. 65536 = 100%.
+constexpr uint32_t Q16_ONE = 65536u;
+
 class Rng {
 public:
     constexpr Rng() = default;
@@ -91,6 +94,20 @@ public:
         uint32_t v = 0;
         do { v = nextU32(); } while (v < reject);
         return v % n;
+    }
+
+    // q16(65536 = 100%) 확률로 참. **낮은 확률 전용 스케일이다.**
+    //
+    // permille은 1/1000이라 3.2% 같은 값을 32로밖에 담지 못해 상대오차가 커진다
+    // (PRD 상수 C에서 실측 3.0%). §10이 예고한 "5% 미만 확률은 별도 고정
+    // 스케일(65536 = 100%)로 분리"가 이것이다 — 같은 값에서 오차가 0.02%로 떨어진다.
+    //
+    // 2^16이 2^64를 정확히 나누므로 **기각 표집이 필요 없고 편향도 없다.**
+    // 상위 16비트를 쓰는 이유는 xorshift64*의 하위 비트가 상위보다 약하기 때문이다.
+    constexpr bool chanceQ16(uint32_t q) {
+        if (q == 0) return false;
+        if (q >= Q16_ONE) return true;
+        return static_cast<uint32_t>(nextU64() >> 48) < q;
     }
 
     // permille(1/1000) 확률로 참. data/*.json의 표현과 그대로 맞물린다.

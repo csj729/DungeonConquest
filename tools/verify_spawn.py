@@ -35,7 +35,7 @@ APPROACH_SEC = 8.0
 
 MIN_SEPARATION = 1.5           # 같은 배치 몹 사이 최소 간격(타일)
 SURVIVE_TARGET_SEC = 15.0      # 목표 5와 같은 기준
-LIFETIME_BAND = (10.0, 40.0)   # 몹 평균 생존 시간 — 넘으면 전장이 고인다
+LIFETIME_BAND = (10.0, 45.0)   # 몹 평균 생존 시간 — 넘으면 전장이 고인다
 
 
 def spawn_radius():

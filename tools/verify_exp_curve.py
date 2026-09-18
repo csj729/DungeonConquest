@@ -41,6 +41,7 @@ MAP_LEVEL_DECAY = 0.45         # 맵3 레벨업 / 맵1 레벨업의 하한
 # 풀 게임 투영: 맵 2·3의 웨이브 구성은 아직 미정이므로 맵 1 구성을 재사용하고
 # 웨이브 인덱스만 이어붙인다. 몹 수가 아니라 **곡선의 모양**을 보기 위한 투영이다.
 MAP_COUNT = 3
+BOSS_TARGET_SEC = 75.0   # 맵 보스 목표 처치 시간 — HP는 여기서 역산된다
 
 
 def monster_exp(base_ehp, wave):
@@ -80,16 +81,17 @@ def run_sim(maps):
                 gained += 1
             rows.append((w, n, growth, sec, gained, lv))
 
-        bw = m * len(WAVES) + 1
-        bhp = SLICE_BOSS_HP * hp_scale(bw)
-        behp = effective_hp(bhp, SLICE_BOSS_ARMOR)
-        bsec = behp / (dps * power_mult(lv))
+        # **보스 HP는 잡몹 스케일링이 아니라 목표 처치 시간에서 역산한다.**
+        # 잡몹 배율에 묶으면 영웅 성장(25배)을 못 따라가 맵 2·3 보스가 무너진다.
+        bsec = BOSS_TARGET_SEC
+        behp = bsec * dps * power_mult(lv)
+        bhp = behp * ARMOR_K / (ARMOR_K + SLICE_BOSS_ARMOR)
         total_sec += bsec
         carry += int(behp * EXP_PER_EHP)
         while carry >= level_need(lv + 1):
             carry -= level_need(lv + 1)
             lv += 1
-        rows.append((f"B{m+1}", "-", power_mult(lv), bsec, 0, lv))
+        rows.append((f"B{m+1}", round(bhp), power_mult(lv), bsec, 0, lv))
         per_map.append(lv - lv0)
     return rows, per_map, lv, total_sec
 
@@ -164,13 +166,20 @@ def report():
     print("  ※ 초반이 빠른 건 의도다(빌드가 빨리 잡힌다). 후반이 마르면 곤란하다\n")
 
     print("=== 목표 5: 필요 경험치 증가율이 수입 증가율과 맞물린다 ===")
-    lv_per_wave = lv_all / TOTAL_WAVES
-    need_per_wave = LEVEL_NEED_RATIO ** lv_per_wave
-    good = abs(need_per_wave - HP_SCALE_PER_WAVE) / HP_SCALE_PER_WAVE < 0.08
+    # 수입은 몹 체력 배율이 아니라 **구간이 품는 총 체력**에서 나온다.
+    # 연속 스폰에서는 몹 수가 처리량을 따라 늘어나므로, 수입은 성장 배율을 탄다.
+    seg_rows = [r for r in rows if isinstance(r[0], int)]
+    inc0 = seg_rows[0][1] * TRASH["hp"] * hp_scale(seg_rows[0][0])
+    inc1 = seg_rows[-1][1] * TRASH["hp"] * hp_scale(seg_rows[-1][0])
+    n_steps = seg_rows[-1][0] - seg_rows[0][0]
+    income_per_seg = (inc1 / inc0) ** (1 / n_steps)
+    lv_per_seg = lv_all / TOTAL_WAVES
+    need_per_seg = LEVEL_NEED_RATIO ** lv_per_seg
+    good = abs(need_per_seg - income_per_seg) / income_per_seg < 0.08
     ok &= good
-    print(f"  수입 ×{HP_SCALE_PER_WAVE}/웨이브 vs 필요치 "
-          f"×{need_per_wave:.3f}/웨이브 (레벨업 {lv_per_wave:.2f}회/웨이브)")
-    print(f"  {'PASS' if good else 'FAIL'}")
+    print(f"  수입 ×{income_per_seg:.3f}/구간 (구간이 품는 총 체력 기준) vs "
+          f"필요치 ×{need_per_seg:.3f}/구간")
+    print(f"  (레벨업 {lv_per_seg:.2f}회/구간)  {'PASS' if good else 'FAIL'}")
     print("  ※ 두 지수가 어긋나면 레벨업이 후반에 폭주하거나 말라붙는다\n")
 
     print("=== 목표 6: 성장 배율이 balance_baseline의 보스 가정과 일치한다 ===")

@@ -51,15 +51,15 @@ SKILLS = {                 # (기본 공격 대비 배율, 가중치, 광역 여
 
 # ── 일반 몹 (역산 대상) ────────────────────────────────────────
 TRASH = {
-    "hp": 30,                  # 기본 공격 3대. 원샷을 깬 이유는 아래 SPEED_GROWTH_SHARE 참조
+    "hp": 20,                  # 기본 공격 2대. 원샷을 깬 이유는 아래 SPEED_GROWTH_SHARE 참조
     "damage": 5,               # 근접(G_MELEE)
     "ranged_damage": 2,        # 원거리(G_RANGED) — 포위 한계를 받지 않아 절반으로 잡는다
     "windup_ticks": 0,         # 일반 몹은 사거리 진입 즉시 공격 (§3)
     "cooldown_ticks": 30,      # 이후 1.5초 주기
 }
 
-SEGMENT_TRASH_COUNT = 14       # 1구간 몹 수. 구간이 진행되며 늘어난다
-                               # (verify_segments.py: 14 → 26)
+SEGMENT_TRASH_COUNT = 21       # 1구간 몹 수. 구간이 진행되며 늘어난다
+                               # (verify_segments.py: 21 → 63)
 
 # ── 연속 스폰 — 동시 생존 상한 (design.md §2) ──────────────────
 # 스폰율을 고정하지 않고 동시 생존 수가 상한에 닿도록 채운다. 발산이 원천 차단되고
@@ -69,7 +69,7 @@ SEGMENT_TRASH_COUNT = 14       # 1구간 몹 수. 구간이 진행되며 늘어�
 # 상한은 §11의 **일반 구간 30~60**을 따른다. 150은 피크(보스 직전 버스트·돌발
 # 이벤트)용이지 정상 상태가 아니다 — 150을 정상 상태로 두면 전장에 떠 있는 몹이
 # 그 구간의 처치 목표보다 많아져 구성이 뒤집힌다.
-CONCURRENT_CAP = {i: round(30 * 2 ** ((i - 1) / 7)) for i in range(1, 9)}
+CONCURRENT_CAP = {i: round(30 * (40 / 30) ** ((i - 1) / 7)) for i in range(1, 9)}
 CONCURRENT_PEAK = 150       # 보스 직전 버스트 · 돌발 이벤트 "서두름"(§6)
 
 # 스폰 배치 — 한 번에 몇 마리가 같이 들어오는가.
@@ -110,7 +110,7 @@ def effective_targets(segment):
     """기본 공격 1회당 실효 타격 대상 수 (광역 proc 포함)."""
     aoe_weight = sum(w for _m, w, aoe in SKILLS.values() if aoe)
     return 1 + PROC_RATE * aoe_weight * (aoe_targets(segment) - 1)
-HITS_TO_KILL_TRASH = 3         # 목표: 일반 몹은 기본 공격 몇 대에 죽는가
+HITS_TO_KILL_TRASH = 2         # 목표: 일반 몹은 기본 공격 몇 대에 죽는가
 SURROUND_COUNT = 5             # 영웅에게 동시에 붙을 수 있는 몹 수 가정
 # 주의: 탑다운 전환으로 영웅이 이동하게 되면서 이 가정이 약해졌다.
 # 실제로는 포위를 벗어날 수 있으므로 목표 4는 "최악의 경우" 하한으로 읽어야 한다.
@@ -137,8 +137,8 @@ def effective_hp(hp, armor):
 # 따라서 필요 경험치도 지수여야 레벨업 간격이 일정하게 유지된다 —
 # 선형 곡선을 쓰면 후반에 레벨업이 폭주한다.
 EXP_PER_EHP = 1.0              # 몹 경험치 = 실효 체력 × 이 계수 (정수로 절삭)
-LEVEL_NEED_BASE = 380          # need(1)
-LEVEL_NEED_RATIO = 1.076       # need(n) = BASE × RATIO^(n-1)
+LEVEL_NEED_BASE = 300          # need(1)
+LEVEL_NEED_RATIO = 1.070       # need(n) = BASE × RATIO^(n-1)
 
 # 레벨업 1회당 유효 위력 성장. 레벨업이 아이템 뽑기/스펙업 카드의 **유일한**
 # 관문이므로(§4), 이 한 수치가 런 전체의 성장을 전부 담는다.
@@ -156,10 +156,12 @@ POWER_PER_LEVELUP = 0.07
 # 어떻게 나누든 클리어 시간은 같다. 배분이 바꾸는 것은 **잡몹 타수**뿐이고,
 # 타수가 치명타·공격력 성장이 오버킬로 버려지는 정도를 정한다.
 #
-# 공속 몫을 키우면 한 대 피해가 덜 자라는데 잡몹 HP는 웨이브 스케일링으로 45배
-# 오르므로, 타수가 폭증한다 (0.7이면 마지막 웨이브에서 45대). 0.15가 상한에 가깝다.
-SPEED_GROWTH_SHARE = 0.10   # 성장 중 공속이 가져가는 몫 (나머지는 한 대 피해)
-TRASH_HITS_BAND = (2.0, 6.0)   # 판 내내 유지되어야 할 잡몹 타수
+# **공속 몫이 곧 처치율 성장이다.** 처리량 = 공속 × 한 대 피해인데, 잡몹 HP는 한 대
+# 피해를 따라가야(타수 유지) 하므로 처치율은 정확히 공속 배율만큼 오른다.
+# 처치율이 안 오르면 전장이 고인다(평균 생존 = 동시 생존 상한 / 처치율).
+# **기준선 공속은 1초 1회 그대로다** — 성장분만 공속으로 실린다.
+SPEED_GROWTH_SHARE = 0.50   # 성장 중 공속이 가져가는 몫 (나머지는 한 대 피해)
+TRASH_HITS_BAND = (1.8, 5.0)   # 판 내내 유지되어야 할 잡몹 타수
 
 CARD_PICK_SEC = 2.5            # 카드 1회 선택에 쓰는 시간 가정 (UI 요구사항)
 MODAL_BUDGET = 0.15            # 런 전체에서 선택 모달이 차지해도 되는 비율 상한
@@ -202,7 +204,7 @@ def monster_exp(base_ehp, wave):
 #   클리어 시간 배율/웨이브 = HP_SCALE_PER_WAVE / (1+g)^(웨이브당 레벨업)
 # 웨이브당 약 1.8~3회 레벨업이므로 성장은 웨이브당 약 1.15배,
 # 여기에 1.026배를 더 얹어 1.18로 잡았다.
-HP_SCALE_PER_WAVE = 1.18
+HP_SCALE_PER_WAVE = 1.09
 TOTAL_WAVES = 24               # 풀 게임 = 맵 3개 × 8구간 (design.md §2)
                                # 수직 슬라이스는 맵 1개 = 8구간
 
@@ -237,7 +239,7 @@ def elite_damage_share():
 
 # ── 보스 ───────────────────────────────────────────────────────
 BOSS = {
-    "hp": 22000,
+    "hp": 33000,
     "armor": 50,
     "phase2_at": 0.5,          # HP 50%에서 페이즈 2 추가
     "patterns": {              # (타수, 타당 데미지)
@@ -248,8 +250,8 @@ BOSS = {
 }
 # 최종 보스 조우 시점의 레벨업 누적 횟수 — verify_exp_curve.py의 풀 게임 투영값.
 # 성장 배율은 감이 아니라 이 횟수에서 파생된다.
-TOTAL_LEVELUPS = 54
-BOSS_LEVELUPS = 52
+TOTAL_LEVELUPS = 60
+BOSS_LEVELUPS = 58
 BOSS_GROWTH_MULT = power_mult(BOSS_LEVELUPS)
 BOSS_TARGET_SEC = (60, 90)
 
@@ -301,7 +303,8 @@ def report():
           f"{speed_mult(BOSS_LEVELUPS):.1f}배 / 한 대 피해 {damage_mult(BOSS_LEVELUPS):.1f}배")
     print(f"  {'구간':>6} {'몹 HP':>9} {'한 대 피해':>10} {'타수':>6}")
     hits_ok = True
-    for w, lv in ((1, 0), (8, 22), (16, 39), (TOTAL_WAVES, BOSS_LEVELUPS)):
+    for w in (1, 8, 16, TOTAL_WAVES):
+        lv = round(TOTAL_LEVELUPS * (w - 1) / TOTAL_WAVES)
         dmg = HERO["attack_power"] * damage_mult(lv)
         h = TRASH["hp"] * hp_scale(w) / dmg
         hits_ok &= lo_h <= h <= hi_h
@@ -412,14 +415,19 @@ def report():
         print(f"    구간 {w:>2}: 몹 HP {h:>5.1f}  (기본 공격 {h/HERO['attack_power']:.1f}대)")
     print(f"  → 마지막 구간에서도 원샷하려면 공격력 {final:.1f}배 성장이 필요하다")
     print(f"     **잡몹 원샷 구조에서 공격력 성장이 체감되는 지점이 여기다**")
-    grown = power_mult(TOTAL_LEVELUPS)
+    # **비교 대상은 총 성장이 아니라 한 대 피해 성장이다.** 성장의 절반이 공속으로
+    # 가므로(SPEED_GROWTH_SHARE), 몹 체력은 공속이 아니라 타격당 피해를 따라가야
+    # 타수가 유지된다. 공속 성장은 체력이 아니라 **처치율**과 맞물린다.
+    grown = damage_mult(TOTAL_LEVELUPS)
     gap = final / grown
-    good = 0.7 <= gap <= 1.5
+    good = 0.8 <= gap <= 1.25
     ok &= good
-    print(f"  몹 체력 {final:.1f}배 vs 레벨업 {TOTAL_LEVELUPS}회 성장 {grown:.1f}배 "
-          f"→ 격차 {gap:.2f}배  {'PASS' if good else 'FAIL'}")
-    print("  ※ 이 격차가 1을 넘는 만큼 후반 구간이 길어진다. 1보다 작으면"
-          " 후반이 오히려 쉬워져 성장 곡선이 무너진다\n")
+    print(f"  몹 체력 {final:.1f}배 vs 한 대 피해 성장 {grown:.1f}배 "
+          f"(총 성장 {power_mult(TOTAL_LEVELUPS):.1f}배 중) → 격차 {gap:.2f}배  "
+          f"{'PASS' if good else 'FAIL'}")
+    print("  ※ 이 격차가 곧 잡몹 타수의 변화다. 1에서 벗어나면 타수가 흐른다")
+    print(f"  ※ 나머지 성장({speed_mult(TOTAL_LEVELUPS):.1f}배)은 공속으로 가서 "
+          "처치율을 올린다 — 전장이 고이지 않게 하는 축이다\n")
 
     print("=== 목표 12: 모든 수치가 Fixed 20.12 범위 안 ===")
     worst = max(HERO["corruption_max"],

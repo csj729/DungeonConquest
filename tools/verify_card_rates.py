@@ -20,8 +20,8 @@ RATES = {
 }
 
 CARDS_PER_LEVEL = 3        # 레벨업당 성장 카드 3장 (맨 왼쪽 고정 슬롯 제외)
-LEVELUPS = 54              # 풀 게임 한 판 (tools/verify_exp_curve.py)
-SLICE_LEVELUPS = 19        # 맵 1개 = 수직 슬라이스
+LEVELUPS = 61              # 풀 게임 한 판 (tools/verify_exp_curve.py)
+SLICE_LEVELUPS = 21        # 맵 1개 = 수직 슬라이스
 LEVELUP_RANGE = (45, 65)   # 곡선이 흔들릴 여지
 
 # 목표

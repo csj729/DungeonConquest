@@ -16,9 +16,29 @@ HERO = {
     "attack_interval_ticks": 20,  # 1.0초
     "crit_chance": 0.10,
     "crit_mult": 1.5,
-    "max_hp": 300,
+    "corruption_max": 1250,    # HP가 아니라 **잠식 게이지** — 차오르면 게임오버
     "armor": 0,
 }
+
+# ── 잠식 게이지 (design.md §2) ─────────────────────────────────
+# 게임오버 조건 둘(체력 고갈 · 몬스터 수 상한)을 하나로 합친 게이지다.
+# 반전된 체력과 동형이라 기존 HP 시스템이 그대로 얹히고, 입력이 하나 더 붙는다:
+#
+#   충전 = 피격량 + f(전장의 몹 수)
+#
+# 두 번째 항이 "시간 초과" 게임오버까지 흡수한다 — 가만히 있어도 몹이 있으면 찬다.
+CORRUPTION_THRESHOLD = 20      # 이 수까지는 물량 충전 없음 (전투 소강 구간)
+CORRUPTION_PER_MOB = 0.6       # 임계 초과 1마리당 초당 충전
+CORRUPTION_OVERFLOW_MULT = 3.0  # 동시 생존 상한을 넘기면 가속
+
+
+def corruption_from_mass(alive, cap):
+    """전장의 몹 수가 만드는 초당 잠식 충전."""
+    over = max(alive - CORRUPTION_THRESHOLD, 0)
+    rate = CORRUPTION_PER_MOB * over
+    if alive > cap:
+        rate += CORRUPTION_PER_MOB * (alive - cap) * (CORRUPTION_OVERFLOW_MULT - 1)
+    return rate
 
 PROC_RATE = 0.15           # 통합 proc (design.md §3)
 QTE_COOLDOWN_SEC = 6.0     # 스킬 발동과 별개로 QTE에 거는 자체 쿨다운
@@ -32,7 +52,8 @@ SKILLS = {                 # (기본 공격 대비 배율, 가중치, 광역 여
 # ── 일반 몹 (역산 대상) ────────────────────────────────────────
 TRASH = {
     "hp": 30,                  # 기본 공격 3대. 원샷을 깬 이유는 아래 SPEED_GROWTH_SHARE 참조
-    "damage": 5,
+    "damage": 5,               # 근접(G_MELEE)
+    "ranged_damage": 2,        # 원거리(G_RANGED) — 포위 한계를 받지 않아 절반으로 잡는다
     "windup_ticks": 0,         # 일반 몹은 사거리 진입 즉시 공격 (§3)
     "cooldown_ticks": 30,      # 이후 1.5초 주기
 }
@@ -192,10 +213,10 @@ def hp_scale(wave):
 
 # ── 엘리트 (등장 웨이브 스케일링 적용 전 기준값) ───────────────
 ELITES = {
-    "고블린 궁병대장": {"hp": 120, "armor": 0,   "damage": 40, "target_sec": (7, 12)},
-    "고블린 방패병":   {"hp": 100, "armor": 200, "damage": 8,  "target_sec": (18, 30)},
-    "고블린 주술사":   {"hp": 90,  "armor": 0,   "damage": 5,  "target_sec": (5, 10)},
-    "미친 고블린":     {"hp": 150, "armor": 0,   "damage": 3,  "target_sec": (9, 16)},
+    "고블린 궁병대장": {"hp": 120, "armor": 0,   "damage": 167, "target_sec": (7, 12)},
+    "고블린 방패병":   {"hp": 100, "armor": 200, "damage": 33,  "target_sec": (18, 30)},
+    "고블린 주술사":   {"hp": 90,  "armor": 0,   "damage": 21,  "target_sec": (5, 10)},
+    "미친 고블린":     {"hp": 150, "armor": 0,   "damage": 13,  "target_sec": (9, 16)},
 }
 
 ARCHER_WINDUP_TICKS = 60       # 궁병대장 조준 — QTE를 볼 수 있어야 한다
@@ -220,9 +241,9 @@ BOSS = {
     "armor": 50,
     "phase2_at": 0.5,          # HP 50%에서 페이즈 2 추가
     "patterns": {              # (타수, 타당 데미지)
-        "삼연격": (3, 15),
-        "대곤봉 강타": (1, 70),
-        "돌진 찌르기": (2, 20),
+        "삼연격": (3, 63),
+        "대곤봉 강타": (1, 293),
+        "돌진 찌르기": (2, 84),
     },
 }
 # 최종 보스 조우 시점의 레벨업 누적 횟수 — verify_exp_curve.py의 풀 게임 투영값.
@@ -309,12 +330,19 @@ def report():
     else:
         print()
 
-    print("=== 목표 5: 둘러싸여도 15초 이상 버틴다 ===")
-    incoming = TRASH["damage"] * SURROUND_COUNT / (TRASH["cooldown_ticks"] / TICK_HZ)
-    survive = HERO["max_hp"] / incoming
+    print("=== 목표 5: 잠식이 가득 차기까지 15초 이상 ===")
+    from_hits = SURROUND_COUNT * TRASH["damage"] / (TRASH["cooldown_ticks"] / TICK_HZ)
+    from_mass = corruption_from_mass(CONCURRENT_CAP[1], CONCURRENT_CAP[1])
+    total_rate = from_hits + from_mass
+    survive = HERO["corruption_max"] / total_rate
     ok &= (survive >= 15)
-    print(f"  {SURROUND_COUNT}마리 × {TRASH['damage']}딜 / {TRASH['cooldown_ticks']/TICK_HZ}초 = 초당 {incoming:.1f}")
-    print(f"  HP {HERO['max_hp']} → {survive:.1f}초  {'PASS' if survive >= 15 else 'FAIL'}\n")
+    print(f"  피격 {SURROUND_COUNT}마리 × {TRASH['damage']} / "
+          f"{TRASH['cooldown_ticks']/TICK_HZ}초 = 초당 {from_hits:.1f}")
+    print(f"  물량 {CONCURRENT_CAP[1]}마리 (임계 {CORRUPTION_THRESHOLD} 초과분) "
+          f"= 초당 {from_mass:.1f}")
+    print(f"  잠식 {HERO['corruption_max']} / 초당 {total_rate:.1f} → {survive:.1f}초  "
+          f"{'PASS' if survive >= 15 else 'FAIL'}")
+    print("  ※ 구간 1 기준이다. 상한이 오르면 물량 충전이 커진다 (verify_spawn.py)\n")
 
     print("=== 목표 6: QTE 구간당 3~5회 ===")
     procs = aps * clear * PROC_RATE
@@ -366,13 +394,13 @@ def report():
     print(f"  페이즈 2 진입: HP {BOSS['hp'] * BOSS['phase2_at']:.0f} "
           f"({bsec * BOSS['phase2_at']:.0f}초 지점)\n")
 
-    print("=== 목표 10: 보스 패턴 한 사이클이 영웅을 즉사시키지 않는다 ===")
+    print("=== 목표 10: 보스 패턴 한 사이클이 잠식을 다 채우지 않는다 ===")
     cycle = sum(n * d for n, d in BOSS["patterns"].values())
-    ratio = cycle / HERO["max_hp"]
+    ratio = cycle / HERO["corruption_max"]
     ok &= (ratio < 1.0)
     for pname, (n, d) in BOSS["patterns"].items():
         print(f"  {pname}: {n}타 x {d} = {n*d}")
-    print(f"  한 사이클 합 {cycle} / 영웅 HP {HERO['max_hp']} = {ratio:.0%}"
+    print(f"  한 사이클 합 {cycle} / 잠식 최대치 {HERO['corruption_max']} = {ratio:.0%}"
           f"  {'PASS' if ratio < 1.0 else 'FAIL'}\n")
 
     print("=== 목표 11: 구간 스케일링 ===")
@@ -394,7 +422,7 @@ def report():
           " 후반이 오히려 쉬워져 성장 곡선이 무너진다\n")
 
     print("=== 목표 12: 모든 수치가 Fixed 20.12 범위 안 ===")
-    worst = max(HERO["max_hp"],
+    worst = max(HERO["corruption_max"],
                 final_hp * SEGMENT_TRASH_COUNT,
                 effective_hp(BOSS["hp"], BOSS["armor"]),
                 HERO["attack_power"] * max(m for m, _w, _a in SKILLS.values()))

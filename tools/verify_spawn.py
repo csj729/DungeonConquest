@@ -20,6 +20,7 @@ sys.path.insert(0, "tools")
 from balance_baseline import (
     HERO, TRASH, TICK_HZ, CONCURRENT_CAP, SURROUND_COUNT, hero_dps,
     effective_targets, spawn_batch, SPAWN_DIRECTIONS, SPAWN_INTERVAL_TICKS,
+    corruption_from_mass, CORRUPTION_THRESHOLD,
 )
 from verify_segments import SEGMENTS, simulate
 
@@ -106,33 +107,31 @@ def report():
               f"**{HERO['attack_interval_ticks'] * cur / thr:.0f}틱**")
     print()
 
-    print("=== 교전 중인 몹이 영웅을 얼마나 때리나 ===")
-    print(f"  {'S':>2} {'근접 포위':>8} {'원거리':>7} {'초당 피해':>9} {'생존':>7}")
+    print("=== 잠식 게이지 — 피격 + 물량 ===")
+    print(f"  {'S':>2} {'근접 포위':>8} {'원거리':>7} {'피격/초':>8} {'물량/초':>8} "
+          f"{'합':>7} {'생존':>7}")
     worst = 1e9
     for i, (melee, ranged, _e, _n) in enumerate(SEGMENTS, 1):
         cap = CONCURRENT_CAP[i]
         ratio = ranged / (melee + ranged)
         mel = min(SURROUND_COUNT, round(cap * (1 - ratio)))
         rng_ = round(cap * ratio)
-        inc = mel * TRASH["damage"] / (TRASH["cooldown_ticks"] / TICK_HZ) \
-            + rng_ * 4 / (TRASH["cooldown_ticks"] / TICK_HZ)
-        surv = HERO["max_hp"] / inc if inc else 1e9
+        hit = (mel * TRASH["damage"] + rng_ * TRASH["ranged_damage"]) \
+            / (TRASH["cooldown_ticks"] / TICK_HZ)
+        mass = corruption_from_mass(cap, cap)
+        inc = hit + mass
+        surv = HERO["corruption_max"] / inc if inc else 1e9
         worst = min(worst, surv)
-        print(f"  {i:>2} {mel:>8} {rng_:>7} {inc:>8.0f} {surv:>6.1f}초")
+        print(f"  {i:>2} {mel:>8} {rng_:>7} {hit:>8.1f} {mass:>8.1f} {inc:>7.1f} "
+              f"{surv:>6.1f}초")
     good = worst >= SURVIVE_TARGET_SEC
     ok &= good
     print(f"  최악 {worst:.1f}초 (목표 {SURVIVE_TARGET_SEC:g}초)  "
           f"{'PASS' if good else 'FAIL'}")
     if not good:
-        print("  ※ **원거리 몹은 포위 한계를 받지 않는다.** 근접은 영웅 주위에 "
-              f"{SURROUND_COUNT}마리까지만 붙지만")
-        print("     원거리는 사거리 안에 들어온 전부가 쏜다. 상한이 오르고 원거리 비율이")
-        print("     50%까지 가면 그대로 피격량이 된다")
-        need_hp = HERO["max_hp"] * SURVIVE_TARGET_SEC / worst
-        print(f"     → 영웅 HP가 마지막 구간에서 {need_hp:.0f}"
-              f"({need_hp / HERO['max_hp']:.1f}배) 필요하다. "
-              "**생존 축 성장이 모델에 없다** —")
-        print("       POWER_PER_LEVELUP은 위력만 담고 있다 (§4)")
+        need = HERO["corruption_max"] * SURVIVE_TARGET_SEC / worst
+        print(f"  ※ 잠식 최대치가 {need:.0f} 필요하다 "
+              f"(현재 {HERO['corruption_max']})")
     print()
 
     print("전체:", "PASS" if ok else "FAIL")

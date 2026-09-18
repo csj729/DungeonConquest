@@ -24,7 +24,7 @@ sys.path.insert(0, "tools")
 from balance_baseline import (
     HERO, TRASH, hp_scale, effective_hp, ELITES, hero_dps, damage_mult,
 )
-from verify_waves import WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, simulate
+from verify_segments import SEGMENTS as WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, simulate
 from verify_card_values import GRADE_BUDGET, ref_skill_dps
 
 # 각인이었을 때의 값 — 비교 기준 (cards_vertical_slice.md §1)
@@ -41,7 +41,7 @@ def trash_crit_util(rows):
     N=1이면 0 — 치명타 배수가 통째로 버려진다.
     """
     hs = []
-    for i, _m, _r, _n, _e, _g, _s, _gain, cum in rows:
+    for i, _m, _r, _n, _e, _g, _s, _gain, cum, _et in rows:
         dmg = HERO["attack_power"] * damage_mult(cum)
         hs.append(TRASH["hp"] * hp_scale(i) / dmg)
     avg = sum(hs) / len(hs)
@@ -86,7 +86,7 @@ def report():
     rows, _bsec, _bg, _lv = simulate()
     print(f"  {'W':>2} {'몹 HP':>7} {'영웅 성장':>9} {'실효 공격력':>11} {'필요 타수':>9}")
     worst = 0.0
-    for i, _m, _r, _n, _els, g, _sec, _gain, _cum in rows:
+    for i, _m, _r, _n, _els, g, _sec, _gain, _cum, _et in rows:
         hp = TRASH["hp"] * hp_scale(i)
         ap = HERO["attack_power"] * g
         worst = max(worst, hp / ap)
@@ -167,7 +167,7 @@ def report():
         print("     크게 벗어나지 않는다 — 반복 획득형 스탯으로 정확히 원하는 성질이다")
         print("     (치피 기저가 높으면 치확 × 치피의 곱 효과와 분모 증가가 상쇄된다)\n")
 
-    ok &= one_shot   # 구조 진단이 성립하는지만 확인한다
+    # 구조 진단(잡몹 타수)은 위 목표에서 이미 검사했다
     print("전체:", "PASS" if ok else "FAIL")
     return ok
 

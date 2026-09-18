@@ -23,9 +23,11 @@ from balance_baseline import (
     hero_dps, TRASH, hp_scale, effective_hp, ELITES, SKILLS, PROC_RATE,
     level_need, power_mult, EXP_PER_EHP, LEVEL_NEED_BASE, LEVEL_NEED_RATIO,
     POWER_PER_LEVELUP, CARD_PICK_SEC, MODAL_BUDGET, HP_SCALE_PER_WAVE,
-    TOTAL_WAVES, TOTAL_LEVELUPS, ARMOR_K,
+    TOTAL_WAVES, TOTAL_LEVELUPS, ARMOR_K, effective_targets,
 )
-from verify_waves import WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR
+from verify_segments import (
+    SEGMENTS as WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, SEGMENT_TARGET_SEC,
+)
 
 CARDS_PER_LEVEL = 3
 
@@ -47,21 +49,25 @@ def monster_exp(base_ehp, wave):
 
 
 def run_sim(maps):
-    """maps개 맵을 이어서 굴리고 (웨이브별 기록, 맵별 레벨업, 총시간) 반환."""
+    """maps개 맵을 이어서 굴리고 (구간별 기록, 맵별 레벨업, 총시간) 반환.
+
+    **구간 통과 시간이 설계값이고 몹 수는 거기서 역산된다.** 맵 1의 구성을 그렇게
+    풀었으므로(verify_segments.SEGMENTS), 맵 2·3도 같은 방식으로 푼다.
+    맵 1의 몹 수를 그대로 재사용하면 체력 스케일링이 계속 붙어 판 길이가 과대평가된다.
+    """
     dps, _b, _a = hero_dps()
-    aoe_weight = sum(w for _m, w, aoe in SKILLS.values() if aoe)
-    eff_targets = 1 + PROC_RATE * aoe_weight * (3 - 1)
 
     lv, carry, total_sec = 0, 0, 0.0
     per_map, rows = [], []
     for m in range(maps):
         lv0 = lv
-        for j, (melee, ranged, elites, _note) in enumerate(WAVES):
+        for j, (_melee, _ranged, elites, _note) in enumerate(WAVES):
             w = m * len(WAVES) + j + 1
-            n = melee + ranged
-            trash_ehp = n * TRASH["hp"] * hp_scale(w)
+            et = effective_targets(j + 1)          # 동시 생존 상한은 맵마다 같은 곡선
+            sec = SEGMENT_TARGET_SEC[j]
             growth = power_mult(lv)
-            sec = trash_ehp / (dps * growth * eff_targets)
+            # 목표 시간을 채우는 잡몹 수를 역산한다
+            n = round(sec * dps * growth * et / (TRASH["hp"] * hp_scale(w)))
             total_sec += sec
 
             carry += n * monster_exp(TRASH["hp"], w)
@@ -74,7 +80,6 @@ def run_sim(maps):
                 gained += 1
             rows.append((w, n, growth, sec, gained, lv))
 
-        # 맵 보스: 슬라이스 보스를 맵 시작 웨이브 배율로 스케일링
         bw = m * len(WAVES) + 1
         bhp = SLICE_BOSS_HP * hp_scale(bw)
         behp = effective_hp(bhp, SLICE_BOSS_ARMOR)
@@ -115,9 +120,10 @@ def report():
     print(f"  → 레벨업 {lv1}회, 카드 {lv1 * CARDS_PER_LEVEL}장, "
           f"전투 {sec1/60:.1f}분\n")
 
-    print(f"=== 풀 게임 투영 (맵 {MAP_COUNT}개 / {TOTAL_WAVES}웨이브) ===")
-    print("  ※ 맵 2·3의 웨이브 구성은 미정이라 맵 1 구성을 재사용한 투영이다.")
-    print("     절대값이 아니라 곡선의 모양을 본다\n")
+    print(f"=== 풀 게임 투영 (맵 {MAP_COUNT}개 / {TOTAL_WAVES}구간) ===")
+    print("  ※ 맵 2·3의 구간 구성은 미정이다. **구간 목표 시간에서 몹 수를 역산**해")
+    print("     맵 1과 같은 방식으로 푼다 — 맵 1 몹 수를 재사용하면 체력 스케일링이")
+    print("     계속 붙어 판 길이가 과대평가된다\n")
     rows, per_map, lv_all, sec_all = run_sim(MAP_COUNT)
     for m, c in enumerate(per_map, 1):
         print(f"  맵 {m}: 레벨업 {c}회")

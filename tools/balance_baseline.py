@@ -51,6 +51,29 @@ SEGMENT_TRASH_COUNT = 14       # 1구간 몹 수. 구간이 진행되며 늘어�
 CONCURRENT_CAP = {i: round(30 * 2 ** ((i - 1) / 7)) for i in range(1, 9)}
 CONCURRENT_PEAK = 150       # 보스 직전 버스트 · 돌발 이벤트 "서두름"(§6)
 
+# 스폰 배치 — 한 번에 몇 마리가 같이 들어오는가.
+# **배치는 리듬을, 상한은 밀도를 정한다.** 정상 상태의 스폰량은 처치량과 같으므로
+# (죽은 만큼 채운다) 배치를 키운다고 총량이 늘지는 않는다. 대신 초반엔 두세 마리씩
+# 꾸준히, 후반엔 여덟 마리씩 우르르 — 같은 총량이 전혀 다르게 체감된다.
+SPAWN_INTERVAL_TICKS = 40   # 2.0초마다 한 배치
+SPAWN_DIRECTIONS = 4        # 사방 스폰 (§13). 배치를 방향에 균등 배분한다
+
+
+def spawn_batch(segment):
+    """구간 i의 배치 크기. 2 → 8로 증가한다."""
+    return round(2 + 6 * (segment - 1) / 7)
+
+
+def spawn_per_direction(segment):
+    """배치를 4방향에 나눈 수. 나머지는 북 → 동 → 남 → 서 고정 순서로 배분한다.
+
+    나머지 배분 순서를 고정하는 것이 결정론 요구사항이다 — 무작위로 돌리면
+    서버·클라이언트의 스폰 위치가 갈린다.
+    """
+    b = spawn_batch(segment)
+    base, rem = divmod(b, SPAWN_DIRECTIONS)
+    return [base + (1 if d < rem else 0) for d in range(SPAWN_DIRECTIONS)]
+
 # 광역 1회가 전장의 몹 중 몇 %를 맞히는가. 반경과 맵 크기에 달렸으므로
 # **§14-10 하네스에서 실측할 항목**이다. 여기서는 보수적으로 잡는다.
 AOE_TARGET_SHARE = 0.13
@@ -177,6 +200,20 @@ ELITES = {
 
 ARCHER_WINDUP_TICKS = 60       # 궁병대장 조준 — QTE를 볼 수 있어야 한다
 
+# ── 타겟 우선순위 (design.md §3) ───────────────────────────────
+# **오토 배틀이므로 플레이어는 대상을 고르지 않는다.** 그래서 타겟 규칙이 곧
+# 밸런싱 손잡이다. 단일 공격은 보스 > 엘리트 > 최근접 잡몹 순으로 간다.
+#
+# 최근접 우선으로 두면 잡몹 30~60마리에 피해가 분산돼 엘리트 처치가 12초 →
+# 100초가 되고, QTE가 구간당 4회 → 33회로 예산(3~5회)을 8배 넘긴다.
+ELITE_PRIORITY = True
+
+
+def elite_damage_share():
+    """엘리트가 실제로 받는 피해 비중. 단일 공격은 고정, 광역은 전장에 퍼진다."""
+    aoe_weight = sum(w for _m, w, aoe in SKILLS.values() if aoe)
+    return (1 - PROC_RATE) + PROC_RATE * aoe_weight if ELITE_PRIORITY else 0.11
+
 # ── 보스 ───────────────────────────────────────────────────────
 BOSS = {
     "hp": 22000,
@@ -295,9 +332,11 @@ def report():
     print()
 
     print("=== 목표 7: 엘리트 처치 시간 ===")
+    share = elite_damage_share()
+    print(f"  타겟 우선순위 적용 → 엘리트가 받는 피해 비중 {share:.0%}")
     for name, e in ELITES.items():
         ehp = effective_hp(e["hp"], e["armor"])
-        sec = ehp / dps
+        sec = ehp / (dps * share)
         lo, hi = e["target_sec"]
         good = lo <= sec <= hi
         ok &= good

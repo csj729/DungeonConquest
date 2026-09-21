@@ -99,6 +99,11 @@
   "_pierce": "E_PIERCE(관통)의 직선 판정. 반폭 0.7타일은 몹 이격(1.5)의 절반 조금 아래라 '일직선으로 늘어선 적'만 걸린다 — 더 넓히면 사실상 부채꼴 광역이 되어 E_WIDE와 겹친다. 길이 3.0타일은 영웅 사거리와 같게 두어 '보이는 만큼 뚫는다'가 성립하게 한다.",
   "pierce_width_millitile": 700,
   "pierce_length_millitile": 3000,
+  "_relic_params": "유물 파라미터. 문서 §2의 초 단위를 20Hz 틱으로 옮긴 값이다.\\nrage_max_stacks는 **등급과 무관하게 고정**이다 — 상한을 등급으로 올리면 중첩당 수치와 곱해져 증가폭이 1 : 4 : 16이 된다.\\nfrost_radius는 광역기(2.0타일)보다 넓게 둔다. 둔화는 '붙기 전에' 효과가 있어야 의미가 있는데 광역 반경과 같으면 이미 붙은 적만 늦춘다.",
+  "rage_duration_ticks": 100,
+  "rage_max_stacks": 10,
+  "bolt_interval_ticks": 120,
+  "frost_radius_millitile": 4000,
   "relics": [
     {
       "id": "R_RAGE",

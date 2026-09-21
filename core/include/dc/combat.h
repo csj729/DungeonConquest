@@ -62,6 +62,9 @@ inline uint32_t chanceToQ16(Fixed p) {
 
 // 이동 (§3) — 영웅은 타겟을 향해, 몹은 영웅을 향해. **양쪽 다 추격뿐이다.**
 // 사거리 판정보다 먼저 돌고, 그 뒤에 분리가 겹침을 푼다.
+// 서리 오라는 이동에서 쓰이므로 선언을 앞에 둔다 (정의는 유물 절에).
+inline Fixed frostMult(const World& w, const SimConfig& cfg, uint32_t i);
+
 inline void movementRun(World& w, const SimConfig& cfg) {
     if (cfg.tickHz <= 0) return;
 
@@ -90,7 +93,7 @@ inline void movementRun(World& w, const SimConfig& cfg) {
         if (w.entities.approachSpeed[i].raw <= 0) continue;
         (void)stepToward(&w.entities.posX[i], &w.entities.posY[i],
                          w.hero.posX, w.hero.posY,
-                         w.entities.approachSpeed[i] / cfg.tickHz,
+                         (w.entities.approachSpeed[i] * frostMult(w, cfg, i)) / cfg.tickHz,
                          approachStop(w.entities.attackRange[i], cfg), nullptr, nullptr);
     }
 }
@@ -195,6 +198,59 @@ inline Fixed wideRadius(const World& w, Fixed base) {
     return base * (Fixed::one() + engraveValue(w, EngraveId::Wide));
 }
 
+// ── 유물 효과 (§4 유물) ──────────────────────────────────────────
+//
+// **각인이 스킬의 성질을 바꾼다면 유물은 전장에 규칙을 하나 더한다.**
+// 그래서 스킬 경로가 아니라 틱 루프와 피해 계산 양쪽에 붙는다.
+
+inline Fixed relicValue(const World& w, RelicId r) {
+    return w.cards.relic[relicIndex(r)];
+}
+
+// R_RAGE(분노의 토템) + R_TIDE(밀물의 인장) — 영웅 공격력에 곱해지는 배율.
+//
+// 둘을 한 곳에서 접는 이유는 **StatBlock에 넣지 않기 위해서다.** 매 틱 변하는
+// 값이라 모디파이어로 넣으면 추가/제거가 초당 20회씩 돌고, 그때마다 조건부
+// 모디파이어 재평가가 따라붙는다. 피해 계산에서 한 번 곱하는 편이 싸고 명확하다.
+inline Fixed heroPowerMult(const World& w, const SimConfig& cfg) {
+    Fixed mult = Fixed::one();
+
+    // 분노 — 피격 중첩. 중첩당 수치는 등급이 정하고 상한은 고정이다.
+    const Fixed rage = relicValue(w, RelicId::Rage);
+    if (rage.raw > 0 && w.hero.rageStacks > 0) mult += rage * w.hero.rageStacks;
+
+    // 밀물 — 구간 경과 **초**에 비례하고 구간이 넘어가면 리셋된다.
+    // 물량이 가장 쌓인 구간 후반에 가장 강하므로 위기와 반격이 맞물린다.
+    const Fixed tide = relicValue(w, RelicId::Tide);
+    if (tide.raw > 0 && cfg.tickHz > 0) {
+        const int32_t sec = (w.tickCount() - w.run.segmentStartTick) / cfg.tickHz;
+        if (sec > 0) mult += tide * sec;
+    }
+    return mult;
+}
+
+// R_BEACON(추적의 신호탄) — 엘리트·보스에게만 붙는 피해 증가.
+// **물량 유물들과 정반대 축이다** — 잡몹에는 무용지물이라 "지금 무엇이 문제인가"에
+// 따라 가치가 갈리고, 그래서 빌드 선택이 생긴다.
+inline Fixed beaconMult(const World& w, Archetype a) {
+    if (a == Archetype::Trash) return Fixed::one();
+    return Fixed::one() + relicValue(w, RelicId::Beacon);
+}
+
+// R_FROST(서리 오라) — 반경 안의 적 이동속도를 깎는다. 이동 시점에 곱한다.
+inline Fixed frostMult(const World& w, const SimConfig& cfg, uint32_t i) {
+    const Fixed frost = relicValue(w, RelicId::Frost);
+    if (frost.raw <= 0 || cfg.frostRadius.raw <= 0) return Fixed::one();
+    const int64_t r2 = static_cast<int64_t>(cfg.frostRadius.raw)
+                     * static_cast<int64_t>(cfg.frostRadius.raw);
+    if (distanceSq(w.entities.posX[i], w.entities.posY[i], w.hero.posX, w.hero.posY) > r2) {
+        return Fixed::one();
+    }
+    Fixed left = Fixed::one() - frost;
+    if (left.raw < 0) left = Fixed{};      // 100% 초과 둔화는 정지까지만
+    return left;
+}
+
 // 관통은 스킬 경로에서도 쓰이므로 선언을 앞에 둔다 (정의는 아래).
 inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
 
@@ -221,7 +277,8 @@ inline void applyDecay(World& w, const SimConfig& cfg, uint32_t i) {
 inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage,
                            bool hooks = true) {
     if (w.entities.deadAt(i)) return Fixed{};
-    const Fixed dealt = mitigate(rawDamage, rendArmor(w, w.entities.armor[i]), cfg.armorK);
+    const Fixed dealt = mitigate(rawDamage * beaconMult(w, w.entities.archetype[i]),
+                                 rendArmor(w, w.entities.armor[i]), cfg.armorK);
     w.entities.damageTaken[i] += dealt;
     if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) {
         if (hooks) applyDecay(w, cfg, i);   // 살아남은 적에게만 · 도트 자신은 제외
@@ -286,7 +343,7 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
     if (skillIndex >= cfg.skillCount) return;
     const SkillConfig& sk = cfg.skills[skillIndex];
     Fixed dmg = w.hero.stats.value(Stat::AttackPower) * sk.mult * qteAmplify(cfg, g)
-              * swarmMult(w, cfg);
+              * swarmMult(w, cfg) * heroPowerMult(w, cfg);
 
     // E_CHAIN(연타) — **총 피해를 올리고 그만큼을 2회로 나눈다.**
     // 합계만 올리면 수치형과 다를 게 없다. 나눠 때려야 과잉 피해가 줄고
@@ -420,6 +477,36 @@ inline void decayRun(World& w, const SimConfig& cfg) {
     }
 }
 
+// R_BOLT(뇌전의 성물) — 주기마다 무작위 적 하나에 공격력 비례 피해.
+//
+// **틱 카운터로 주기를 잡는다** — 실시간 참조가 없어 결정론에 안전하다(문서 §2).
+// 대상 추첨은 `rngCombat`이 아니라 **살아있는 적을 배열 순서로 세어 k번째**를
+// 고르는 방식이다. 기각 재시도를 쓰면 난수 소비 횟수가 전장 상태에 따라 흔들려
+// 리플레이가 깨진다 — 카드 추첨(pickNth)에서 쓴 것과 같은 규칙이다.
+inline void boltRun(World& w, const SimConfig& cfg) {
+    const Fixed bolt = relicValue(w, RelicId::Bolt);
+    if (bolt.raw <= 0 || cfg.boltIntervalTicks <= 0) return;
+    if (w.tickCount() < w.hero.boltNextTick) return;
+    w.hero.boltNextTick = w.tickCount() + cfg.boltIntervalTicks;
+
+    const uint32_t cnt = w.entities.count();
+    uint32_t alive = 0;
+    for (uint32_t i = 0; i < cnt; ++i) if (!w.entities.deadAt(i)) ++alive;
+    if (alive == 0) return;
+
+    // **굴림은 적이 있을 때만 한 번** — 없을 때도 굴리면 소비 횟수가 갈린다.
+    uint32_t k = w.rngCombat.range(alive);
+    for (uint32_t i = 0; i < cnt; ++i) {
+        if (w.entities.deadAt(i)) continue;
+        if (k == 0) {
+            applySkillHit(w, cfg, i,
+                          w.hero.stats.value(Stat::AttackPower) * bolt * heroPowerMult(w, cfg));
+            return;
+        }
+        --k;
+    }
+}
+
 // E_PIERCE(관통) — **타겟 뒤의 직선상 적에게 감쇠된 피해를 준다.**
 //
 // 영웅 → 타겟 방향의 반직선 위에서, 타겟보다 멀고 폭 안에 있는 적을 고른다.
@@ -462,7 +549,8 @@ inline void combatRun(World& w, const SimConfig& cfg) {
         const Fixed range = w.hero.stats.value(Stat::Range);
         const int64_t r2 = static_cast<int64_t>(range.raw) * static_cast<int64_t>(range.raw);
         if (distanceSq(w.entities.posX[i], w.entities.posY[i], w.hero.posX, w.hero.posY) <= r2) {
-            Fixed dmg = w.hero.stats.value(Stat::AttackPower) * swarmMult(w, cfg);
+            Fixed dmg = w.hero.stats.value(Stat::AttackPower)
+                      * swarmMult(w, cfg) * heroPowerMult(w, cfg);
             {
                 Fixed chance = w.hero.stats.value(Stat::CritChance);
                 Fixed mult   = w.hero.stats.value(Stat::CritMult);
@@ -524,6 +612,18 @@ inline void combatRun(World& w, const SimConfig& cfg) {
     if (incoming.raw != 0) {
         w.hero.corruption += incoming;
         w.notifyCorruptionChanged();
+
+        // R_RAGE — **피격이 곧 화력이 된다.** 잠식이 차오를수록 반격이 세지므로
+        // 위기 구간과 반격 구간이 맞물린다 (R_TIDE와 같은 설계 의도다).
+        if (relicValue(w, RelicId::Rage).raw > 0) {
+            if (w.hero.rageStacks < cfg.rageMaxStacks) ++w.hero.rageStacks;
+            w.hero.rageExpireTick = w.tickCount() + cfg.rageDurationTicks;
+        }
+    }
+    // **만료는 통째로 푼다** — 중첩마다 개별 타이머를 두면 상태가 10배가 되는데,
+    // 문서가 정한 것은 "5초"라는 지속 하나뿐이다.
+    if (w.hero.rageStacks > 0 && w.tickCount() >= w.hero.rageExpireTick) {
+        w.hero.rageStacks = 0;
     }
 
     // ── 잠식 물량 충전 (§2) ──

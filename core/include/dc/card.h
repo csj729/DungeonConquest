@@ -49,6 +49,20 @@ enum class EngraveId : uint16_t {
 
 constexpr uint16_t engraveIndex(EngraveId e) { return static_cast<uint16_t>(e); }
 
+// 유물 인덱스. **`data/cards.json`의 relics 배열 순서와 같아야 한다.**
+// 각인이 스킬의 성질을 바꾸는 것과 달리, 유물은 전장에 규칙을 하나 더한다.
+enum class RelicId : uint16_t {
+    Rage   = 0,   // 분노의 토템 — 피격 시 공격력 중첩
+    Bolt   = 1,   // 뇌전의 성물 — 주기적 자동 피해
+    Frost  = 2,   // 서리 오라 — 반경 내 이동속도 감소
+    Beacon = 3,   // 추적의 신호탄 — 엘리트·보스 피해 증가
+    Tide   = 4,   // 밀물의 인장 — 구간 경과에 비례한 공격력
+    Greed  = 5,   // 탐욕의 주머니 — 골드 획득 (골드 시스템 미구현이라 효과 보류)
+    Count  = 6,
+};
+
+constexpr uint16_t relicIndex(RelicId r) { return static_cast<uint16_t>(r); }
+
 // **뒤에만 덧붙인다** — 값이 바뀌면 기존 리플레이가 깨진다.
 enum class CardKind : uint8_t {
     None      = 0,

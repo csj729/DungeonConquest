@@ -114,6 +114,11 @@ struct SimConfig {
     int32_t  decayTicks = 0;
     Fixed    pierceWidth{};
     Fixed    pierceLength{};
+    // 유물 — R_RAGE 지속·상한, R_BOLT 주기, R_FROST 반경
+    int32_t  rageDurationTicks = 0;
+    int32_t  rageMaxStacks     = 0;
+    int32_t  boltIntervalTicks = 0;
+    Fixed    frostRadius{};
     // 타겟 우선순위 거리 감쇠 (타일당). 닿을 수 없는 표적에 묶이지 않게 한다.
     int32_t  targetPriorityFalloffPerTile = 0;
 

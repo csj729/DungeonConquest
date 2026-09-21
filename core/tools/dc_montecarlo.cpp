@@ -142,8 +142,10 @@ int main(int argc, char** argv) {
         printf("%7d%s %8d %11.1f%%\n", k, k == 5 ? "+" : " ", cnt,
                static_cast<double>(cleared) * 100.0 / cnt);
     }
-    printf("  ※ 각인·유물 효과가 미구현이라 지금은 **음성 대조군**이다 —\n");
-    printf("     전설에 효과가 없으므로 상관이 없어야 맞다\n\n");
+    printf("  ※ **이 상관은 교란돼 있다.** 전설 효과는 아직 미구현이지만(각인·유물은 구현됨)\n");
+    printf("     위 숫자는 강한 양의 상관을 보인다 — 오래 버틴 판이 레벨을 더 올려\n");
+    printf("     전설을 더 뽑았기 때문이지 전설이 세서가 아니다. **역인과다.**\n");
+    printf("     전설 효과가 붙은 뒤 이 지표를 쓰려면 레벨을 통제해야 한다\n\n");
 
     // ── 지표 3: 초반 상태 → 최종 클리어율 상관도 (리셋 유인) ──
     printf("== 지표 3: 초반 %.0f초 상태 → 최종 클리어율 (리셋 유인) ==\n",
@@ -166,7 +168,11 @@ int main(int argc, char** argv) {
             while (j >= 0 && vals[j] > v) { vals[j + 1] = vals[j]; --j; }
             vals[j + 1] = v;
         }
-        const int32_t median = vals[m / 2];
+        // **중앙값 분할은 동점에 무너진다.** 초반 공격력은 카드 선택 수가 적어
+        // 같은 값이 몰리는데, `v >= median`으로 가르면 전부 상위로 몰려 하위가
+        // 0판이 된다(실제로 그랬다). 3분위 경계를 쓰면 동점이 있어도 양쪽에 표본이 남는다.
+        const int32_t loCut = vals[m / 3];
+        const int32_t hiCut = vals[(m * 2) / 3];
 
         int32_t hiN = 0, hiC = 0, loN = 0, loC = 0;
         for (int32_t p = 0; p < static_cast<int32_t>(dev::Policy::Count); ++p) {
@@ -174,15 +180,20 @@ int main(int argc, char** argv) {
                 if (!all[p][i].reachedCheckpoint) continue;
                 const int32_t v = metric == 0 ? all[p][i].earlyPower : all[p][i].earlyRisk;
                 const bool cleared = all[p][i].outcome == RunOutcome::Cleared;
-                if (v >= median) { ++hiN; if (cleared) ++hiC; }
-                else             { ++loN; if (cleared) ++loC; }
+                if (v >= hiCut)      { ++hiN; if (cleared) ++hiC; }
+                else if (v <= loCut) { ++loN; if (cleared) ++loC; }
             }
+        }
+        if (hiN == 0 || loN == 0) {
+            printf("  %-10s 표본이 한쪽에 몰려 있다 (상위 %d · 하위 %d) — 판정 보류\n",
+                   metric == 0 ? "공격력" : "잠식비율", hiN, loN);
+            continue;
         }
         const double hiR = hiN ? static_cast<double>(hiC) * 100.0 / hiN : 0.0;
         const double loR = loN ? static_cast<double>(loC) * 100.0 / loN : 0.0;
-        printf("  %-10s 중앙값 %7d | 상위 %5.1f%% (%d판) · 하위 %5.1f%% (%d판) "
+        printf("  %-10s 3분위 %d~%d | 상위 %5.1f%% (%d판) · 하위 %5.1f%% (%d판) "
                "· 격차 %5.1f%%p\n",
-               metric == 0 ? "공격력" : "잠식비율", median, hiR, hiN, loR, loN,
+               metric == 0 ? "공격력" : "잠식비율", loCut, hiCut, hiR, hiN, loR, loN,
                hiR - loR);
     }
     printf("  ※ 격차가 클수록 초반 정보로 결과를 예측할 수 있다 = 리셋 유인이 크다\n");

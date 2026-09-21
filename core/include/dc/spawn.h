@@ -81,6 +81,8 @@ inline void progressRun(World& w, const SimConfig& cfg) {
     // 한 번만 주면 빨리 미는 빌드가 오히려 손해를 본다.
     w.purgeCorruption(Fixed((seg - w.run.segmentIndex) * cfg.segmentClearPurge));
     w.run.segmentIndex = seg;
+    // R_TIDE(밀물의 인장)가 여기서 리셋된다 — 구간 경과에 비례해 오르는 유물이다.
+    w.run.segmentStartTick = w.tickCount();
 }
 
 inline void spawnRun(World& w, const SimConfig& cfg) {

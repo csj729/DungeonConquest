@@ -440,5 +440,124 @@ int main() {
         }
     }
 
+    dctest::section("유물 효과 — 전장에 규칙을 더한다");
+    {
+        auto spawnAt = [&](World& w, Fixed x, Fixed y, Archetype a, int32_t hp) {
+            SpawnDesc d;
+            d.posX = x; d.posY = y;
+            d.maxHp = Fixed(hp);
+            d.archetype = a; d.attackRange = Fixed(1);
+            d.approachSpeed = cfg.trash.approachSpeed;
+            d.attackDamage        = cfg.trash.damage;        // 없으면 피격이 0이라 R_RAGE가 안 쌓인다
+            d.attackCooldownTicks = cfg.trash.cooldownTicks;
+            return w.entities.spawn(d, 0, 9);
+        };
+
+        // ── R_BEACON(추적의 신호탄) — 엘리트·보스에만 붙는다 ──
+        {
+            World w; w.init(9); dev::applyHeroBaseline(w);
+            CHECK_EQ(beaconMult(w, Archetype::Trash).raw, Fixed::one().raw);
+            w.cards.relic[relicIndex(RelicId::Beacon)] = Fixed::fromPermille(150);
+            // **잡몹에는 무용지물** — 이게 물량 유물들과 정반대 축이라는 근거다
+            CHECK_EQ(beaconMult(w, Archetype::Trash).raw, Fixed::one().raw);
+            CHECK_EQ(beaconMult(w, Archetype::Elite).raw, Fixed::fromPermille(1150).raw);
+            CHECK_EQ(beaconMult(w, Archetype::Boss).raw,  Fixed::fromPermille(1150).raw);
+        }
+
+        // ── R_RAGE(분노의 토템) — 피격 중첩, 상한 고정, 통째 만료 ──
+        {
+            World w; w.init(9); dev::applyHeroBaseline(w);
+            w.cards.relic[relicIndex(RelicId::Rage)] = Fixed::fromPermille(10);
+            CHECK_EQ(heroPowerMult(w, cfg).raw, Fixed::one().raw);   // 안 맞으면 1.0배
+
+            // 영웅에 붙여 놓고 맞게 한다
+            spawnAt(w, Fixed{}, Fixed{}, Archetype::Trash, 100000);
+            for (int32_t t = 0; t < cfg.trash.cooldownTicks * 30; ++t) {
+                w.beginTick(); combatRun(w, cfg); w.endTick();
+            }
+            // **상한을 넘지 않는다** (등급과 무관하게 고정)
+            CHECK_EQ(w.hero.rageStacks, cfg.rageMaxStacks);
+            const Fixed capped = heroPowerMult(w, cfg);
+            CHECK_EQ(capped.raw, (Fixed::one() + Fixed::fromPermille(10) * cfg.rageMaxStacks).raw);
+
+            // **만료는 통째로** — 지속이 지나면 중첩이 한 번에 0이 된다
+            w.entities.markDead(w.entities.idAt(0));
+            w.applyDeaths();
+            for (int32_t t = 0; t < cfg.rageDurationTicks + 2; ++t) {
+                w.beginTick(); combatRun(w, cfg); w.endTick();
+            }
+            CHECK_EQ(w.hero.rageStacks, 0);
+            CHECK_EQ(heroPowerMult(w, cfg).raw, Fixed::one().raw);
+            printf("    R_RAGE 1%%: 상한 %d중첩에서 %.2f배 · 지속 후 통째 해제\n",
+                   cfg.rageMaxStacks, (double)capped.raw / Fixed::ONE_RAW);
+        }
+
+        // ── R_TIDE(밀물의 인장) — 구간 경과에 비례, 구간 넘어가면 리셋 ──
+        {
+            World w; w.init(9); dev::applyHeroBaseline(w);
+            w.cards.relic[relicIndex(RelicId::Tide)] = Fixed::fromPermille(3);
+            w.run.segmentStartTick = 0;
+            CHECK_EQ(heroPowerMult(w, cfg).raw, Fixed::one().raw);
+
+            for (int32_t t = 0; t < cfg.tickHz * 30; ++t) { w.beginTick(); w.endTick(); }
+            const Fixed at30 = heroPowerMult(w, cfg);
+            // 30초 × 0.3% = +9%
+            CHECK_EQ(at30.raw, (Fixed::one() + Fixed::fromPermille(3) * 30).raw);
+
+            // **구간이 넘어가면 리셋된다** — 그게 "구간 후반에 가장 강하다"의 조건이다
+            w.run.clearPoints = cfg.segmentStartPoints[1];
+            progressRun(w, cfg);
+            CHECK_EQ(w.run.segmentStartTick, w.tickCount());
+            CHECK_EQ(heroPowerMult(w, cfg).raw, Fixed::one().raw);
+            printf("    R_TIDE 0.3%%/초: 30초에 %.2f배 · 구간 전환에 리셋\n",
+                   (double)at30.raw / Fixed::ONE_RAW);
+        }
+
+        // ── R_BOLT(뇌전의 성물) — 주기마다 한 마리 ──
+        {
+            World w; w.init(9); dev::applyHeroBaseline(w);
+            w.cards.relic[relicIndex(RelicId::Bolt)] = Fixed::fromPermille(400);
+            for (int32_t k = 0; k < 5; ++k) spawnAt(w, Fixed(50), Fixed(50), Archetype::Trash, 100000);
+
+            auto totalTaken = [&]() {
+                Fixed t{};
+                for (uint32_t i = 0; i < w.entities.count(); ++i) t += w.entities.damageTaken[i];
+                return t;
+            };
+            // 주기 전에는 아무 일도 없다
+            boltRun(w, cfg);                       // 첫 호출은 발동 (boltNextTick = 0)
+            const Fixed first = totalTaken();
+            CHECK(first.raw > 0);
+            for (int32_t t = 0; t < cfg.boltIntervalTicks - 1; ++t) {
+                w.beginTick(); w.endTick(); boltRun(w, cfg);
+            }
+            CHECK_EQ(totalTaken().raw, first.raw);   // 주기 안에서는 추가 방전 없음
+            w.beginTick(); w.endTick(); boltRun(w, cfg);
+            CHECK(totalTaken().raw > first.raw);     // 주기가 돌면 다시 친다
+            printf("    R_BOLT 40%%: %d틱 주기로 한 마리씩\n", cfg.boltIntervalTicks);
+        }
+
+        // ── R_FROST(서리 오라) — 반경 안만 둔화 ──
+        {
+            World w; w.init(9); dev::applyHeroBaseline(w);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            const Fixed r = cfg.frostRadius;
+            spawnAt(w, r - Fixed(1), Fixed{}, Archetype::Trash, 100000);   // 안
+            spawnAt(w, r + Fixed(5), Fixed{}, Archetype::Trash, 100000);   // 밖
+            CHECK_EQ(frostMult(w, cfg, 0).raw, Fixed::one().raw);          // 유물 없으면 1.0
+
+            w.cards.relic[relicIndex(RelicId::Frost)] = Fixed::fromPermille(100);
+            CHECK_EQ(frostMult(w, cfg, 0).raw,
+                     (Fixed::one() - Fixed::fromPermille(100)).raw);   // 반경 안 −10%
+            CHECK_EQ(frostMult(w, cfg, 1).raw, Fixed::one().raw);               // 반경 밖 그대로
+
+            // 100%를 넘겨도 역주행하지 않는다 (정지까지만)
+            w.cards.relic[relicIndex(RelicId::Frost)] = Fixed::fromPermille(1500);
+            CHECK_EQ(frostMult(w, cfg, 0).raw, 0);
+            printf("    R_FROST 10%%: 반경 %.1f타일 안만 0.90배 · 밖은 1.00배\n",
+                   (double)r.raw / Fixed::ONE_RAW);
+        }
+    }
+
     return dctest::summary("test_card");
 }

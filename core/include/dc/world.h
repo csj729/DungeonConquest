@@ -66,6 +66,15 @@ struct HeroState {
     // **체크섬 입력에 반드시 포함**된다 (§10 검증 하네스).
     PrdChannel proc{};
 
+    // ── 유물 상태 (§4) ──
+    // R_RAGE(분노의 토템) — 피격 시 쌓이고 일정 시간 뒤 통째로 풀린다.
+    // **중첩 상한은 등급과 무관하게 고정**이다 (문서 §2) — 상한을 등급으로 올리면
+    // 중첩당 수치와 곱해져 증가폭이 1 : 4 : 16이 된다.
+    int32_t  rageStacks     = 0;
+    int32_t  rageExpireTick = 0;
+    // R_BOLT(뇌전의 성물) — 다음 방전 틱. **틱 카운터 기반이라 결정론에 안전하다.**
+    int32_t  boltNextTick   = 0;
+
     EntityId target{};             // 현재 타겟. stale이면 EntityStore가 걸러준다
 
     // 플레이어가 직접 지정한 타겟 (§3). 자동 우선순위를 덮어쓴다.
@@ -113,6 +122,9 @@ struct HeroState {
         h.feed(attackCooldown);
         h.feed(qteCooldown);
         proc.hashInto(h);        // §10이 명시적으로 요구하는 입력
+        h.feed(rageStacks);
+        h.feed(rageExpireTick);
+        h.feed(boltNextTick);
         h.feed(target);
         h.feed(manualTarget);
         qte.hashInto(h);
@@ -131,6 +143,9 @@ enum class RunOutcome : uint8_t {
 struct RunState {
     int32_t mapIndex     = 0;   // 0 기반
     int32_t segmentIndex = 0;   // 맵 내 구간, 0 기반
+    // R_TIDE(밀물의 인장)가 읽는다 — 구간 경과 시간에 비례해 공격력이 오르고
+    // 구간이 넘어가면 리셋된다. [상태]다.
+    int32_t segmentStartTick = 0;
     int32_t clearPoints  = 0;   // 처치 포인트 누적 (잡몹 1 · 엘리트 10)
     int32_t killedTrash  = 0;
     int32_t killedElite  = 0;
@@ -151,6 +166,7 @@ struct RunState {
     void hashInto(Hasher& h) const {
         h.feed(mapIndex);
         h.feed(segmentIndex);
+        h.feed(segmentStartTick);
         h.feed(clearPoints);
         h.feed(killedTrash);
         h.feed(killedElite);

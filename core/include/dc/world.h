@@ -56,6 +56,11 @@ struct HeroState {
 
     EntityId target{};             // 현재 타겟. stale이면 EntityStore가 걸러준다
 
+    // 플레이어가 직접 지정한 타겟 (§3). 자동 우선순위를 덮어쓴다.
+    // **[상태]다** — 서버가 리플레이할 때 같은 지시를 재현해야 한다.
+    // 대상이 죽으면 stale이 되어 자동으로 해제된다.
+    EntityId manualTarget{};
+
     // 모디파이어 컨테이너 (§9). 아이템·각인·유물·이벤트 효과가 전부 여기로 들어온다.
     //
     // **엔티티에는 아직 달지 않는다.** 보스 기믹이 실제로 스탯을 만질 때 달면 된다.
@@ -95,6 +100,7 @@ struct HeroState {
         h.feed(qteCooldown);
         proc.hashInto(h);        // §10이 명시적으로 요구하는 입력
         h.feed(target);
+        h.feed(manualTarget);
         stats.hashInto(h);
     }
 };
@@ -131,11 +137,13 @@ struct SpawnState {
     int32_t  nextSpawnTick   = 0;
     uint32_t directionCursor = 0;   // 4방향 균등 배분. 나머지 배분 순서를 고정한다
     int32_t  spawnedTotal    = 0;
+    uint32_t nextEliteIndex  = 0;   // 다음에 등장할 엘리트 스폰 지점 (클리어 게이지 임계)
 
     void hashInto(Hasher& h) const {
         h.feed(nextSpawnTick);
         h.feed(directionCursor);
         h.feed(spawnedTotal);
+        h.feed(nextEliteIndex);
     }
 };
 
@@ -171,12 +179,17 @@ public:
     // 시스템 실행 순서는 고정이며 여기가 그 단일 정의점이다 (§10 틱 루프):
     //     drainConditionQueue → Spawn → Targeting → Combat → applyDeaths
     // 아직 시스템이 없으므로 지금은 틱 전진과 일괄 압축만 수행한다.
-    void tick() {
+    // **틱 루프 자체는 `sim.h`의 stepWorld()가 소유한다.** 시스템 실행 순서를
+    // 한 곳에서만 정의하기 위해서다 — World가 시스템을 부르면 world.h ↔ 시스템
+    // 헤더가 서로를 include해야 하고, 순서가 두 군데로 갈린다.
+    void beginTick() {
         ++tick_;
         tickTimeConditions();   // §10 틱 루프의 drainConditionQueue 자리
-        // TODO(§14-6~) Spawn::run / Targeting::run / Combat::run 이 여기 들어온다.
-        applyDeaths();
     }
+    void endTick() { applyDeaths(); }
+
+    // 시스템 없이 틱만 넘긴다. 테스트·툴 전용이며 실제 시뮬 진행은 stepWorld()다.
+    void tick() { beginTick(); endTick(); }
 
     // 틱 종료 일괄 압축. tick()이 부르지만, 시스템을 직접 돌리는 테스트·툴에서
     // 쓸 수 있도록 공개한다.
@@ -272,6 +285,17 @@ public:
         }
         return hero.stats.refreshConditions(conditionContext(), mask);
     }
+
+    // ── 플레이어 입력 (§3 수동 타게팅) ───────────────────────────
+    //
+    // 살아있는 대상만 받는다. 실패하면 false — 이미 죽은 것을 찍었다는 뜻이고,
+    // 그 경우 자동 우선순위가 그대로 유지된다.
+    bool setManualTarget(EntityId id) {
+        if (!entities.alive(id)) return false;
+        hero.manualTarget = id;
+        return true;
+    }
+    void clearManualTarget() { hero.manualTarget = EntityId::invalid(); }
 
     // 모디파이어 sourceId 발급 (§9 "전역 단조 증가 카운터").
     //

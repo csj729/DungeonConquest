@@ -1,6 +1,8 @@
 {
   "_": "몬스터 기준값. 체력 스케일링 곡선은 progression.json 참조.",
+  "_target_priority": "단일 공격 타겟 선정 우선순위 (§3). 큰 값이 먼저 맞는다. archetype 고정 순서가 아니라 몬스터 타입별 정수인 이유: 주술사는 QTE가 없지만 소환으로 물량을 불리므로 궁병대장보다 먼저여야 한다 — 고정 순서로는 표현할 수 없다. tools/verify_targeting.py가 이 값으로 QTE 예산을 검산한다.",
   "trash": {
+    "target_priority": 0,
     "hp": 20,
     "damage": 5,
     "ranged_damage": 2,
@@ -10,6 +12,7 @@
   "elites": [
     {
       "id": "GE_ARCHER",
+      "target_priority": 35,
       "name": "고블린 궁병대장",
       "hp": 120,
       "armor": 0,
@@ -19,6 +22,7 @@
     },
     {
       "id": "GE_SHIELD",
+      "target_priority": 20,
       "name": "고블린 방패병",
       "hp": 100,
       "armor": 200,
@@ -28,6 +32,7 @@
     },
     {
       "id": "GE_SHAMAN",
+      "target_priority": 40,
       "name": "고블린 주술사",
       "hp": 90,
       "armor": 0,
@@ -37,6 +42,7 @@
     },
     {
       "id": "GE_MAD",
+      "target_priority": 30,
       "name": "미친 고블린",
       "hp": 150,
       "armor": 0,
@@ -48,6 +54,7 @@
   "archer_windup_ticks": 60,
   "boss": {
     "id": "GB_WARCHIEF",
+    "target_priority": 10,
     "hp": 33000,
     "armor": 50,
     "phase2_at_permille": 500,

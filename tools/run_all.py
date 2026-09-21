@@ -17,6 +17,7 @@ MODULES = [
     ("verify_segments", "구간 구성 6목표"),
     ("verify_exp_curve", "경험치 곡선 6목표"),
     ("verify_spawn", "스폰 좌표 · 전장 구성"),
+    ("verify_targeting", "타겟 우선순위 · QTE 예산"),
     ("verify_card_rates", "카드 등급 확률 4목표"),
     ("verify_prd", "PRD 상수 · 손익분기"),
     ("verify_card_values", "각인·유물 수치"),

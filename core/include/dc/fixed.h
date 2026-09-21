@@ -72,8 +72,12 @@ constexpr Fixed operator*(Fixed a, Fixed b) {
     return Fixed::fromRaw(static_cast<int32_t>(shiftDownTrunc(p, Fixed::SHIFT)));
 }
 
+// **시프트가 아니라 곱셈으로 스케일을 올린다.** `a.raw << SHIFT`는 a가 음수일 때
+// C++20 이전에서 구현 정의가 아니라 **UB**다 (우측 시프트와 달리 좌측은 아예 UB).
+// UBSan 빌드가 실제로 잡았던 자리이며, 곱셈은 같은 값을 내면서 정의되어 있다.
+// int64 승격 후이므로 a.raw가 최대여도 8.8e12로 넘치지 않는다.
 constexpr Fixed operator/(Fixed a, Fixed b) {
-    const int64_t n = static_cast<int64_t>(a.raw) << Fixed::SHIFT;
+    const int64_t n = static_cast<int64_t>(a.raw) * Fixed::ONE_RAW;
     return Fixed::fromRaw(static_cast<int32_t>(n / b.raw));   // C++11부터 0방향 절삭
 }
 
@@ -95,6 +99,36 @@ constexpr bool operator>=(Fixed a, Fixed b) { return a.raw >= b.raw; }
 constexpr Fixed fixedAbs(Fixed a) { return a.raw < 0 ? -a : a; }
 constexpr Fixed fixedMin(Fixed a, Fixed b) { return a.raw < b.raw ? a : b; }
 constexpr Fixed fixedMax(Fixed a, Fixed b) { return a.raw > b.raw ? a : b; }
+
+// ── 정수 제곱근 ──────────────────────────────────────────────
+//
+// 거리 **비교**는 제곱끼리 하면 되지만(아래 distanceSq), **이동 방향 정규화**에는
+// 실제 길이가 필요하다. 부동소수점 sqrt는 libm 구현마다 값이 갈리므로
+// (docs/determinism.md §4) 정수 비트 단위 알고리즘을 쓴다 — 어떤 플랫폼에서도
+// 같은 값을 내고 내림(floor)이 정확하다.
+constexpr uint32_t isqrt64(uint64_t n) {
+    uint64_t res = 0;
+    uint64_t bit = 1ull << 62;          // 2의 짝수 거듭제곱 중 최상위
+    while (bit > n) bit >>= 2;
+    while (bit != 0) {
+        if (n >= res + bit) {
+            n  -= res + bit;
+            res = (res >> 1) + bit;
+        } else {
+            res >>= 1;
+        }
+        bit >>= 2;
+    }
+    return static_cast<uint32_t>(res);
+}
+
+// 벡터 길이. 내부적으로 raw 단위 제곱합의 제곱근이므로 결과도 raw 단위다.
+constexpr Fixed fixedLength(Fixed dx, Fixed dy) {
+    const int64_t x = dx.raw < 0 ? -static_cast<int64_t>(dx.raw) : dx.raw;
+    const int64_t y = dy.raw < 0 ? -static_cast<int64_t>(dy.raw) : dy.raw;
+    return Fixed::fromRaw(static_cast<int32_t>(
+        isqrt64(static_cast<uint64_t>(x * x + y * y))));
+}
 
 // 거리 비교는 **제곱끼리** 한다 (docs/determinism.md §7). 제곱근은 쓰지 않는다.
 // 좌표가 커지면 제곱에서 넘칠 수 있으므로 int64_t로 돌려준다.

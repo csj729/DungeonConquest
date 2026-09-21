@@ -1,5 +1,8 @@
 {
   "_": "연속 스폰 규칙. 거리 단위는 타일의 1/1000 (millitile).",
+  "_ramp_tables": "아래 두 표는 concurrent_cap_start/top·batch_start/end에서 파생되는 값이다. C++ 코어가 지수 램프를 실수 연산으로 다시 풀지 않도록 파이썬이 미리 풀어 정수로 담는다 (PRD 상수 C와 같은 방식). tools/verify_spawn.py가 공식과의 정합을 검사한다.",
+  "concurrent_cap_by_segment": [30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 41, 42, 43, 44, 46, 47, 49, 50, 52, 53, 55, 56, 58, 60],
+  "batch_by_segment": [2, 3, 4, 5, 5, 6, 7, 8],
   "concurrent_cap_start": 30,
   "concurrent_cap_top": 60,
   "concurrent_peak": 150,

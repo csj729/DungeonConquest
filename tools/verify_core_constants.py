@@ -12,6 +12,7 @@ import gamedata as gd
 CORE_INC = Path(__file__).resolve().parent.parent / "core" / "include" / "dc"
 CONFIG_H = CORE_INC / "config.h"
 STAT_ID_H = CORE_INC / "stat_id.h"
+DEV_DATA_H = Path(__file__).resolve().parent.parent / "core" / "tools" / "dev_data.h"
 
 
 def read_constants():
@@ -52,6 +53,9 @@ def report():
     ok &= good
     print(f"  {'OK ' if good else 'X  '} {'index 폭':<18} {cap} <= 4096 (EntityId 12비트)")
 
+    # 임시 데이터 로더(core/tools/dev_data.h)가 data/*.json과 어긋나지 않는지.
+    ok &= _check_dev_data()
+
     # 스탯 enum 순서와 stats.json 키 순서가 같아야 한다.
     # **enum 값이 바뀌면 기존 리플레이가 전부 깨진다** — 순서까지 대조한다.
     ok &= _check_stats()
@@ -89,3 +93,53 @@ def _check_stats():
 
 if __name__ == "__main__":
     report()
+
+
+def _check_dev_data():
+    """`core/tools/dev_data.h`는 진짜 로더가 붙기 전까지의 임시 수치다.
+
+    데이터와 두 곳에 사는 값이므로 자동 대조를 건다 — 한쪽만 고치면 여기서 걸린다.
+    로더가 붙으면 이 함수와 dev_data.h가 함께 사라진다.
+    """
+    src = DEV_DATA_H.read_text(encoding="utf-8")
+
+    def ints(name):
+        m = re.search(rf"{name}\[\d*\]\s*=\s*\{{([^}}]*)\}}", src, re.S)
+        return [int(x) for x in re.findall(r"-?\d+", m.group(1))] if m else None
+
+    def scalar(name):
+        m = re.search(rf"\b{name}\s*=\s*(-?\d+)\s*;", src)
+        return int(m.group(1)) if m else None
+
+    checks = [
+        ("CAP_BY_SEGMENT", ints("CAP_BY_SEGMENT"), gd.SPAWN["concurrent_cap_by_segment"]),
+        ("BATCH_BY_SEGMENT", ints("BATCH_BY_SEGMENT"), gd.SPAWN["batch_by_segment"]),
+        ("HERO_ATTACK_POWER", scalar("HERO_ATTACK_POWER"), gd.HERO["attack_power"]),
+        ("HERO_ATTACK_INTERVAL_TICKS", scalar("HERO_ATTACK_INTERVAL_TICKS"),
+         gd.HERO["attack_interval_ticks"]),
+        ("HERO_CRIT_CHANCE_PERMILLE", scalar("HERO_CRIT_CHANCE_PERMILLE"),
+         gd.HERO["crit_chance_permille"]),
+        ("HERO_CRIT_MULT_PERMILLE", scalar("HERO_CRIT_MULT_PERMILLE"),
+         gd.HERO["crit_mult_permille"]),
+        ("HERO_CORRUPTION_MAX", scalar("HERO_CORRUPTION_MAX"), gd.HERO["corruption_max"]),
+        ("HERO_ARMOR", scalar("HERO_ARMOR"), gd.HERO["armor"]),
+        ("HERO_PROC_PRD_C_Q16", scalar("HERO_PROC_PRD_C_Q16"), gd.HERO["proc_prd_c_q16"]),
+        ("tickHz", scalar("c.tickHz"), gd.PROGRESSION["tick_hz"]),
+        ("armorK", scalar("c.armorK"), gd.PROGRESSION["armor_k"]),
+        ("totalSegments", scalar("c.totalSegments"), gd.PROGRESSION["total_segments"]),
+        ("segmentsPerMap", scalar("c.segmentsPerMap"), gd.PROGRESSION["segments_per_map"]),
+        ("spawnIntervalTicks", scalar("c.spawnIntervalTicks"), gd.SPAWN["interval_ticks"]),
+        ("spawnRadiusMilli", scalar("c.spawnRadiusMilli"), gd.SPAWN["radius_millitile"]),
+        ("minSeparationMilli", scalar("c.minSeparationMilli"), gd.SPAWN["min_separation_millitile"]),
+        ("corruptionThreshold", scalar("c.corruptionThreshold"),
+         gd.PROGRESSION["corruption_threshold"]),
+        ("trashPoints", scalar("c.trashPoints"), gd.SEGMENTS_DATA["trash_points"]),
+        ("elitePoints", scalar("c.elitePoints"), gd.SEGMENTS_DATA["elite_points"]),
+    ]
+    bad = [n for n, got, want in checks if got != want]
+    for n, got, want in checks:
+        if got != want:
+            print(f"  X   dev_data.h {n}: {got} != 데이터 {want}")
+    print(f"  {'OK ' if not bad else 'X  '} {'dev_data.h 대조':<18} "
+          f"{len(checks) - len(bad)}/{len(checks)} 항목 일치")
+    return not bad

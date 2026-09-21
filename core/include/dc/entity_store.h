@@ -50,8 +50,10 @@ struct SpawnDesc {
     Fixed     armor{};
     Fixed     attackDamage{};
     Fixed     approachSpeed{};
+    Fixed     attackRange{};
     int32_t   attackCooldownTicks = 0;
     int32_t   windupTicks         = 0;
+    int32_t   targetPriority      = 0;
     Fixed     ccGaugeMax{};
     uint16_t  typeId              = 0;
     Archetype archetype           = Archetype::Trash;
@@ -81,6 +83,11 @@ public:
     Fixed     armor[CAPACITY]{};
     Fixed     attackDamage[CAPACITY]{};
     Fixed     approachSpeed[CAPACITY]{};
+    Fixed     attackRange[CAPACITY]{};     // 사거리. §9의 Range 스탯과 같은 개념이다
+    // 타겟 선정 우선순위 (§3). **archetype이 아니라 몬스터 타입별 데이터다** —
+    // 주술사는 QTE가 없지만 소환으로 물량을 불리므로 궁병대장보다 먼저여야 하고,
+    // archetype 고정 순서로는 그 판단을 표현할 수 없다.
+    int32_t   targetPriority[CAPACITY]{};
     int32_t   attackCooldown[CAPACITY]{};  // 남은 틱
     int32_t   windupLeft[CAPACITY]{};      // 남은 틱, 0이면 윈드업 중 아님
 
@@ -136,6 +143,8 @@ public:
         armor[dense]           = d.armor;
         attackDamage[dense]    = d.attackDamage;
         approachSpeed[dense]   = d.approachSpeed;
+        attackRange[dense]     = d.attackRange;
+        targetPriority[dense]  = d.targetPriority;
         attackCooldown[dense]  = d.attackCooldownTicks;
         windupLeft[dense]      = d.windupTicks;
         patternIndex[dense]    = 0;
@@ -233,6 +242,8 @@ public:
         for (uint32_t i = 0; i < n; ++i) h.feed(armor[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(attackDamage[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(approachSpeed[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(attackRange[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(targetPriority[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(attackCooldown[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(windupLeft[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(patternIndex[i]);
@@ -269,6 +280,8 @@ private:
         armor[dst]           = armor[src];
         attackDamage[dst]    = attackDamage[src];
         approachSpeed[dst]   = approachSpeed[src];
+        attackRange[dst]     = attackRange[src];
+        targetPriority[dst]  = targetPriority[src];
         attackCooldown[dst]  = attackCooldown[src];
         windupLeft[dst]      = windupLeft[src];
         patternIndex[dst]    = patternIndex[src];

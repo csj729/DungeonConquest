@@ -1,3 +1,5 @@
+#include <initializer_list>
+
 // Fixed 20.12 — CLAUDE.md가 "단위 테스트로 동작을 고정하라"고 한 지점들이
 // 이 파일의 존재 이유다. 반올림 방향과 오버플로 처리를 여기서 못 박는다.
 #include "dc/fixed.h"
@@ -42,6 +44,27 @@ int main() {
     CHECK(Fixed(3) * 4 == Fixed(12));
     // 0.5 × 0.5 = 0.25
     CHECK_EQ((Fixed::fromPermille(500) * Fixed::fromPermille(500)).raw, 1024);
+
+    dctest::section("음수 나눗셈 — 좌시프트 UB가 없어야 한다");
+    {
+        // `a.raw << SHIFT`는 a가 음수면 C++20 이전에서 **UB**다 (우측 시프트는
+        // 구현 정의지만 좌측은 아예 UB). UBSan 빌드가 실제로 잡았던 자리다.
+        CHECK_EQ((Fixed(-10) / Fixed(2)).raw, Fixed(-5).raw);
+        CHECK_EQ((Fixed(10) / Fixed(-2)).raw, Fixed(-5).raw);
+        CHECK_EQ((Fixed(-10) / Fixed(-2)).raw, Fixed(5).raw);
+
+        // 0방향 절삭이 부호 대칭이어야 한다.
+        CHECK_EQ((Fixed(-7) / Fixed(2)).raw, -((Fixed(7) / Fixed(2)).raw));
+        bool symmetric = true;
+        for (int32_t n = -5000; n <= 5000; n += 7) {
+            for (int32_t d : {3, -3, 17, -17, 4096, -4096}) {
+                const Fixed pos = Fixed::fromRaw(n) / Fixed::fromRaw(d);
+                const Fixed neg = Fixed::fromRaw(-n) / Fixed::fromRaw(d);
+                if (pos.raw != -neg.raw) symmetric = false;
+            }
+        }
+        CHECK(symmetric);
+    }
 
     dctest::section("곱셈 오버플로 — int64 승격이 없으면 UB");
     // 1000 × 500 = 500,000. int32끼리 곱하면 raw가 4096000×2048000으로 넘친다.

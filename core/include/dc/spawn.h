@@ -61,6 +61,23 @@ inline SpawnDesc makeDesc(const MonsterConfig& m, Fixed hp) {
     return d;
 }
 
+// 구간 진행 — **게이지가 구간을 넘긴다. 시간이 아니다** (§2).
+//
+// 이 한 줄이 없으면 런 전체가 구간 1에 갇힌다. 배치 2마리·상한 30·잡몹 체력
+// 기본값이 끝까지 유지되어 **난이도 램프가 통째로 죽는다** — 데이터에 담아둔
+// 배치 표 8칸과 상한 표 24칸 중 첫 칸만 쓰이고 나머지는 도달 불가가 된다.
+//
+// segmentIndex는 지금은 clearPoints의 함수지만 [상태]로 남긴다 — 맵 진행
+// (mapIndex)이 붙으면 게이지가 리셋되면서 순수 함수가 아니게 된다.
+inline void progressRun(World& w, const SimConfig& cfg) {
+    if (cfg.clearPointsPerSegment <= 0 || cfg.segmentsPerMap <= 0) return;
+    int32_t seg = w.run.clearPoints / cfg.clearPointsPerSegment;
+    if (seg > cfg.segmentsPerMap - 1) seg = cfg.segmentsPerMap - 1;
+    // **진행도는 되돌아가지 않는다** (§2). 게이지가 줄지 않으므로 지금은
+    // 성립하지만, 불변식을 코드에 남겨 나중에 깎는 효과가 생겨도 안전하게 한다.
+    if (seg > w.run.segmentIndex) w.run.segmentIndex = seg;
+}
+
 inline void spawnRun(World& w, const SimConfig& cfg) {
     if (cfg.spawnIntervalTicks <= 0) return;   // 설정 전에는 아무것도 하지 않는다
 

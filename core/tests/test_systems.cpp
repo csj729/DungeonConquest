@@ -424,6 +424,35 @@ int main() {
         printf("    2000틱 × 2회 일치\n");
     }
 
+    dctest::section("구간 진행 — 게이지가 구간을 넘긴다");
+    {
+        World w = makeWorld(11);
+        // 게이지를 직접 밀어 경계마다 구간이 정확히 한 칸씩 오르는지 본다.
+        for (int32_t seg = 0; seg < cfg.segmentsPerMap; ++seg) {
+            w.run.clearPoints = seg * cfg.clearPointsPerSegment;
+            progressRun(w, cfg);
+            CHECK_EQ(w.run.segmentIndex, seg);
+            // 경계 직전은 아직 이전 구간이다
+            w.run.clearPoints = (seg + 1) * cfg.clearPointsPerSegment - 1;
+            progressRun(w, cfg);
+            CHECK_EQ(w.run.segmentIndex, seg);
+        }
+        // 마지막 구간을 넘겨도 표 밖으로 나가지 않는다
+        w.run.clearPoints = cfg.clearPointsPerSegment * 1000;
+        progressRun(w, cfg);
+        CHECK_EQ(w.run.segmentIndex, cfg.segmentsPerMap - 1);
+        // **되돌아가지 않는다** — 게이지가 깎여도 구간은 유지된다
+        w.run.clearPoints = 0;
+        progressRun(w, cfg);
+        CHECK_EQ(w.run.segmentIndex, cfg.segmentsPerMap - 1);
+
+        // 램프가 실제로 살아 있는가 — 배치 표 첫 칸만 쓰이면 난이도가 평평해진다
+        CHECK(cfg.batchFor(cfg.segmentsPerMap) > cfg.batchFor(1));
+        printf("    구간 1 → %d: 배치 %d → %d · 상한 %d → %d\n",
+               cfg.segmentsPerMap, cfg.batchFor(1), cfg.batchFor(cfg.segmentsPerMap),
+               cfg.capFor(1), cfg.capFor(cfg.segmentsPerMap));
+    }
+
     dctest::section("틱 루프 — 교착 금지 (분리가 이동보다 먼저다)");
     {
         // **회귀 테스트.** 분리를 이동 뒤에 두면 전투가 영구히 멎는다.

@@ -25,6 +25,7 @@ inline bool applyInput(World& w, const SimConfig& cfg, const InputEvent& e) {
 inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
     w.beginTick();                    // 틱 전진 + 시간 조건 만료 처리
 
+    progressRun(w, cfg);              // 게이지 → 구간. 스폰보다 먼저여야 이 틱에 반영된다
     spawnRun(w, cfg);                 // 상한 유지 스폰 · 게이지 임계 엘리트
 
     // **타겟이 이동을 정한다** (§3). 영웅은 추격 후 공격만 하므로 어디로 갈지는

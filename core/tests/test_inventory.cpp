@@ -279,6 +279,42 @@ int main() {
         CHECK(a.checksum() != b.checksum());
     }
 
+    dctest::section("테이블 불일치 — 다른 RecipeTable은 거부한다");
+    {
+        // **회귀 테스트.** `craftableBits_`는 init에 쓴 테이블 기준이다. 더 작은
+        // 테이블을 넘기면 범위 밖 인덱스가 true로 남아 `recipe()`가 kInvalidRecipe를
+        // 주고, 그 result는 ITEM_NONE(0xFFFF)이라 counts_[65535] 읽기·쓰기가 됐다.
+        // counts_는 MAX_ITEM_TYPES칸뿐이라 ASan에서 SEGV로 재현되던 경로다.
+        const RecipeData onlyOne[] = {mk(R_A, C1, C2)};
+        RecipeTable small;
+        CHECK_EQ(static_cast<int32_t>(small.build(onlyOne, 1, ITEM_COUNT)),
+                 static_cast<int32_t>(RecipeTableStatus::Ok));
+        CHECK(small.dataHash() != table.dataHash());
+
+        Inventory inv;
+        inv.init(table);
+        inv.add(table, C1, 5);
+        inv.add(table, C2, 5);
+        inv.add(table, C3, 5);
+
+        // 캐시는 큰 테이블 기준으로 true인데, 작은 테이블에는 그 레시피가 없다
+        CHECK(inv.craftable(1));
+        CHECK_EQ(small.recipeCount(), 1u);
+        CHECK(!inv.craft(small, 1));              // 예전엔 여기서 OOB를 밟았다
+
+        // 다른 테이블이면 전부 거부한다 — 캐시가 그 테이블 기준이 아니기 때문이다
+        CHECK(!inv.matches(small));
+        CHECK(!inv.add(small, C1, 1));
+        CHECK(!inv.remove(small, C1, 1));
+        CHECK(!inv.evaluate(small, 0));
+        CHECK(!inv.craft(small, 0));
+
+        // 같은 테이블이면 정상 동작은 그대로다
+        CHECK(inv.matches(table));
+        CHECK(inv.add(table, C1, 1));
+        printf("    다른 테이블 5개 API 전부 거부 · 같은 테이블은 정상\n");
+    }
+
     dctest::section("결정론 — 같은 각본이면 같은 인벤");
     {
         auto play = [&](uint64_t seed) {

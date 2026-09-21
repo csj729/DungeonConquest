@@ -45,9 +45,14 @@ public:
     }
     uint64_t tableHash() const { return tableHash_; }
 
+    // init에 쓴 테이블과 같은가. **모든 table 인자 API가 먼저 이걸 본다** —
+    // 캐시(craftableBits_)가 그 테이블 기준으로만 유효하기 때문이다.
+    bool matches(const RecipeTable& table) const { return table.dataHash() == tableHash_; }
+
     // **인벤 슬롯은 제한하지 않는다**(§5). 상한은 종류당 개수(uint16)뿐이고,
     // 넘칠 것 같으면 **상태를 바꾸지 않고** false를 돌려준다.
     bool add(const RecipeTable& table, ItemId item, uint16_t n = 1) {
+        if (!matches(table)) return false;
         if (item >= table.itemTypeCount() || n == 0) return false;
         if (static_cast<uint32_t>(counts_[item]) + n > 0xFFFFu) return false;
         counts_[item] = static_cast<uint16_t>(counts_[item] + n);
@@ -56,6 +61,7 @@ public:
     }
 
     bool remove(const RecipeTable& table, ItemId item, uint16_t n = 1) {
+        if (!matches(table)) return false;
         if (item >= table.itemTypeCount() || n == 0) return false;
         if (counts_[item] < n) return false;
         counts_[item] = static_cast<uint16_t>(counts_[item] - n);
@@ -75,6 +81,7 @@ public:
     // 않는 이유가 이것이다** — 카운트 배열 직접 조회가 이미 더 싸다
     // (실측: docs/portfolio.md §4).
     bool evaluate(const RecipeTable& table, uint32_t recipeIndex) const {
+        if (!matches(table)) return false;
         if (recipeIndex >= table.recipeCount()) return false;
         const RecipeData& r = table.recipe(recipeIndex);
         if (r.count == 0) return false;
@@ -90,8 +97,16 @@ public:
     // 조합 실행 — 재료 소모 + 결과물 생성 (§5: 골드가 들지 않는다).
     // **결과물 오버플로를 먼저 확인한다** — 재료만 사라지는 상태를 만들지 않기 위해.
     bool craft(const RecipeTable& table, uint32_t recipeIndex) {
+        // **테이블이 다르면 캐시가 거짓말을 한다.** `craftableBits_`는 init 때의
+        // 테이블 기준이라, 더 작은 테이블을 넘기면 범위 밖 인덱스가 true로 남아
+        // `recipe()`가 `kInvalidRecipe`를 준다 — 그 result는 ITEM_NONE(0xFFFF)이고
+        // 곧바로 `counts_[65535]` 읽기·쓰기가 된다(counts_는 MAX_ITEM_TYPES칸).
+        // ASan에서 SEGV로 재현된 경로다. 두 겹으로 막는다.
+        if (!matches(table)) return false;
+        if (recipeIndex >= table.recipeCount()) return false;
         if (!craftable(recipeIndex)) return false;
         const RecipeData& r = table.recipe(recipeIndex);
+        if (r.count == 0 || r.result >= config::MAX_ITEM_TYPES) return false;
         if (static_cast<uint32_t>(counts_[r.result]) + 1u > 0xFFFFu) return false;
 
         for (uint8_t i = 0; i < r.count; ++i) --counts_[r.ingredients[i]];

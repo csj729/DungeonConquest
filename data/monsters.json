@@ -19,7 +19,9 @@
       "armor": 0,
       "damage": 167,
       "target_sec_min": 7,
-      "target_sec_max": 12
+      "target_sec_max": 12,
+      "windup_ticks": 60,
+      "cooldown_ticks": 60
     },
     {
       "id": "GE_SHIELD",
@@ -29,7 +31,9 @@
       "armor": 200,
       "damage": 33,
       "target_sec_min": 18,
-      "target_sec_max": 30
+      "target_sec_max": 30,
+      "windup_ticks": 0,
+      "cooldown_ticks": 60
     },
     {
       "id": "GE_SHAMAN",
@@ -39,7 +43,9 @@
       "armor": 0,
       "damage": 21,
       "target_sec_min": 5,
-      "target_sec_max": 10
+      "target_sec_max": 10,
+      "windup_ticks": 0,
+      "cooldown_ticks": 60
     },
     {
       "id": "GE_MAD",
@@ -49,10 +55,15 @@
       "armor": 0,
       "damage": 13,
       "target_sec_min": 9,
-      "target_sec_max": 16
+      "target_sec_max": 16,
+      "windup_ticks": 30,
+      "cooldown_ticks": 60
     }
   ],
   "archer_windup_ticks": 60,
+  "_elite_shared": "엘리트 공통값. 개체별로 갈릴 이유가 아직 없어 한 곳에 둔다 — 갈라지는 순간 elites[] 안으로 옮긴다. windup_ticks·cooldown_ticks는 개체별로 이미 다르므로 elites[] 안에 있다.",
+  "elite_attack_range_millitile": 2000,
+  "elite_cc_gauge_max": 100,
   "boss": {
     "id": "GB_WARCHIEF",
     "target_priority": 10,
@@ -81,5 +92,9 @@
   },
   "slice_boss_armor": 50,
   "slice_boss_hp": 2100,
+  "_slice_boss": "수직 슬라이스용 보스. 전체 게임 보스(hp 33000)와 달리 맵 1개 분량으로 축소한 값이다. damage는 patterns[0](삼연격 63)을 임시로 쓴다 — 보스 패턴 시스템(patternIndex/patternCooldown)이 붙으면 patterns에서 직접 읽고 이 값은 사라진다.",
+  "slice_boss_damage": 63,
+  "slice_boss_cooldown_ticks": 60,
+  "slice_boss_attack_range_millitile": 3000,
   "map_boss_target_ticks": 1500
 }

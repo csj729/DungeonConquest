@@ -230,7 +230,7 @@ inline void qteRun(World& w, const SimConfig& cfg) {
     const int32_t d = w.entities.denseOf(q.source);
     if (d < 0) return;                       // 텔레그래프 도중에 죽었다
     const uint32_t i = static_cast<uint32_t>(d);
-    w.entities.attackCooldown[i] = cfg.trash.cooldownTicks;
+    w.entities.attackCooldown[i] = w.entities.attackInterval[i];
 
     if (g == QteGrade::Miss) {
         w.hero.corruption += mitigate(w.entities.attackDamage[i],
@@ -341,7 +341,7 @@ inline void combatRun(World& w, const SimConfig& cfg) {
         }
 
         incoming += mitigate(w.entities.attackDamage[i], heroArmor, cfg.armorK);
-        w.entities.attackCooldown[i] = cfg.trash.cooldownTicks;
+        w.entities.attackCooldown[i] = w.entities.attackInterval[i];
     }
     if (incoming.raw != 0) {
         w.hero.corruption += incoming;

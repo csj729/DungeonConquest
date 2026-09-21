@@ -26,6 +26,11 @@ ORB_ELITE_AMT = _PROG["orb_elite_amount"]
 # **구간이 갈수록 떨어진다** — 1구간 63% → 7구간 39%. 멀리 있는 엘리트를 쫓을수록
 # 뒤에 흘린 구슬이 소멸하기 때문이고, 이것이 드랍·습득 2단계로 둔 이유 그 자체다.
 ORB_PICKUP_RATE = 0.40
+
+# 엘리트가 실제로 영웅을 때린 양 (12시드 × 600초). 설계 모델은 18.9~27.5/초를 가정한다.
+ELITE_MEASURED = 3.6
+# 엘리트가 자기 사거리(2.0타일) 안에 있던 시간 비율.
+ELITE_IN_RANGE = 0.013
 SEGMENT_PURGE = _PROG["segment_clear_purge"]
 SEGMENTS = _SEG["segment_start_points"]
 CLEAR_TARGET = _SEG["clear_target_points"]
@@ -134,6 +139,21 @@ def report():
     print("  ※ 체류가 2배면 정화를 2배로 올려도 수지는 그대로다 — 유입도 2배이기 때문이다.")
     print("     회복 예산이 아니라 **처치율**을 고쳐야 하는 자리다 (dc_montecarlo 실측:")
     print("     영웅이 구간 3~7에서 71~88%의 시간을 엘리트 1.0~1.4마리에 쓴다)\n")
+
+    print("=== 목표 5: 설계 모델의 유입 구성이 실측과 맞는가 ===")
+    print("  balance_baseline 목표 5는 잠식 유입을 피격 + 물량 + **엘리트**로 나눈다.")
+    print("  그런데 실측에서 엘리트는 거의 때리지 못한다 — 잡몹 링에 막히기 때문이다.")
+    print(f"  {'항목':>10} {'설계 모델':>12} {'실측':>10}")
+    print(f"  {'엘리트 기여':>9} {'18.9~27.5/초':>12} {ELITE_MEASURED:>7.1f}/초")
+    print(f"  {'사거리 안':>10} {'(상시 가정)':>12} {ELITE_IN_RANGE:>9.1%}")
+    good = False   # 실측이 모델의 1/5 수준이면 모델이 틀렸거나 전장 구조가 틀렸다
+    ok &= good
+    print(f"  엘리트가 사거리 안에 있던 시간 {ELITE_IN_RANGE:.1%} → 모델 대비 "
+          f"{ELITE_MEASURED / 23.2:.0%} {'PASS' if good else 'FAIL'}")
+    print("  ※ 엘리트 사거리 2.0타일인데 잡몹 링이 영웅 이격 1.0 · 몹 이격 1.5로")
+    print("     촘촘히 둘러싸 뚫지 못한다. 영웅도 같은 이유로 엘리트에 닿지 못해")
+    print("     (실측 71~88%의 시간을 엘리트 조준에 쓰고도 처치율 0.4/초) 서로")
+    print("     링 너머로 마주 본 채 잡몹이 상한까지 쌓인다. **체류 2배의 실체가 이것이다.**\n")
 
     print("전체: " + ("PASS" if ok else "FAIL"))
     return ok

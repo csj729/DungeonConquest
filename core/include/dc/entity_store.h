@@ -89,6 +89,10 @@ public:
     // archetype 고정 순서로는 그 판단을 표현할 수 없다.
     int32_t   targetPriority[CAPACITY]{};
     int32_t   attackCooldown[CAPACITY]{};  // 남은 틱
+    // **공격 간격을 개체가 들고 다닌다.** 전에는 공격 후 `cfg.trash.cooldownTicks`를
+    // 넣어 엘리트·보스(60틱)가 첫 공격 이후 잡몹 주기(30틱)로 바뀌었다 —
+    // 공격 빈도가 2배가 되어 QTE 빈도와 잠식 피해가 설계와 달라졌다.
+    int32_t   attackInterval[CAPACITY]{};  // 스폰 시 고정, 공격 후 여기서 다시 채운다
     int32_t   windupLeft[CAPACITY]{};      // 남은 틱, 0이면 텔레그래프 중 아님
     int32_t   windupTicks[CAPACITY]{};     // 텔레그래프 길이(정적). 0이면 QTE 패턴 없음
     int32_t   groggyLeft[CAPACITY]{};      // QTE 완벽 판정 보상 — 행동 불가 남은 틱
@@ -148,6 +152,7 @@ public:
         attackRange[dense]     = d.attackRange;
         targetPriority[dense]  = d.targetPriority;
         attackCooldown[dense]  = d.attackCooldownTicks;
+        attackInterval[dense]  = d.attackCooldownTicks;
         windupLeft[dense]      = 0;
         windupTicks[dense]     = d.windupTicks;
         groggyLeft[dense]      = 0;
@@ -249,6 +254,7 @@ public:
         for (uint32_t i = 0; i < n; ++i) h.feed(attackRange[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(targetPriority[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(attackCooldown[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(attackInterval[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(windupLeft[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(windupTicks[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(groggyLeft[i]);
@@ -289,6 +295,7 @@ private:
         attackRange[dst]     = attackRange[src];
         targetPriority[dst]  = targetPriority[src];
         attackCooldown[dst]  = attackCooldown[src];
+        attackInterval[dst]  = attackInterval[src];
         windupLeft[dst]      = windupLeft[src];
         windupTicks[dst]     = windupTicks[src];
         groggyLeft[dst]      = groggyLeft[src];

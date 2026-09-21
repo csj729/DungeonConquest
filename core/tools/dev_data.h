@@ -68,6 +68,13 @@ constexpr uint8_t  STAT_CARD_POOL[4] = {
     static_cast<uint8_t>(Stat::CorruptionMax)};
 
 constexpr int32_t  TRASH_ATTACK_RANGE_MILLITILE = 1400;
+// data/monsters.json — 엘리트 공통값 · 수직 슬라이스 보스
+constexpr int32_t  ELITE_COOLDOWN_TICKS           = 60;
+constexpr int32_t  ELITE_ATTACK_RANGE_MILLITILE   = 2000;
+constexpr int32_t  ELITE_CC_GAUGE_MAX             = 100;
+constexpr int32_t  SLICE_BOSS_DAMAGE              = 63;
+constexpr int32_t  SLICE_BOSS_COOLDOWN_TICKS      = 60;
+constexpr int32_t  SLICE_BOSS_ATTACK_RANGE_MILLITILE = 3000;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
 
@@ -159,11 +166,15 @@ inline SimConfig devConfig() {
 
     // data/monsters.json — 엘리트 (target_priority가 순서를 정한다)
     struct E { int32_t hp, armor, dmg, prio, windup; uint16_t typeId; };
+    // **damage는 data/monsters.json 그대로다.** 한때 40/8/5/3이 들어 있었는데
+    // 그건 어디에도 근거가 없는 값이었고, 파이썬 검증(167/33/21/13)과 C++ 시뮬이
+    // 4.2배 다른 상태로 몬테카를로를 돌리고 있었다. verify_core_constants.py가
+    // 이제 이 표 전체를 대조한다.
     constexpr E kElites[4] = {
-        {120, 0,   40, 35, 60, 1},   // GE_ARCHER  궁병대장 — QTE 소스
-        {100, 200,  8, 20,  0, 2},   // GE_SHIELD  방패병   — QTE 없음
-        { 90, 0,    5, 40,  0, 3},   // GE_SHAMAN  주술사   — 소환, 방치 비용 최대
-        {150, 0,    3, 30, 30, 4},   // GE_MAD     미친 고블린 — QTE 소스
+        {120, 0,  167, 35, 60, 1},   // GE_ARCHER  궁병대장 — QTE 소스
+        {100, 200, 33, 20,  0, 2},   // GE_SHIELD  방패병   — QTE 없음
+        { 90, 0,   21, 40,  0, 3},   // GE_SHAMAN  주술사   — 소환, 방치 비용 최대
+        {150, 0,   13, 30, 30, 4},   // GE_MAD     미친 고블린 — QTE 소스
     };
     c.eliteCount = 4;
     for (uint32_t i = 0; i < 4; ++i) {
@@ -175,21 +186,21 @@ inline SimConfig devConfig() {
         m.windupTicks     = kElites[i].windup;
         m.typeId          = kElites[i].typeId;
         m.archetype       = Archetype::Elite;
-        m.cooldownTicks   = 60;
+        m.cooldownTicks   = ELITE_COOLDOWN_TICKS;
         m.approachSpeed   = c.trash.approachSpeed;
-        m.attackRange     = Fixed(2);
-        m.ccGaugeMax      = Fixed(100);
+        m.attackRange     = Fixed::fromPermille(ELITE_ATTACK_RANGE_MILLITILE);
+        m.ccGaugeMax      = Fixed(ELITE_CC_GAUGE_MAX);
     }
 
     // data/monsters.json — 보스
     c.boss.hp             = Fixed(2100);      // slice_boss_hp
     c.boss.armor          = Fixed(50);        // slice_boss_armor
-    c.boss.damage         = Fixed(63);
+    c.boss.damage         = Fixed(SLICE_BOSS_DAMAGE);
     c.boss.targetPriority = 10;
     c.boss.archetype      = Archetype::Boss;
-    c.boss.cooldownTicks  = 60;
+    c.boss.cooldownTicks  = SLICE_BOSS_COOLDOWN_TICKS;
     c.boss.approachSpeed  = c.trash.approachSpeed;
-    c.boss.attackRange    = Fixed(3);
+    c.boss.attackRange    = Fixed::fromPermille(SLICE_BOSS_ATTACK_RANGE_MILLITILE);
     c.boss.typeId         = 100;
 
     // data/segments.json — 구간별 엘리트를 클리어 게이지 임계로 옮긴 것.

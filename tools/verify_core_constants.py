@@ -108,6 +108,19 @@ def _check_dev_data():
         m = re.search(rf"\b{name}\s*=\s*(-?\d+)\s*;", src)
         return int(m.group(1)) if m else None
 
+    def elite_rows():
+        """kElites 초기화 블록을 행 단위로 뜯는다 — {hp, armor, dmg, prio, windup, typeId}."""
+        m = re.search(r"kElites\[\d*\]\s*=\s*\{(.*?)\n\s*\};", src, re.S)
+        if not m:
+            return None
+        rows = re.findall(r"\{([^}]*)\}", m.group(1))
+        # typeId(마지막 열)는 JSON에 없으므로 앞 5개만 본다
+        return [[int(x) for x in re.findall(r"-?\d+", r)][:5] for r in rows]
+
+    def slice_boss_hp():
+        m = re.search(r"c\.boss\.hp\s*=\s*Fixed\((\d+)\)", src)
+        return int(m.group(1)) if m else None
+
     checks = [
         ("CAP_BY_SEGMENT", ints("CAP_BY_SEGMENT"), gd.SPAWN["concurrent_cap_by_segment"]),
         ("BATCH_BY_SEGMENT", ints("BATCH_BY_SEGMENT"), gd.SPAWN["batch_by_segment"]),
@@ -132,6 +145,29 @@ def _check_dev_data():
          gd.SPAWN["mob_separation_millitile"]),
         ("TRASH_ATTACK_RANGE_MILLITILE", scalar("TRASH_ATTACK_RANGE_MILLITILE"),
          gd.MONSTERS["trash"]["attack_range_millitile"]),
+        # **엘리트 표 전체를 대조한다.** damage가 4.2배 어긋난 채로(40/8/5/3 대
+        # 167/33/21/13) 파이썬 검증과 C++ 시뮬이 서로 다른 게임을 재고 있었다.
+        # 한 필드만 보면 또 놓치므로 kElites 행을 통째로 본다.
+        ("kElites", elite_rows(),
+         [[e["hp"], e["armor"], e["damage"], e["target_priority"], e["windup_ticks"]]
+          for e in gd.MONSTERS["elites"]]),
+        ("ELITE_COOLDOWN_TICKS", scalar("ELITE_COOLDOWN_TICKS"),
+         gd.MONSTERS["elites"][0]["cooldown_ticks"]),
+        ("ELITE_ATTACK_RANGE_MILLITILE", scalar("ELITE_ATTACK_RANGE_MILLITILE"),
+         gd.MONSTERS["elite_attack_range_millitile"]),
+        ("ELITE_CC_GAUGE_MAX", scalar("ELITE_CC_GAUGE_MAX"),
+         gd.MONSTERS["elite_cc_gauge_max"]),
+        ("TRASH_COOLDOWN_TICKS", scalar("c.trash.cooldownTicks"),
+         gd.MONSTERS["trash"]["cooldown_ticks"]),
+        ("SLICE_BOSS_HP", scalar("c.boss.hp = Fixed") or slice_boss_hp(),
+         gd.MONSTERS["slice_boss_hp"]),
+        ("SLICE_BOSS_DAMAGE", scalar("SLICE_BOSS_DAMAGE"), gd.MONSTERS["slice_boss_damage"]),
+        ("SLICE_BOSS_COOLDOWN_TICKS", scalar("SLICE_BOSS_COOLDOWN_TICKS"),
+         gd.MONSTERS["slice_boss_cooldown_ticks"]),
+        ("SLICE_BOSS_ATTACK_RANGE_MILLITILE", scalar("SLICE_BOSS_ATTACK_RANGE_MILLITILE"),
+         gd.MONSTERS["slice_boss_attack_range_millitile"]),
+        ("BOSS_TARGET_PRIORITY", scalar("c.boss.targetPriority"),
+         gd.MONSTERS["boss"]["target_priority"]),
         ("trashHpScale", scalar("c.trashHpScalePerSegmentPermille"),
          gd.PROGRESSION["trash_hp_scale_per_segment_permille"]),
         ("HERO_SEPARATION_MILLITILE", scalar("HERO_SEPARATION_MILLITILE"),

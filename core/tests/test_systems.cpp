@@ -424,6 +424,56 @@ int main() {
         printf("    2000틱 × 2회 일치\n");
     }
 
+    dctest::section("공격 간격 — 엘리트·보스가 잡몹 주기로 바뀌지 않는다");
+    {
+        // **회귀 테스트.** 공격 후 `cfg.trash.cooldownTicks`를 넣고 있어서
+        // 엘리트·보스(60틱)가 첫 공격 이후 잡몹 주기(30틱)를 썼다 —
+        // 공격 빈도가 2배가 되어 QTE 빈도와 잠식 피해가 설계와 달라졌다.
+        // 스폰 시 값이 아니라 **두 번째 공격 이후**를 봐야 잡힌다.
+        CHECK(cfg.elites[0].cooldownTicks != cfg.trash.cooldownTicks);
+
+        for (int32_t which = 0; which < 2; ++which) {
+            const MonsterConfig& m = which == 0 ? cfg.elites[1] : cfg.boss;  // 방패병 · 보스
+            const char* name = which == 0 ? "엘리트" : "보스";
+
+            World w = makeWorld(31);
+            SpawnDesc d = makeDesc(m, Fixed(100000));   // 죽지 않을 만큼 단단하게
+            d.posX = Fixed{}; d.posY = Fixed{};
+            d.windupTicks = 0;                          // 예비 동작은 여기서 볼 게 아니다
+            const EntityId id = w.entities.spawn(d, 0, 31);
+            CHECK(id.valid());
+            const int32_t dense = w.entities.denseOf(id);
+            CHECK(dense >= 0);
+            CHECK_EQ(w.entities.attackInterval[dense], m.cooldownTicks);
+
+            // 영웅은 사거리 밖으로 빼서 반격이 섞이지 않게 한다
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            w.hero.target = EntityId{};
+
+            // 스폰 직후엔 쿨다운이 꽉 차 있다 — 나타나자마자 때리지 않는다.
+            // 그래서 첫 틱은 공격이 아니라 감소다.
+            CHECK_EQ(w.entities.attackCooldown[dense], m.cooldownTicks);
+            combatRun(w, cfg);
+            CHECK_EQ(w.entities.attackCooldown[dense], m.cooldownTicks - 1);
+
+            // 타수를 직접 세는 쪽이 견고하다 — 쿨다운이 다시 차오르는 순간이 곧 공격이다.
+            // 600틱 동안 간격 60이면 9~10회, 잡몹 간격 30이면 19~20회로 밴드가 겹치지 않는다.
+            int32_t hits = 0, prev = w.entities.attackCooldown[dense];
+            for (int32_t t = 0; t < 600; ++t) {
+                combatRun(w, cfg);
+                const int32_t cur = w.entities.attackCooldown[dense];
+                if (cur > prev) ++hits;      // 쿨다운이 올라갔다 = 때렸다
+                prev = cur;
+            }
+            const int32_t wantMine  = 600 / (m.cooldownTicks + 1);
+            const int32_t wantTrash = 600 / (cfg.trash.cooldownTicks + 1);
+            CHECK(hits <= wantMine + 1 && hits >= wantMine - 1);
+            CHECK(hits < wantTrash - 1);     // 잡몹 주기로 때리고 있지 않다
+            printf("    %s 600틱에 %d타 (자기 간격 %d틱 기준 %d타 · 잡몹 %d틱이면 %d타)\n",
+                   name, hits, m.cooldownTicks, wantMine, cfg.trash.cooldownTicks, wantTrash);
+        }
+    }
+
     dctest::section("잠식 정화 — 회복의 단일 통로");
     {
         World w = makeWorld(21);

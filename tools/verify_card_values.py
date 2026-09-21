@@ -1,3 +1,4 @@
+import math
 """각인·유물 등급별 기준 수치 검증.
 
 수치를 각인마다 감으로 정하면 "어떤 각인이 센가"가 데이터 설계자의 취향이 된다.
@@ -18,6 +19,7 @@ sys.path.insert(0, "tools")
 
 from balance_baseline import (
     HERO, SKILLS, PROC_RATE, TICK_HZ, TRASH, ARMOR_K, POWER_PER_LEVELUP,
+    LEVEL_NEED_RATIO,
     hero_dps, effective_hp, ELITES,
 )
 from verify_card_rates import RATES
@@ -129,7 +131,20 @@ def relic_delta(rid, v):
         return total * v * ELITE_SHARE
     if rid == "R_TIDE":
         return total * v * 35.0 / 2      # 웨이브 평균 35초, 선형 증가 → 평균은 절반
-    if rid in ("R_FROST", "R_GREED"):
+    if rid == "R_GREED":
+        # **경험치는 DPS로 환산된다.** 골드일 때는 기준이 없어 검산에서 빠져 있었는데,
+        # 경험치로 바꾸면 경로가 닫힌다 — 경험치 +v → 레벨업 n회 추가 → 위력 1.07^n.
+        #
+        # 필요 경험치가 등비(ratio^n)라 누적 경험치 ×(1+v)는 레벨을
+        # log(1+v)/log(ratio)회만큼 더 준다. 그 레벨이 각각 POWER_PER_LEVELUP만큼
+        # 위력을 올린다.
+        #
+        # **런 평균으로 잡는다** — 효과가 0에서 시작해 종료 시점에 최대가 되므로
+        # R_TIDE와 같은 이유로 절반을 쓴다.
+        extra_levels = math.log(1 + v) / math.log(LEVEL_NEED_RATIO)
+        end_gain = (1 + POWER_PER_LEVELUP) ** extra_levels - 1
+        return total * end_gain / 2
+    if rid == "R_FROST":
         return None
     raise KeyError(rid)
 

@@ -537,6 +537,40 @@ int main() {
             printf("    R_BOLT 40%%: %d틱 주기로 한 마리씩\n", cfg.boltIntervalTicks);
         }
 
+        // ── R_GREED(탐욕의 주머니) — 경험치 획득 증가 ──
+        {
+            // 골드가 아니라 경험치다 (골드 시스템 미구현). **전투와 경쟁하지 않는
+            // 유일한 축**이라 카드를 더 자주 뽑게 해 선택지 품질을 산다.
+            World plain; plain.init(9); dev::applyHeroBaseline(plain);
+            gainExp(plain, cfg, 1000);
+
+            World greedy; greedy.init(9); dev::applyHeroBaseline(greedy);
+            greedy.cards.relic[relicIndex(RelicId::Greed)] = Fixed::fromPermille(200);
+            gainExp(greedy, cfg, 1000);
+
+            // 같은 획득량에 +20%면 레벨이 같거나 앞서고, 누적 경험치가 더 많다
+            const int64_t plainTotal = plain.hero.exp
+                + [&]{ int64_t t = 0; for (int32_t l = 1; l < plain.hero.level; ++l) t += cfg.needFor(l); return t; }();
+            const int64_t greedTotal = greedy.hero.exp
+                + [&]{ int64_t t = 0; for (int32_t l = 1; l < greedy.hero.level; ++l) t += cfg.needFor(l); return t; }();
+            CHECK_EQ(plainTotal, 1000);
+            // **정확히 1200은 아니다.** 20%를 20.12 고정소수점으로 담으면
+            // 819/4096 = 0.19995라 0.024% 모자란다 — 프로젝트 전반과 같은 성질이라
+            // 허용 오차로 본다. 밴드를 좁게 잡아 "효과 없음"이나 "2배"는 걸린다.
+            CHECK(greedTotal >= 1198 && greedTotal <= 1200);
+            CHECK(greedy.hero.level >= plain.hero.level);
+
+            // **경험치는 int64다** — Fixed 범위(±524,288)를 넘는 값에서도 배율이 맞아야 한다
+            World big; big.init(9); dev::applyHeroBaseline(big);
+            big.cards.relic[relicIndex(RelicId::Greed)] = Fixed::fromPermille(200);
+            gainExp(big, cfg, 100000000LL);
+            int64_t bigTotal = big.hero.exp;
+            for (int32_t l = 1; l < big.hero.level; ++l) bigTotal += cfg.needFor(l);
+            CHECK(bigTotal >= 119900000LL && bigTotal <= 120000000LL);
+            printf("    R_GREED 20%%: 경험치 1000 → %lld · 1억 → %lld (고정소수점 오차 0.024%%)\n",
+                   static_cast<long long>(greedTotal), static_cast<long long>(bigTotal));
+        }
+
         // ── R_FROST(서리 오라) — 반경 안만 둔화 ──
         {
             World w; w.init(9); dev::applyHeroBaseline(w);

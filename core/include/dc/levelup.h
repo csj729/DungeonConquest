@@ -117,6 +117,20 @@ inline void dealCards(World& w, const SimConfig& cfg) {
 // **연속 레벨업도 한 번에 한 화면씩** 처리한다 — 밀린 수는 pendingLevelUps에 쌓인다.
 inline void gainExp(World& w, const SimConfig& cfg, int64_t amount) {
     if (amount <= 0) return;
+    // R_GREED(탐욕의 주머니) — 경험치 획득 증가.
+    //
+    // **전투와 경쟁하지 않는 유일한 축이다** (§4). 다른 유물이 전투력을 올린다면
+    // 이쪽은 카드를 더 자주 뽑게 해 **선택지 품질**을 산다. 그래서 단독으로는
+    // 약해 보여도 뽑은 카드가 좋으면 복리로 돌아온다.
+    //
+    // 배율은 `Fixed`가 아니라 정수로 곱한다 — 경험치는 고정소수점 범위(±524,288)를
+    // 훨씬 넘는 int64 누적값이라 Fixed로 옮기면 넘친다.
+    {
+        const Fixed greed = w.cards.relic[relicIndex(RelicId::Greed)];
+        if (greed.raw > 0 && amount > 0) {
+            amount += (amount * greed.raw) / Fixed::ONE_RAW;
+        }
+    }
     w.hero.exp += amount;
     while (w.hero.exp >= cfg.needFor(w.hero.level)) {
         w.hero.exp -= cfg.needFor(w.hero.level);

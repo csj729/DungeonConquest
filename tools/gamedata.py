@@ -85,7 +85,7 @@ def report():
     print(f"  영웅       공격력 {HERO['attack_power']} / 간격 {HERO['attack_interval_ticks']}틱 / "
           f"잠식 {HERO['corruption_max']}")
     t = MONSTERS["trash"]
-    print(f"  잡몹       HP {t['hp']} / 근접 {t['damage']} / 원거리 {t['ranged_damage']}")
+    print(f"  잡몹       HP {t['hp']} / 공격력 {t['damage']} / 사거리 {t['attack_range_millitile']/1000:g}타일")
     p = PROGRESSION
     print(f"  성장       레벨업당 +{pm(p['power_per_levelup_permille']):.0%} "
           f"(공속 몫 {pm(p['speed_growth_share_permille']):.0%}) / "
@@ -96,7 +96,7 @@ def report():
           f"{SPAWN['interval_ticks']}틱마다 배치 {SPAWN['batch_start']}→{SPAWN['batch_end']} / "
           f"{SPAWN['directions']}방향")
     print(f"  구간       {len(SEGMENTS_DATA['segments'])}개, 게이지 목표 "
-          f"{sum(s['melee'] + s['ranged'] for s in SEGMENTS_DATA['segments']) * SEGMENTS_DATA['trash_points'] + sum(len(s['elites']) for s in SEGMENTS_DATA['segments']) * SEGMENTS_DATA['elite_points']}점")
+          f"{sum(s['melee'] for s in SEGMENTS_DATA['segments']) * SEGMENTS_DATA['trash_points'] + sum(len(s['elites']) for s in SEGMENTS_DATA['segments']) * SEGMENTS_DATA['elite_points']}점")
     print(f"  카드       등급 {len(CARDS['grades'])}단계 / 각인 {len(CARDS['engravings'])}종 / "
           f"유물 {len(CARDS['relics'])}종")
     print(f"  스탯       {len(STATS['stats'])}종 (하한 = 불변식, 밸런스 다이얼 아님)")

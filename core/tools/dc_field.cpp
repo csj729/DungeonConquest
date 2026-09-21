@@ -18,6 +18,7 @@ using namespace dc;
 struct FieldStats {
     double meanContact  = 0;   // 사거리 안에 있는 몹 수 (SURROUND_COUNT)
     int32_t maxContact  = 0;
+    double meanMelee    = 0;   // 근접 중 사거리 안
     double meanAlive    = 0;
     double aoeShare     = 0;   // 광역 반경 안 비율 (AOE_TARGET_SHARE)
     double meanApproach = 0;   // 스폰 → 첫 접촉까지 초 (APPROACH_SEC)
@@ -35,6 +36,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
 
     const Fixed aoeRadius = Fixed(3);        // §9 광역기 기준 반경
     int64_t contactSum = 0, aliveSum = 0, aoeSum = 0;
+    int64_t meleeSum = 0;
     int32_t maxContact = 0, samples = 0;
     int64_t approachTickSum = 0, approachCount = 0;
     const int32_t startCorruption = w.hero.corruption.raw;
@@ -47,6 +49,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
         if (t < ticks / 4) continue;          // 초반 과도구간은 버린다
 
         int32_t contact = 0, alive = 0, inAoe = 0;
+        int32_t melee = 0;
         for (uint32_t i = 0; i < w.entities.count(); ++i) {
             if (w.entities.deadAt(i)) continue;
             ++alive;
@@ -55,6 +58,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
             const int64_t r  = w.entities.attackRange[i].raw;
             if (d2 <= r * r) {
                 ++contact;
+                if (w.entities.archetype[i] == Archetype::Trash) ++melee;
                 // **첫 접촉만 센다.** 쿨다운 리셋으로 세면 생존 기간 평균이 나온다.
                 const uint32_t slot = w.entities.idAt(i).index();
                 const uint32_t gen  = w.entities.idAt(i).generation();
@@ -67,6 +71,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
             if (d2 <= static_cast<int64_t>(aoeRadius.raw) * aoeRadius.raw) ++inAoe;
         }
         contactSum += contact;
+        meleeSum   += melee;
         aliveSum   += alive;
         aoeSum     += inAoe;
         if (contact > maxContact) maxContact = contact;
@@ -78,6 +83,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
         s.meanContact = static_cast<double>(contactSum) / samples;
         s.meanAlive   = static_cast<double>(aliveSum) / samples;
         s.aoeShare    = s.meanAlive > 0 ? (static_cast<double>(aoeSum) / samples) / s.meanAlive : 0;
+        s.meanMelee   = static_cast<double>(meleeSum) / samples;
     }
     s.maxContact = maxContact;
     if (approachCount > 0) {
@@ -97,12 +103,12 @@ int main(int argc, char** argv) {
 
     printf("== 영웅 이동속도 스윕 (추격 전용) ==\n");
     printf("%8s %6s | %8s %6s %8s %9s %10s\n",
-           "속도", "비율", "접촉", "최대", "생존", "접근초", "잠식/100틱");
+           "속도", "비율", "근접", "최대", "생존", "접근초", "잠식/100틱");
     for (int32_t pm : {0, 500, 1000, 1500, 2000, 2400, 2800, 3500}) {
         const FieldStats s = measure(cfg, Fixed::fromPermille(pm), 700, 300, ticks, 20250921);
         printf("%6.2f/s %5.2fx | %8.2f %6d %8.1f %9.1f %10.0f\n",
                pm / 1000.0, (pm / 1000.0) / mobSpeed,
-               s.meanContact, s.maxContact, s.meanAlive, s.meanApproach, s.corruption);
+               s.meanMelee, s.maxContact, s.meanAlive, s.meanApproach, s.corruption);
     }
 
     printf("\n== 영웅 이격 거리 스윕 (속도 2.00/s) — 첫 링에 몇 마리가 붙는가 ==\n");
@@ -114,6 +120,16 @@ int main(int argc, char** argv) {
         const FieldStats s = measure(c2, Fixed::fromPermille(2000), 0, 0, ticks, 20250921);
         printf("%11.2f타일 | %8.2f %6d %8.1f %9.1f %10.0f\n",
                sep / 1000.0, s.meanContact, s.maxContact, s.meanAlive, s.meanApproach, s.corruption);
+    }
+
+    printf("\n== 근접 사거리 스윕 — 링 구조에서 유효 밴드 찾기 (영웅 이격 1.0타일) ==\n");
+    printf("%12s | %8s %6s %10s\n", "근접 사거리", "접촉", "최대", "잠식/100틱");
+    for (int32_t rp : {900, 1000, 1100, 1200, 1400, 1600, 1800, 2000, 2400, 3000}) {
+        SimConfig c2 = cfg;
+        c2.trash.attackRange = Fixed::fromPermille(rp);
+        const FieldStats s = measure(c2, Fixed::fromPermille(2000), 0, 0, ticks, 20250921);
+        printf("%9.2f타일 | %8.2f %6d %10.0f\n",
+               rp / 1000.0, s.meanContact, s.maxContact, s.corruption);
     }
 
     printf("\n== 광역 반경별 타격 수 (AOE_TARGET_SHARE 가정 0.13 → 상한 30에서 3.9마리) ==\n");

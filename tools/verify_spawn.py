@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, "tools")
 
 from balance_baseline import (
-    HERO, TRASH, TICK_HZ, concurrent_cap, SURROUND_COUNT, hero_dps,
+    HERO, TRASH, TICK_HZ, concurrent_cap, SURROUND_COUNT, hero_dps, elite_pressure,
     effective_targets, spawn_batch, SPAWN_DIRECTIONS, SPAWN_INTERVAL_TICKS,
     corruption_from_mass, CORRUPTION_THRESHOLD, TOTAL_SEGMENTS,
     TOTAL_LEVELUPS, hp_scale, power_mult,
@@ -118,8 +118,8 @@ def report():
         ratio = ranged / (melee + ranged)
         mel = min(SURROUND_COUNT, round(cap * (1 - ratio)))
         rng_ = round(cap * ratio)
-        hit = (mel * TRASH["damage"] + rng_ * TRASH["ranged_damage"]) \
-            / (TRASH["cooldown_ticks"] / TICK_HZ)
+        hit = mel * TRASH["damage"] / (TRASH["cooldown_ticks"] / TICK_HZ) \
+            + elite_pressure(i)
         mass = corruption_from_mass(cap, cap)
         inc = hit + mass
         surv = HERO["corruption_max"] / inc if inc else 1e9
@@ -150,8 +150,8 @@ def report():
         ratio = ranged / (melee + ranged)
         mel = min(SURROUND_COUNT, round(cap * (1 - ratio)))
         rng_ = round(cap * ratio)
-        press = (mel * TRASH["damage"] + rng_ * TRASH["ranged_damage"]) \
-            / (TRASH["cooldown_ticks"] / TICK_HZ) + corruption_from_mass(cap, cap)
+        press = mel * TRASH["damage"] / (TRASH["cooldown_ticks"] / TICK_HZ) \
+            + elite_pressure(j + 1) + corruption_from_mass(cap, cap)
         mono &= press >= prev_press
         prev_press = press
         print(f"  {w:>4} {cap:>5} {kill:>6.2f}/초 {cap/kill:>7.0f}초 {press:>8.1f} "

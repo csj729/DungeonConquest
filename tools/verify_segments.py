@@ -35,7 +35,7 @@ ELITE_POINTS = _SEG["elite_points"]
 #
 # 몹 수가 구간마다 늘어난다. 영웅이 레벨업으로 강해지는 만큼 물량을 더 얹지
 # 않으면 뒤 구간이 오히려 쉬워진다 — 수를 고정했던 이전 구성의 문제였다.
-SEGMENTS = [(x["melee"], x["ranged"], x["elites"], x["note"]) for x in _SEG["segments"]]
+SEGMENTS = [(x["melee"], 0, x["elites"], x["note"]) for x in _SEG["segments"]]
 
 # 수직 슬라이스용 보스 (풀 게임 최종 보스와 다르다)
 SLICE_BOSS_HP = _MON["slice_boss_hp"]   # 목표 처치 시간에서 역산

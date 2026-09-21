@@ -1,49 +1,49 @@
 {
-  "_": "맵 1개 = 클리어 게이지 8구간. 구간 통과 목표 시간에서 몹 수를 역산한 결과다.",
+  "_": "구간 구성. 원거리 잡몹은 폐지했다 — 최근접 우선 타게팅에서는 근접보다 멀리 서므로 절대 타겟이 되지 않아 전장의 93%까지 쌓였다(core/tools/dc_field 실측). 원거리가 만들던 압박은 엘리트 증량이 대신한다 (10 → 19마리).",
   "trash_points": 1,
   "elite_points": 10,
   "segments": [
     {
       "index": 1,
       "melee": 21,
-      "ranged": 0,
       "elites": [],
       "target_ticks": 500,
       "note": "기본 전투 · 사방 스폰"
     },
     {
       "index": 2,
-      "melee": 16,
-      "ranged": 7,
-      "elites": [],
-      "target_ticks": 560,
-      "note": "원거리 견제 — 사거리 이탈이 안 통하는 적"
-    },
-    {
-      "index": 3,
-      "melee": 16,
-      "ranged": 9,
+      "melee": 23,
       "elites": [
         "고블린 궁병대장"
       ],
-      "target_ticks": 620,
+      "target_ticks": 560,
       "note": "첫 QTE — 텔레그래프 읽기"
     },
     {
-      "index": 4,
-      "melee": 17,
-      "ranged": 12,
+      "index": 3,
+      "melee": 25,
       "elites": [
+        "고블린 궁병대장",
         "고블린 주술사"
       ],
+      "target_ticks": 620,
+      "note": "소환 — 방치하면 물량이 불어난다"
+    },
+    {
+      "index": 4,
+      "melee": 29,
+      "elites": [
+        "미친 고블린",
+        "고블린 방패병"
+      ],
       "target_ticks": 680,
-      "note": "처치 우선순위 — 방치하면 물량이 불어난다"
+      "note": "지속 마모 + 단단한 적"
     },
     {
       "index": 5,
-      "melee": 19,
-      "ranged": 15,
+      "melee": 34,
       "elites": [
+        "고블린 궁병대장",
         "고블린 방패병"
       ],
       "target_ticks": 760,
@@ -51,21 +51,22 @@
     },
     {
       "index": 6,
-      "melee": 24,
-      "ranged": 19,
+      "melee": 43,
       "elites": [
-        "미친 고블린",
-        "고블린 궁병대장"
+        "고블린 궁병대장",
+        "고블린 방패병",
+        "고블린 방패병"
       ],
       "target_ticks": 840,
-      "note": "종합 — 지속 압박 + QTE"
+      "note": "버스트 + 물량 압박"
     },
     {
       "index": 7,
-      "melee": 28,
-      "ranged": 25,
+      "melee": 53,
       "elites": [
-        "고블린 주술사",
+        "미친 고블린",
+        "고블린 방패병",
+        "고블린 방패병",
         "고블린 방패병"
       ],
       "target_ticks": 920,
@@ -73,11 +74,12 @@
     },
     {
       "index": 8,
-      "melee": 32,
-      "ranged": 34,
+      "melee": 66,
       "elites": [
         "고블린 궁병대장",
-        "미친 고블린",
+        "고블린 방패병",
+        "고블린 방패병",
+        "고블린 방패병",
         "고블린 주술사"
       ],
       "target_ticks": 1000,

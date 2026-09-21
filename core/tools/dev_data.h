@@ -30,6 +30,7 @@ constexpr int32_t  HERO_ARMOR                 = 0;
 constexpr uint32_t HERO_PROC_PRD_C_Q16        = 2112;
 constexpr int32_t  HERO_MOVE_SPEED_PERMILLE   = 2000;   // 타일/초 × 1000
 constexpr int32_t  HERO_AOE_RADIUS_MILLITILE  = 1500;
+constexpr int32_t  TRASH_ATTACK_RANGE_MILLITILE = 1400;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
 
@@ -40,7 +41,7 @@ inline SimConfig devConfig() {
     c.totalSegments  = 24;
     c.segmentsPerMap = 8;
     c.armorK         = 100;
-    c.trashHpScalePerSegmentPermille   = 1090;
+    c.trashHpScalePerSegmentPermille   = 1100;
     c.corruptionThreshold              = 20;
     c.corruptionPerMobPermille         = 600;
     c.corruptionOverflowMultPermille   = 3000;
@@ -71,7 +72,7 @@ inline SimConfig devConfig() {
     c.trash.archetype      = Archetype::Trash;
     // 접근 속도는 스폰 반경 19.8타일 / 접근 160틱(8초) = 2.475타일/초 (§2에서 역산)
     c.trash.approachSpeed  = Fixed::fromRaw((19800 * Fixed::ONE_RAW) / 1000 / 8);
-    c.trash.attackRange    = Fixed::fromPermille(1200);   // 첫 링(1.0)이 닿는다
+    c.trash.attackRange    = Fixed::fromPermille(TRASH_ATTACK_RANGE_MILLITILE);
 
     // data/monsters.json — 엘리트 (target_priority가 순서를 정한다)
     struct E { int32_t hp, armor, dmg, prio, windup; uint16_t typeId; };
@@ -108,17 +109,20 @@ inline SimConfig devConfig() {
     c.boss.attackRange    = Fixed(3);
     c.boss.typeId         = 100;
 
-    // data/segments.json — 구간별 엘리트를 클리어 게이지 임계로 옮긴 것
-    const EliteSpawnPoint sp[6] = {
-        {100, 0},  // 구간 3  궁병대장
-        {150, 2},  // 구간 4  주술사
-        {200, 1},  // 구간 5  방패병
-        {250, 3},  // 구간 6  미친 고블린
-        {260, 0},  //         궁병대장
-        {300, 2},  // 구간 7  주술사
+    // data/segments.json — 구간별 엘리트를 클리어 게이지 임계로 옮긴 것.
+    // 원거리 잡몹 폐지로 빠진 압박을 엘리트 증량(10 → 19마리)이 대신한다.
+    // 인덱스: 0 궁병대장 · 1 방패병 · 2 주술사 · 3 미친 고블린
+    const EliteSpawnPoint sp[19] = {
+        { 25, 0},
+        { 50, 0}, { 55, 2},
+        { 80, 3}, { 85, 1},
+        {115, 0}, {120, 1},
+        {160, 0}, {165, 1}, {170, 1},
+        {215, 3}, {220, 1}, {225, 1}, {230, 1},
+        {285, 0}, {290, 1}, {295, 1}, {300, 1}, {305, 2},
     };
-    c.eliteSpawnCount = 6;
-    for (uint32_t i = 0; i < 6; ++i) c.eliteSpawns[i] = sp[i];
+    c.eliteSpawnCount = 19;
+    for (uint32_t i = 0; i < 19; ++i) c.eliteSpawns[i] = sp[i];
     return c;
 }
 

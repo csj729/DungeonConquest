@@ -54,11 +54,11 @@ SKILLS = {                 # 이름 → (기본 공격 대비 배율, 가중치,
 }
 
 # ── 일반 몹 (역산 대상) ────────────────────────────────────────
-TRASH = dict(_MON["trash"])    # hp / damage / ranged_damage / windup_ticks / cooldown_ticks
+TRASH = dict(_MON["trash"])    # hp / damage / attack_range_millitile / cooldown_ticks
 
 from gamedata import SEGMENTS_DATA as _SEGD
 SEGMENT_TRASH_COUNT = (_SEGD["segments"][0]["melee"]
-                       + _SEGD["segments"][0]["ranged"])   # 1구간 몹 수
+)   # 1구간 몹 수
 
 # ── 연속 스폰 — 동시 생존 상한 (design.md §2) ──────────────────
 # 스폰율을 고정하지 않고 동시 생존 수가 상한에 닿도록 채운다. 발산이 원천 차단되고
@@ -260,6 +260,31 @@ ARCHER_WINDUP_TICKS = _MON["archer_windup_ticks"]   # 궁병대장 조준
 ELITE_PRIORITY = True
 
 
+# 엘리트 공격 주기(초). 궁병대장 조준 60틱이 기준이며 나머지도 같은 리듬으로 본다.
+# **모델 가정**이지 데이터가 아니다.
+ELITE_CYCLE_SEC = 3.0
+
+
+def elite_pressure(segment_index):
+    """구간 내 엘리트가 만드는 초당 잠식.
+
+    평균 상주 수 = 등장 수 × 처치 시간 / 구간 시간. 엘리트는 등장 즉시 최우선으로
+    맞으므로(§3) 처치 시간이 곧 상주 시간이다.
+
+    **원거리 잡몹을 폐지하면서 이 축이 필수가 됐다.** 근접 피격은 패킹 한계 5로
+    막혀 있어 동시 생존 상한이 올라도 늘지 않는다 — 맵 안의 난이도 곡선을
+    만들 수 있는 건 엘리트뿐이다.
+    """
+    seg = _SEGD["segments"][segment_index - 1]
+    segsec = seg["target_ticks"] / TICK_HZ
+    total = 0.0
+    for name in seg["elites"]:
+        e = ELITES[name]
+        kill_sec = sum(e["target_sec"]) / 2
+        total += (kill_sec / segsec) * e["damage"] / ELITE_CYCLE_SEC
+    return total
+
+
 def elite_damage_share():
     """엘리트가 실제로 받는 피해 비중. 단일 공격은 고정, 광역은 전장에 퍼진다."""
     aoe_weight = sum(w for _m, w, aoe in SKILLS.values() if aoe)
@@ -358,18 +383,21 @@ def report():
         print()
 
     print("=== 목표 5: 잠식이 가득 차기까지 15초 이상 ===")
-    from_hits = SURROUND_COUNT * TRASH["damage"] / (TRASH["cooldown_ticks"] / TICK_HZ)
-    from_mass = corruption_from_mass(CONCURRENT_CAP[1], CONCURRENT_CAP[1])
-    total_rate = from_hits + from_mass
-    survive = HERO["corruption_max"] / total_rate
-    ok &= (survive >= 15)
-    print(f"  피격 {SURROUND_COUNT}마리 × {TRASH['damage']} / "
-          f"{TRASH['cooldown_ticks']/TICK_HZ}초 = 초당 {from_hits:.1f}")
-    print(f"  물량 {CONCURRENT_CAP[1]}마리 (임계 {CORRUPTION_THRESHOLD} 초과분) "
-          f"= 초당 {from_mass:.1f}")
-    print(f"  잠식 {HERO['corruption_max']} / 초당 {total_rate:.1f} → {survive:.1f}초  "
-          f"{'PASS' if survive >= 15 else 'FAIL'}")
-    print("  ※ 구간 1 기준이다. 상한이 오르면 물량 충전이 커진다 (verify_spawn.py)\n")
+    print(f"  {'구간':>4} {'상한':>4} {'피격':>7} {'물량':>7} {'엘리트':>8} {'합':>7} {'생존':>7}")
+    worst = 1e9
+    for i in range(1, len(_SEGD["segments"]) + 1):
+        cap = CONCURRENT_CAP[i]
+        hits = SURROUND_COUNT * TRASH["damage"] / (TRASH["cooldown_ticks"] / TICK_HZ)
+        ms = corruption_from_mass(cap, cap)
+        ep = elite_pressure(i)
+        inc = hits + ms + ep
+        worst = min(worst, HERO["corruption_max"] / inc)
+        print(f"  {i:>4} {cap:>4} {hits:>7.1f} {ms:>7.1f} {ep:>8.1f} {inc:>7.1f} "
+              f"{HERO['corruption_max'] / inc:>6.1f}초")
+    ok &= (worst >= 15)
+    print(f"  최악 {worst:.1f}초 (목표 15초)  {'PASS' if worst >= 15 else 'FAIL'}")
+    print("  ※ 근접 피격은 패킹 한계 5로 고정된다 — 상한이 올라도 늘지 않으므로")
+    print("     맵 안의 난이도 곡선은 물량 충전과 엘리트가 만든다\n")
 
     print("=== 목표 6: QTE 구간당 3~5회 ===")
     procs = aps * clear * PROC_RATE

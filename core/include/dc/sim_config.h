@@ -19,7 +19,7 @@
 namespace dc {
 
 constexpr uint32_t MAX_ELITE_TYPES  = 8;
-constexpr uint32_t MAX_ELITE_SPAWNS = 16;
+constexpr uint32_t MAX_ELITE_SPAWNS = 32;   // 맵당 19마리 + 여유
 
 // 몬스터 한 종류의 전투 데이터 (§9 "몬스터 전투 데이터").
 struct MonsterConfig {
@@ -82,7 +82,7 @@ struct SimConfig {
 
 
     // ── 로스터 ──
-    MonsterConfig   trash{};
+    MonsterConfig   trash{};        // 잡몹은 근접 한 종류뿐이다 (원거리는 폐지)
     MonsterConfig   boss{};
     MonsterConfig   elites[MAX_ELITE_TYPES]{};
     uint32_t        eliteCount = 0;

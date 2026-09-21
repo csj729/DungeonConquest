@@ -71,6 +71,9 @@ struct SimConfig {
     // 적 간 충돌·회피 (§11). **이 두 값이 "몇 마리가 붙을 수 있는가"를 정한다.**
     int32_t  separationMilli     = 0;   // 몹 ↔ 몹
     int32_t  heroSeparationMilli = 0;   // 몹 ↔ 영웅 — 첫 링의 반지름
+    // 추격 정지 여유 — 사거리 경계가 아니라 안쪽에서 멈춘다. 경계에 서면
+    // 절삭·분리 밀림이 매 틱 사거리 밖으로 밀어내 전투가 멎는다.
+    int32_t  approachMarginMilli = 0;
     uint32_t directions         = 0;
 
     // 잡몹 체력 성장 — 구간당 배율(permille). **한 대 피해 성장을 따라간다**(§2).
@@ -104,6 +107,8 @@ struct SimConfig {
     // ── 영웅 (hero.json) ──
     uint32_t procPrdCQ16 = 0;
     Fixed    aoeRadius{};
+    // 타겟 우선순위 거리 감쇠 (타일당). 닿을 수 없는 표적에 묶이지 않게 한다.
+    int32_t  targetPriorityFalloffPerTile = 0;
 
     // ── QTE (§3) ──
     int32_t  qteCooldownTicks     = 0;   // 빈도 상한. proc 확률로 조절하지 않는다

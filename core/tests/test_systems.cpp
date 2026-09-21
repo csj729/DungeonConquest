@@ -18,6 +18,11 @@ static World makeWorld(uint64_t seed = 1) {
     return w;
 }
 
+// 원점에서 (d, 0)까지의 거리제곱 — 감쇠 계산 검증용
+static int64_t distSqOf(Fixed d) {
+    return static_cast<int64_t>(d.raw) * static_cast<int64_t>(d.raw);
+}
+
 static SpawnDesc mob(Archetype a, int32_t prio, Fixed x, Fixed y, int32_t hp = 20) {
     SpawnDesc d;
     d.posX = x; d.posY = y;
@@ -32,26 +37,74 @@ int main() {
     printf("test_systems\n");
     const SimConfig cfg = dev::devConfig();
 
-    dctest::section("타게팅 — 우선순위가 거리를 이긴다");
+    // 아래 우선순위 테스트들은 **감쇠를 끄고** 순수 우선순위 규칙만 본다.
+    // 거리 감쇠는 뒤의 전용 섹션에서 따로 검증한다.
+    const Fixed   HERO_RANGE  = Fixed(3);
+    const int32_t NO_FALLOFF  = 0;
+
+    dctest::section("타게팅 — 우선순위가 거리를 이긴다 (감쇠 없음)");
     {
         World w = makeWorld();
         // 잡몹은 코앞(1타일), 엘리트는 멀리(10타일)
         const EntityId trash = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0)), 0, 1);
         const EntityId elite = w.entities.spawn(mob(Archetype::Elite, 35, Fixed(10), Fixed(0)), 0, 1);
-        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0)) == elite);
+        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == elite);
 
         // 보스가 있어도 엘리트가 먼저다 — 데이터 우선순위(엘리트 35 > 보스 10).
         // 보스를 먼저 치면 궁병대장이 보스전 내내 살아 QTE 25회 · 잠식 80%를 먹는다.
         const EntityId boss = w.entities.spawn(mob(Archetype::Boss, 10, Fixed(2), Fixed(0), 2100), 0, 1);
-        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0)) == elite);
+        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == elite);
 
         // 엘리트가 죽으면 보스로 내려온다 (잡몹 0보다 높으므로).
         w.entities.markDead(elite);
         w.applyDeaths();
-        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0)) == boss);
+        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == boss);
         w.entities.markDead(boss);
         w.applyDeaths();
-        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0)) == trash);
+        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == trash);
+    }
+
+    dctest::section("타게팅 — 거리 감쇠가 닿지 않는 표적을 밀어낸다");
+    {
+        const int32_t F = cfg.targetPriorityFalloffPerTile;
+        CHECK(F > 0);
+
+        // 실효 = 우선순위 - (거리 - 영웅 사거리) × 감쇠
+        CHECK_EQ(effectivePriority(35, distSqOf(Fixed(1)), HERO_RANGE, F), 35);   // 사거리 안
+        CHECK_EQ(effectivePriority(35, distSqOf(Fixed(3)), HERO_RANGE, F), 35);   // 경계도 감쇠 0
+        CHECK_EQ(effectivePriority(35, distSqOf(Fixed(4)), HERO_RANGE, F), 25);   // 1타일 밖
+        CHECK_EQ(effectivePriority(35, distSqOf(Fixed(10)), HERO_RANGE, F), -35); // 7타일 밖
+
+        // **닿는 엘리트는 여전히 이긴다** — 감쇠는 닿지 않는 적만 밀어낸다
+        {
+            World w = makeWorld();
+            w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0)), 0, 1);
+            const EntityId near = w.entities.spawn(mob(Archetype::Elite, 35, Fixed(3), Fixed(0)), 0, 1);
+            CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, F) == near);
+        }
+        // 멀리 있는 엘리트는 발밑 잡몹에게 밀린다 — 이게 D의 목적이다
+        {
+            World w = makeWorld();
+            const EntityId trash = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0)), 0, 1);
+            w.entities.spawn(mob(Archetype::Elite, 35, Fixed(10), Fixed(0)), 0, 1);
+            CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, F) == trash);
+        }
+        // 스폰 반경(19.8타일)의 엘리트는 확실히 무시된다
+        {
+            World w = makeWorld();
+            const EntityId trash = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0)), 0, 1);
+            w.entities.spawn(mob(Archetype::Elite, 40, Fixed(20), Fixed(0)), 0, 1);
+            CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, F) == trash);
+        }
+        // **수동 지정에는 감쇠가 걸리지 않는다** — 플레이어의 지시다
+        {
+            World w = makeWorld();
+            w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0)), 0, 1);
+            const EntityId far = w.entities.spawn(mob(Archetype::Elite, 35, Fixed(20), Fixed(0)), 0, 1);
+            CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), far, HERO_RANGE, F) == far);
+        }
+        printf("    감쇠 %d/타일 — 궁병대장(35)은 사거리 밖 %.1f타일에서 잡몹에게 밀린다\n",
+               F, 35.0 / F);
     }
 
     dctest::section("타게팅 — 엘리트끼리의 순서도 데이터가 정한다");
@@ -61,10 +114,10 @@ int main() {
         World w = makeWorld();
         const EntityId archer = w.entities.spawn(mob(Archetype::Elite, 35, Fixed(1), Fixed(0), 120), 0, 1);
         const EntityId shaman = w.entities.spawn(mob(Archetype::Elite, 40, Fixed(9), Fixed(0), 90), 0, 1);
-        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0)) == shaman);
+        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == shaman);
         w.entities.markDead(shaman);
         w.applyDeaths();
-        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0)) == archer);
+        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == archer);
     }
 
     dctest::section("타게팅 — 동점은 거리 → EntityId");
@@ -72,7 +125,7 @@ int main() {
         World w = makeWorld();
         const EntityId far  = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(5), Fixed(0)), 0, 1);
         const EntityId near = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(2), Fixed(0)), 0, 1);
-        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0)) == near);
+        CHECK(selectAutoTarget(w.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == near);
         (void)far;
 
         // 거리까지 같으면 EntityId 오름차순 — **동점이 남지 않는다.**
@@ -80,14 +133,14 @@ int main() {
         const EntityId a = t.entities.spawn(mob(Archetype::Trash, 0, Fixed(3), Fixed(0)), 0, 1);
         const EntityId b = t.entities.spawn(mob(Archetype::Trash, 0, Fixed(0), Fixed(3)), 0, 1);
         const EntityId c = t.entities.spawn(mob(Archetype::Trash, 0, Fixed(-3), Fixed(0)), 0, 1);
-        const EntityId picked = selectAutoTarget(t.entities, Fixed(0), Fixed(0));
+        const EntityId picked = selectAutoTarget(t.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF);
         CHECK(picked == a);
         CHECK(a < b && b < c);
 
         // 순회 순서에 의존하지 않는다 — 앞쪽이 죽어 배열이 밀려도 규칙이 같다.
         t.entities.markDead(a);
         t.applyDeaths();
-        CHECK(selectAutoTarget(t.entities, Fixed(0), Fixed(0)) == b);
+        CHECK(selectAutoTarget(t.entities, Fixed(0), Fixed(0), HERO_RANGE, NO_FALLOFF) == b);
     }
 
     dctest::section("수동 타게팅 — 자동 우선순위를 덮는다");
@@ -95,21 +148,21 @@ int main() {
         World w = makeWorld();
         const EntityId trash = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0)), 0, 1);
         const EntityId elite = w.entities.spawn(mob(Archetype::Elite, 35, Fixed(9), Fixed(0), 120), 0, 1);
-        CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), EntityId::invalid()) == elite);
+        CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), EntityId::invalid(), HERO_RANGE, NO_FALLOFF) == elite);
 
         // 플레이어가 잡몹을 찍으면 그게 이긴다.
         CHECK(w.setManualTarget(trash));
-        CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), w.hero.manualTarget) == trash);
+        CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), w.hero.manualTarget, HERO_RANGE, NO_FALLOFF) == trash);
 
         // **지속된다** — 매 틱 다시 찍지 않아도 유지된다.
         for (int i = 0; i < 10; ++i) {
-            CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), w.hero.manualTarget) == trash);
+            CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), w.hero.manualTarget, HERO_RANGE, NO_FALLOFF) == trash);
         }
 
         // **대상이 죽으면 자동 해제** — stale 핸들이라 자동 우선순위로 복귀한다.
         w.entities.markDead(trash);
         w.applyDeaths();
-        CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), w.hero.manualTarget) == elite);
+        CHECK(selectTarget(w.entities, Fixed(0), Fixed(0), w.hero.manualTarget, HERO_RANGE, NO_FALLOFF) == elite);
 
         // 이미 죽은 것은 찍을 수 없다.
         CHECK(!w.setManualTarget(trash));
@@ -264,9 +317,13 @@ int main() {
         printf("    20타일 → %.3f타일 (사거리 1.0, 400틱)\n",
                static_cast<double>(end) / Fixed::ONE_RAW);
         CHECK(end < start);
-        // **사거리를 지나치지 않는다.** 지나치면 경계에서 매 틱 앞뒤로 떨린다.
-        CHECK(end <= Fixed(1).raw + 16);
-        CHECK(end >= Fixed(1).raw - 16);
+        // **사거리 경계가 아니라 여유만큼 안쪽에 선다** (approachStop).
+        // 경계에 서면 절삭·분리 밀림이 매 틱 사거리 밖으로 밀어내 전투가 멎는다.
+        const Fixed want = approachStop(Fixed(1), cfg);
+        CHECK(end <= want.raw + 16);
+        CHECK(end >= want.raw - 16);
+        // 그래도 **사거리 안**이어야 한다 — 멈춰 서서 못 때리면 의미가 없다
+        CHECK(end < Fixed(1).raw);
     }
 
     dctest::section("전투 — 잠식은 피격 + 물량 두 축으로 찬다");
@@ -317,9 +374,12 @@ int main() {
                static_cast<double>(dx.raw) / Fixed::ONE_RAW,
                static_cast<double>(range.raw) / Fixed::ONE_RAW);
 
-        // **사거리를 지나치지 않는다** — 지나치면 경계에서 매 틱 떨린다.
-        CHECK(dx.raw <= range.raw + 16);
-        CHECK(dx.raw >= range.raw - 16);
+        // **사거리 경계가 아니라 여유만큼 안쪽에 선다** (approachStop).
+        const Fixed want = approachStop(range, cfg);
+        CHECK(dx.raw <= want.raw + 16);
+        CHECK(dx.raw >= want.raw - 16);
+        // 멈춘 자리가 사거리 안이어야 실제로 때린다 — 이 단언이 교착을 막는다
+        CHECK(dx.raw < range.raw);
         // 영웅이 타겟 쪽을 향한다 (연출이 읽는 값)
         CHECK(w.hero.facingX.raw > 0);
 

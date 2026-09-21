@@ -19,9 +19,21 @@
 //
 // ## 정렬 키 — 렉시코그래픽, 전부 정수
 //
-//     (우선순위 내림차순, 거리제곱 오름차순, EntityId 오름차순)
+//     (실효 우선순위 내림차순, 거리제곱 오름차순, EntityId 오름차순)
 //
-// - 거리는 **제곱 상태로** 비교한다 (§11). 제곱근을 쓰지 않는다
+// ## 실효 우선순위 — 거리로 깎는다
+//
+// 우선순위를 거리와 무관하게 두면 **닿을 수 없는 표적에 영구히 묶인다.** 실측에서
+// 영웅이 구간 3~7의 71~88%를 엘리트 조준에 쓰고도 처치율이 0.4마리/초였다 —
+// 스폰 반경 19.8타일 밖의 엘리트를 향해 걸어가는 동안 잡몹이 상한까지 쌓였다.
+//
+//     실효 = 우선순위 - (거리 - 영웅 사거리) × 감쇠      (사거리 안이면 감쇠 0)
+//
+// 사거리 안에 있는 한 데이터 우선순위가 그대로 산다 — 즉 **"닿는 적 중에서는
+// 여전히 엘리트 우선"**이고, 감쇠는 닿지 않는 적만 밀어낸다.
+//
+// - **비교는 제곱 상태로** 한다 (§11). 제곱근은 감쇠량을 타일 단위로 환산할 때만
+//   쓰이고(`isqrt64` — libm이 아니라 자체 정수 구현이다), 정렬 키에는 들어가지 않는다
 // - 마지막 키가 EntityId라 **동점이 남지 않는다** — 완전 순서이므로 순회 순서에
 //   의존하지 않고, 배열 레이아웃이 바뀌어도 같은 타겟이 나온다
 // - 1×N 브루트포스다. N=512에서 SoA로 수 μs이므로 공간 분할이 필요 없다 (§11)
@@ -35,8 +47,22 @@
 
 namespace dc {
 
+// 실효 우선순위 — 영웅 사거리를 넘어선 만큼 깎는다. **전부 정수 연산이다.**
+// 나눗셈 한 번(ONE_RAW로 나누기)은 양수끼리라 반올림 방향이 명확하고,
+// 제곱근은 거리 비교가 아니라 감쇠량 계산에만 쓰인다.
+inline int32_t effectivePriority(int32_t priority, int64_t distSq,
+                                 Fixed heroRange, int32_t falloffPerTile) {
+    if (falloffPerTile <= 0) return priority;
+    const int64_t d = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(distSq)));
+    const int64_t beyond = d - static_cast<int64_t>(heroRange.raw);
+    if (beyond <= 0) return priority;          // 사거리 안이면 감쇠 없다
+    const int64_t penalty = (beyond * falloffPerTile) / Fixed::ONE_RAW;
+    return priority - static_cast<int32_t>(penalty);
+}
+
 // 자동 선정 — 데이터 우선순위 규칙. 없으면 invalid.
-inline EntityId selectAutoTarget(const EntityStore& e, Fixed heroX, Fixed heroY) {
+inline EntityId selectAutoTarget(const EntityStore& e, Fixed heroX, Fixed heroY,
+                                 Fixed heroRange, int32_t falloffPerTile) {
     EntityId best      = EntityId::invalid();
     int32_t  bestPrio  = 0;
     int64_t  bestDist  = 0;
@@ -45,8 +71,9 @@ inline EntityId selectAutoTarget(const EntityStore& e, Fixed heroX, Fixed heroY)
     for (uint32_t i = 0; i < n; ++i) {
         if (e.deadAt(i)) continue;   // 이번 틱에 죽은 것으로 표시된 행은 건너뛴다
 
-        const int32_t prio = e.targetPriority[i];
         const int64_t d    = distanceSq(e.posX[i], e.posY[i], heroX, heroY);
+        const int32_t prio = effectivePriority(e.targetPriority[i], d,
+                                               heroRange, falloffPerTile);
         const EntityId id  = e.idAt(i);
 
         if (!best.valid()) { best = id; bestPrio = prio; bestDist = d; continue; }
@@ -72,9 +99,9 @@ inline EntityId selectAutoTarget(const EntityStore& e, Fixed heroX, Fixed heroY)
 // - 입력은 QTE·카드 선택과 같이 `(틱 번호, EntityId)`로 로그에 남는다 (§10).
 //   EntityId가 결정론적 정수라 서버가 그대로 재생할 수 있다
 inline EntityId selectTarget(const EntityStore& e, Fixed heroX, Fixed heroY,
-                             EntityId manual) {
-    if (e.alive(manual)) return manual;
-    return selectAutoTarget(e, heroX, heroY);
+                             EntityId manual, Fixed heroRange, int32_t falloffPerTile) {
+    if (e.alive(manual)) return manual;   // 수동 지정에는 감쇠를 걸지 않는다 — 플레이어의 지시다
+    return selectAutoTarget(e, heroX, heroY, heroRange, falloffPerTile);
 }
 
 // 광역기는 우선순위가 없다 (§3) — 범위 안의 모든 적을 때린다.

@@ -34,6 +34,17 @@ inline Fixed mitigate(Fixed damage, Fixed armor, int32_t k) {
     return Fixed::fromRaw(static_cast<int32_t>(v));
 }
 
+// 추격 정지 거리 — **사거리에서 여유만큼 안쪽이다.**
+//
+// 경계에 정확히 멈추면 `stepToward`의 정수 절삭(1 raw = 1/4096타일)과 분리 밀림이
+// 거리를 사거리 밖으로 밀어내, 전투 판정이 매 틱 빗나간다. 실측: 엘리트 사거리를
+// 영웅 사거리보다 크게 잡자 둘 다 3.00타일에 마주 선 채 300초간 처치 0이었다.
+inline Fixed approachStop(Fixed attackRange, const SimConfig& cfg) {
+    const Fixed margin = Fixed::fromPermille(cfg.approachMarginMilli);
+    const Fixed stop = attackRange - margin;
+    return stop.raw > 0 ? stop : Fixed{};
+}
+
 // 영웅 공격 간격(틱). AttackSpeed는 초당 공격 횟수다.
 inline int32_t heroAttackInterval(const World& w, const SimConfig& cfg) {
     const Fixed speed = w.hero.stats.value(Stat::AttackSpeed);
@@ -64,7 +75,7 @@ inline void movementRun(World& w, const SimConfig& cfg) {
             const Fixed range = w.hero.stats.value(Stat::Range);
             if (stepToward(&w.hero.posX, &w.hero.posY,
                            w.entities.posX[i], w.entities.posY[i],
-                           speed / cfg.tickHz, range, &dirX, &dirY)) {
+                           speed / cfg.tickHz, approachStop(range, cfg), &dirX, &dirY)) {
                 // 바라보는 방향. 멈춰 있을 때도 유지되므로 [상태]다 (연출이 읽는다).
                 w.hero.facingX = dirX;
                 w.hero.facingY = dirY;
@@ -80,7 +91,7 @@ inline void movementRun(World& w, const SimConfig& cfg) {
         (void)stepToward(&w.entities.posX[i], &w.entities.posY[i],
                          w.hero.posX, w.hero.posY,
                          w.entities.approachSpeed[i] / cfg.tickHz,
-                         w.entities.attackRange[i], nullptr, nullptr);
+                         approachStop(w.entities.attackRange[i], cfg), nullptr, nullptr);
     }
 }
 

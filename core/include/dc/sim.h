@@ -30,7 +30,9 @@ inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
 
     // **타겟이 이동을 정한다** (§3). 영웅은 추격 후 공격만 하므로 어디로 갈지는
     // 누구를 때릴지에서 따라 나온다 — 손잡이가 둘이 아니라 하나다.
-    w.hero.target = selectTarget(w.entities, w.hero.posX, w.hero.posY, w.hero.manualTarget);
+    w.hero.target = selectTarget(w.entities, w.hero.posX, w.hero.posY, w.hero.manualTarget,
+                                 w.hero.stats.value(Stat::Range),
+                                 cfg.targetPriorityFalloffPerTile);
     w.notifyTargetChanged();          // 타겟 의존 조건부 모디파이어 재평가
 
     // **분리가 이동보다 먼저다. 순서를 바꾸면 전투가 멎는다.**

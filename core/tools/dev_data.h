@@ -69,14 +69,17 @@ constexpr uint8_t  STAT_CARD_POOL[4] = {
 
 constexpr int32_t  TRASH_ATTACK_RANGE_MILLITILE = 1400;
 // data/monsters.json — 엘리트 공통값 · 수직 슬라이스 보스
+constexpr int32_t  TARGET_PRIORITY_FALLOFF_PER_TILE = 10;
 constexpr int32_t  ELITE_COOLDOWN_TICKS           = 60;
-constexpr int32_t  ELITE_ATTACK_RANGE_MILLITILE   = 2000;
+constexpr int32_t  ELITE_ATTACK_RANGE_MILLITILE   = 3500;
 constexpr int32_t  ELITE_CC_GAUGE_MAX             = 100;
 constexpr int32_t  SLICE_BOSS_DAMAGE              = 63;
 constexpr int32_t  SLICE_BOSS_COOLDOWN_TICKS      = 60;
-constexpr int32_t  SLICE_BOSS_ATTACK_RANGE_MILLITILE = 3000;
+constexpr int32_t  SLICE_BOSS_ATTACK_RANGE_MILLITILE = 3500;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
+// 추격 정지 여유. 1400(잡몹 사거리) - 400 = 1000이라 첫 링 반지름이 변하지 않는다.
+constexpr int32_t  APPROACH_MARGIN_MILLITILE  = 400;
 
 inline SimConfig devConfig() {
     SimConfig c;
@@ -113,6 +116,7 @@ inline SimConfig devConfig() {
     // data/hero.json
     c.procPrdCQ16 = HERO_PROC_PRD_C_Q16;
     c.aoeRadius   = Fixed::fromPermille(HERO_AOE_RADIUS_MILLITILE);
+    c.targetPriorityFalloffPerTile = TARGET_PRIORITY_FALLOFF_PER_TILE;
     c.qteCooldownTicks          = HERO_QTE_COOLDOWN_TICKS;
     c.qtePerfectWindowTicks     = HERO_QTE_PERFECT_WINDOW;
     c.qteSuccessMult            = Fixed::fromPermille(HERO_QTE_SUCCESS_PERMILLE);
@@ -153,6 +157,7 @@ inline SimConfig devConfig() {
     }
     c.separationMilli     = MOB_SEPARATION_MILLITILE;
     c.heroSeparationMilli = HERO_SEPARATION_MILLITILE;
+    c.approachMarginMilli = APPROACH_MARGIN_MILLITILE;
 
     // data/monsters.json — 잡몹
     c.trash.hp             = Fixed(20);

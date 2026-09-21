@@ -269,5 +269,50 @@ int main() {
         CHECK(draw(77) != draw(78));
     }
 
+    dctest::section("레벨업 기본 성장 — 레벨 그 자체가 스탯을 올린다");
+    {
+        // **회귀 테스트.** power_per_levelup_permille(7%)와 speed_growth_share가
+        // 파이썬에만 있고 코어가 읽지 않아, 레벨 18의 기본공격 DPS가 레벨 1과
+        // 같은 13.0이었다. balance_baseline의 성장 곡선 전체가 이 값을 전제로 한다.
+        World w;
+        w.init(1);
+        dev::applyHeroBaseline(w);
+        const double base = static_cast<double>(w.hero.stats.value(Stat::AttackPower).raw)
+                          * static_cast<double>(w.hero.stats.value(Stat::AttackSpeed).raw);
+
+        while (w.hero.level < 15) gainExp(w, cfg, cfg.needFor(w.hero.level));
+        CHECK_EQ(w.hero.level, 15);
+        const double at15 = static_cast<double>(w.hero.stats.value(Stat::AttackPower).raw)
+                          * static_cast<double>(w.hero.stats.value(Stat::AttackSpeed).raw);
+        const double mult = at15 / base;
+
+        // 표가 1.07^14 = 2.578배를 담는다. 고정소수점 오차 1% 안.
+        CHECK(mult > 2.55 && mult < 2.61);
+        // **공속과 한 대 피해가 절반씩** — 배분이 타수를 정한다 (share 50%)
+        const double speedMult = static_cast<double>(w.hero.stats.value(Stat::AttackSpeed).raw)
+                               / Fixed::one().raw;
+        CHECK(speedMult > 1.59 && speedMult < 1.62);
+
+        // **한 번에 여러 레벨이 올라도 정확하다** — 누적 배율을 통째로 갈아끼우므로
+        // 레벨마다 곱할 때 생기는 반올림 누적이 없다
+        World jump;
+        jump.init(1);
+        dev::applyHeroBaseline(jump);
+        // 레벨 1 → 25에 필요한 경험치를 한 번에 준다
+        int64_t lump = 0;
+        for (int32_t lv = 1; lv < 25; ++lv) lump += cfg.needFor(lv);
+        gainExp(jump, cfg, lump);
+        World step;
+        step.init(1);
+        dev::applyHeroBaseline(step);
+        while (step.hero.level < jump.hero.level) gainExp(step, cfg, cfg.needFor(step.hero.level));
+        CHECK_EQ(step.hero.level, jump.hero.level);
+        CHECK_EQ(step.hero.stats.value(Stat::AttackPower).raw,
+                 jump.hero.stats.value(Stat::AttackPower).raw);
+        CHECK_EQ(jump.hero.level, 25);
+        printf("    레벨 15에서 %.2f배 (표 2.58배) · 1→%d 한 번에 올려도 한 칸씩과 동일\n",
+               mult, jump.hero.level);
+    }
+
     return dctest::summary("test_card");
 }

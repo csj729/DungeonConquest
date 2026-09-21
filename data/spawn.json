@@ -18,5 +18,8 @@
   "batch_end": 8,
   "radius_millitile": 19800,
   "min_separation_millitile": 1500,
+  "_field_separation": "적 간 충돌·회피 (§11). 이 두 값이 '영웅에게 동시에 몇 마리가 붙는가'를 정하고, 피격은 잠식 게이지의 74%다. hero_separation 1.0타일에서 실측 평균 3.3 · 최대 5로 balance_baseline.py의 SURROUND_COUNT=5 가정과 일치한다 (core/tools/dc_field).",
+  "mob_separation_millitile": 1500,
+  "hero_separation_millitile": 1000,
   "approach_ticks": 160
 }

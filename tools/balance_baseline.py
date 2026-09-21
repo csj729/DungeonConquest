@@ -111,7 +111,7 @@ def spawn_per_direction(segment):
 
 # 광역 1회가 전장의 몹 중 몇 %를 맞히는가. 반경과 맵 크기에 달렸으므로
 # **§14-10 하네스에서 실측할 항목**이다. 여기서는 보수적으로 잡는다.
-AOE_TARGET_SHARE = 0.13
+AOE_TARGET_SHARE = 0.13   # 실측 확인: 광역 반경 1.5타일에서 0.138 (core/tools/dc_field)
 AOE_TARGETS_MIN = 3.0          # 웨이브 방식의 옛 가정 — 하한으로 남긴다
 
 
@@ -125,7 +125,7 @@ def effective_targets(segment):
     aoe_weight = sum(w for _m, w, aoe in SKILLS.values() if aoe)
     return 1 + PROC_RATE * aoe_weight * (aoe_targets(segment) - 1)
 HITS_TO_KILL_TRASH = 2         # 목표: 일반 몹은 기본 공격 몇 대에 죽는가
-SURROUND_COUNT = 5             # 영웅에게 동시에 붙을 수 있는 몹 수 가정
+SURROUND_COUNT = 5             # 실측 확인: 영웅 이격 1.0타일에서 최대 5 · 평균 3.3 (dc_field)
 # 주의: 탑다운 전환으로 영웅이 이동하게 되면서 이 가정이 약해졌다.
 # 실제로는 포위를 벗어날 수 있으므로 목표 4는 "최악의 경우" 하한으로 읽어야 한다.
 # 이동속도 대 몹 추격속도 관계가 새 밸런싱 축이며, C++ 코어가 나온 뒤 실측한다.

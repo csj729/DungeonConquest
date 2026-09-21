@@ -6,6 +6,8 @@
 #define DC_SIM_H
 
 #include "combat.h"
+#include "grid.h"
+#include "separation.h"
 #include "sim_config.h"
 #include "spawn.h"
 #include "targeting.h"
@@ -13,13 +15,19 @@
 
 namespace dc {
 
-inline void stepWorld(World& w, const SimConfig& cfg) {
+inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
     w.beginTick();                    // 틱 전진 + 시간 조건 만료 처리
 
     spawnRun(w, cfg);                 // 상한 유지 스폰 · 게이지 임계 엘리트
+
+    // **타겟이 이동을 정한다** (§3). 영웅은 추격 후 공격만 하므로 어디로 갈지는
+    // 누구를 때릴지에서 따라 나온다 — 손잡이가 둘이 아니라 하나다.
     w.hero.target = selectTarget(w.entities, w.hero.posX, w.hero.posY, w.hero.manualTarget);
     w.notifyTargetChanged();          // 타겟 의존 조건부 모디파이어 재평가
-    combatRun(w, cfg);                // 영웅 공격 · 몹 추격/공격 · 잠식 충전
+
+    movementRun(w, cfg);              // 영웅 → 타겟, 몹 → 영웅. 양쪽 다 추격뿐
+    separationRun(w, cfg, scratch);   // 적 간 충돌 — 균등 그리드를 쓰는 유일한 곳
+    combatRun(w, cfg);                // 사거리 안이면 공격 · 잠식 충전
 
     w.endTick();                      // 죽음 일괄 적용 (틱 종료 압축)
 }

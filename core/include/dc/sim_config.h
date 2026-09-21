@@ -58,7 +58,10 @@ struct SimConfig {
     int32_t  batchBySegment[16] = {0};   // 맵 내 구간 1..segmentsPerMap
     int32_t  spawnIntervalTicks = 0;
     int32_t  spawnRadiusMilli   = 0;
-    int32_t  minSeparationMilli = 0;
+    int32_t  minSeparationMilli = 0;   // 스폰 시 같은 방향 안에서 벌리는 간격
+    // 적 간 충돌·회피 (§11). **이 두 값이 "몇 마리가 붙을 수 있는가"를 정한다.**
+    int32_t  separationMilli     = 0;   // 몹 ↔ 몹
+    int32_t  heroSeparationMilli = 0;   // 몹 ↔ 영웅 — 첫 링의 반지름
     uint32_t directions         = 0;
 
     // 잡몹 체력 성장 — 구간당 배율(permille). **한 대 피해 성장을 따라간다**(§2).
@@ -76,6 +79,7 @@ struct SimConfig {
 
     // ── 영웅 (hero.json) ──
     uint32_t procPrdCQ16 = 0;
+
 
     // ── 로스터 ──
     MonsterConfig   trash{};

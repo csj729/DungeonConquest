@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include "movement.h"
 #include "sim_config.h"
 #include "spawn.h"
 #include "targeting.h"
@@ -44,6 +45,41 @@ inline uint32_t chanceToQ16(Fixed p) {
     if (p.raw <= 0) return 0;
     const int64_t q = static_cast<int64_t>(p.raw) * 16;
     return q >= Q16_ONE ? Q16_ONE : static_cast<uint32_t>(q);
+}
+
+// 이동 (§3) — 영웅은 타겟을 향해, 몹은 영웅을 향해. **양쪽 다 추격뿐이다.**
+// 사거리 판정보다 먼저 돌고, 그 뒤에 분리가 겹침을 푼다.
+inline void movementRun(World& w, const SimConfig& cfg) {
+    if (cfg.tickHz <= 0) return;
+
+    // 영웅 → 타겟
+    const int32_t td = w.entities.denseOf(w.hero.target);
+    if (td >= 0 && !w.entities.deadAt(static_cast<uint32_t>(td))) {
+        const uint32_t i = static_cast<uint32_t>(td);
+        const Fixed speed = w.hero.stats.value(Stat::MoveSpeed);
+        if (speed.raw > 0) {
+            Fixed dirX{}, dirY{};
+            const Fixed range = w.hero.stats.value(Stat::Range);
+            if (stepToward(&w.hero.posX, &w.hero.posY,
+                           w.entities.posX[i], w.entities.posY[i],
+                           speed / cfg.tickHz, range, &dirX, &dirY)) {
+                // 바라보는 방향. 멈춰 있을 때도 유지되므로 [상태]다 (연출이 읽는다).
+                w.hero.facingX = dirX;
+                w.hero.facingY = dirY;
+            }
+        }
+    }
+
+    // 몹 → 영웅
+    const uint32_t n = w.entities.count();
+    for (uint32_t i = 0; i < n; ++i) {
+        if (w.entities.deadAt(i)) continue;
+        if (w.entities.approachSpeed[i].raw <= 0) continue;
+        (void)stepToward(&w.entities.posX[i], &w.entities.posY[i],
+                         w.hero.posX, w.hero.posY,
+                         w.entities.approachSpeed[i] / cfg.tickHz,
+                         w.entities.attackRange[i], nullptr, nullptr);
+    }
 }
 
 inline void combatRun(World& w, const SimConfig& cfg) {
@@ -90,23 +126,13 @@ inline void combatRun(World& w, const SimConfig& cfg) {
     for (uint32_t i = 0; i < n; ++i) {
         if (w.entities.deadAt(i)) continue;
 
+        // 이동은 movementRun이 이미 했다. 여기서는 사거리 안인지만 본다.
         const Fixed dx = w.hero.posX - w.entities.posX[i];
         const Fixed dy = w.hero.posY - w.entities.posY[i];
         const int64_t d2 = static_cast<int64_t>(dx.raw) * dx.raw + static_cast<int64_t>(dy.raw) * dy.raw;
         const int64_t r2 = static_cast<int64_t>(w.entities.attackRange[i].raw)
                          * static_cast<int64_t>(w.entities.attackRange[i].raw);
-
-        if (d2 > r2) {
-            // 추격. 방향 정규화에 정수 제곱근을 쓴다 — libm sqrt는 구현마다 값이
-            // 갈리므로(docs/determinism.md §4) 쓸 수 없다.
-            const Fixed len = fixedLength(dx, dy);
-            if (len.raw > 0 && cfg.tickHz > 0) {
-                const Fixed step = w.entities.approachSpeed[i] / cfg.tickHz;
-                w.entities.posX[i] += dx * step / len;
-                w.entities.posY[i] += dy * step / len;
-            }
-            continue;
-        }
+        if (d2 > r2) continue;
 
         if (w.entities.windupLeft[i] > 0) { --w.entities.windupLeft[i]; continue; }
         if (w.entities.attackCooldown[i] > 0) { --w.entities.attackCooldown[i]; continue; }

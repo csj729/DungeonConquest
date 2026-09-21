@@ -249,7 +249,7 @@ int main() {
         CHECK_EQ(e.run.clearPoints, cfg.elitePoints);
     }
 
-    dctest::section("전투 — 추격은 사거리까지만");
+    dctest::section("이동 — 몹 추격도 사거리까지만");
     {
         World w = makeWorld(2);
         SpawnDesc d = mob(Archetype::Trash, 0, Fixed(20), Fixed(0));
@@ -258,13 +258,15 @@ int main() {
         const EntityId m = w.entities.spawn(d, 0, 2);
         const int32_t start = w.entities.posX[0].raw;
 
-        for (int i = 0; i < 400; ++i) { combatRun(w, cfg); w.beginTick(); w.endTick(); }
-        const int32_t end = w.entities.posX[w.entities.denseOf(m) < 0 ? 0
-                                            : static_cast<uint32_t>(w.entities.denseOf(m))].raw;
-        printf("    20타일 → %.2f타일 (400틱)\n", static_cast<double>(end) / Fixed::ONE_RAW);
+        // 이동은 combatRun이 아니라 movementRun이 한다 (전투와 이동을 분리했다).
+        for (int i = 0; i < 400; ++i) { movementRun(w, cfg); w.beginTick(); w.endTick(); }
+        const int32_t end = w.entities.posX[static_cast<uint32_t>(w.entities.denseOf(m))].raw;
+        printf("    20타일 → %.3f타일 (사거리 1.0, 400틱)\n",
+               static_cast<double>(end) / Fixed::ONE_RAW);
         CHECK(end < start);
-        CHECK(end <= Fixed(1).raw + 4096);   // 사거리 안까지만 오고 지나치지 않는다
-        CHECK(end > 0);
+        // **사거리를 지나치지 않는다.** 지나치면 경계에서 매 틱 앞뒤로 떨린다.
+        CHECK(end <= Fixed(1).raw + 16);
+        CHECK(end >= Fixed(1).raw - 16);
     }
 
     dctest::section("전투 — 잠식은 피격 + 물량 두 축으로 찬다");
@@ -299,11 +301,122 @@ int main() {
         CHECK_EQ(few.hero.corruption.raw, f0);
     }
 
+    dctest::section("이동 — 추격 후 정지 (도주·선회 없음)");
+    {
+        // 영웅은 타겟을 향해 걸어가 사거리에서 멈춘다. 그 이상도 이하도 없다.
+        World w = makeWorld(21);
+        SpawnDesc d = mob(Archetype::Trash, 0, Fixed(20), Fixed(0));
+        d.approachSpeed = Fixed{};               // 몹은 가만히 둔다
+        const EntityId m = w.entities.spawn(d, 0, 21);
+        w.hero.target = m;
+
+        const Fixed range = w.hero.stats.value(Stat::Range);
+        for (int i = 0; i < 600; ++i) { movementRun(w, cfg); w.beginTick(); w.endTick(); }
+        const Fixed dx = w.entities.posX[0] - w.hero.posX;
+        printf("    타겟까지 %.3f타일 (사거리 %.1f)\n",
+               static_cast<double>(dx.raw) / Fixed::ONE_RAW,
+               static_cast<double>(range.raw) / Fixed::ONE_RAW);
+
+        // **사거리를 지나치지 않는다** — 지나치면 경계에서 매 틱 떨린다.
+        CHECK(dx.raw <= range.raw + 16);
+        CHECK(dx.raw >= range.raw - 16);
+        // 영웅이 타겟 쪽을 향한다 (연출이 읽는 값)
+        CHECK(w.hero.facingX.raw > 0);
+
+        // 도달한 뒤에는 움직이지 않는다.
+        const int32_t settled = w.hero.posX.raw;
+        for (int i = 0; i < 100; ++i) { movementRun(w, cfg); w.beginTick(); w.endTick(); }
+        CHECK_EQ(w.hero.posX.raw, settled);
+    }
+
+    dctest::section("이동 — 타겟이 없으면 움직이지 않는다");
+    {
+        World w = makeWorld(22);
+        const int32_t x0 = w.hero.posX.raw, y0 = w.hero.posY.raw;
+        for (int i = 0; i < 100; ++i) { movementRun(w, cfg); w.beginTick(); w.endTick(); }
+        CHECK_EQ(w.hero.posX.raw, x0);
+        CHECK_EQ(w.hero.posY.raw, y0);
+    }
+
+    dctest::section("적 간 충돌 — 겹치지 않는다");
+    {
+        // 분리가 없으면 몹 전부가 영웅 한 점에 겹친다. 실측으로 확인한 결과이며
+        // (동시 접촉 26마리 = 가정의 5배) 이 시스템이 그 패킹을 만든다.
+        World w = makeWorld(31);
+        SimScratch scratch;
+        SpawnDesc d = mob(Archetype::Trash, 0, Fixed(0), Fixed(0));
+        d.approachSpeed = Fixed{};
+        for (int i = 0; i < 40; ++i) (void)w.entities.spawn(d, 0, 31);   // 전부 같은 좌표
+
+        for (int i = 0; i < 200; ++i) separationRun(w, cfg, scratch);
+
+        const int64_t mobSep  = (static_cast<int64_t>(cfg.separationMilli) * Fixed::ONE_RAW) / 1000;
+        const int64_t heroSep = (static_cast<int64_t>(cfg.heroSeparationMilli) * Fixed::ONE_RAW) / 1000;
+        int32_t tooClose = 0, insideHero = 0;
+        for (uint32_t i = 0; i < w.entities.count(); ++i) {
+            const int64_t hd = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(
+                distanceSq(w.entities.posX[i], w.entities.posY[i], w.hero.posX, w.hero.posY))));
+            if (hd < heroSep - 64) ++insideHero;
+            for (uint32_t j = i + 1; j < w.entities.count(); ++j) {
+                const int64_t dd = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(
+                    distanceSq(w.entities.posX[i], w.entities.posY[i],
+                               w.entities.posX[j], w.entities.posY[j]))));
+                if (dd < mobSep - 64) ++tooClose;
+            }
+        }
+        printf("    40마리를 한 점에 겹쳐 놓고 200틱 — 겹침 %d쌍, 영웅 이격 위반 %d\n",
+               tooClose, insideHero);
+        CHECK_EQ(tooClose, 0);
+        CHECK_EQ(insideHero, 0);
+    }
+
+    dctest::section("적 간 충돌 — 영웅은 밀리지 않는다");
+    {
+        // 영웅이 밀리면 이동 AI의 결정이 뒤집힌다.
+        World w = makeWorld(32);
+        SimScratch scratch;
+        SpawnDesc d = mob(Archetype::Trash, 0, Fixed(0), Fixed(0));
+        d.approachSpeed = Fixed{};
+        for (int i = 0; i < 20; ++i) (void)w.entities.spawn(d, 0, 32);
+        const int32_t hx = w.hero.posX.raw, hy = w.hero.posY.raw;
+        for (int i = 0; i < 100; ++i) separationRun(w, cfg, scratch);
+        CHECK_EQ(w.hero.posX.raw, hx);
+        CHECK_EQ(w.hero.posY.raw, hy);
+    }
+
+    dctest::section("균등 그리드 — counting sort가 전수를 담는다");
+    {
+        World w = makeWorld(33);
+        SimScratch scratch;
+        Rng r = Rng::derive(33, RngStream::Spawn);
+        for (int i = 0; i < 300; ++i) {
+            SpawnDesc d = mob(Archetype::Trash, 0,
+                              Fixed::fromRaw(static_cast<int32_t>(r.range(400000)) - 200000),
+                              Fixed::fromRaw(static_cast<int32_t>(r.range(400000)) - 200000));
+            (void)w.entities.spawn(d, 0, 33);
+        }
+        scratch.grid.build(w.entities, Fixed::fromPermille(1500), w.hero.posX, w.hero.posY);
+
+        // 모든 엔티티가 정확히 한 번씩 들어 있어야 한다 — 빠지면 충돌을 놓친다.
+        int32_t seen[1024] = {0};
+        for (uint32_t c = 0; c < UniformGrid::CELLS; ++c) {
+            for (uint32_t s2 = scratch.grid.begin(c); s2 < scratch.grid.end(c); ++s2) {
+                ++seen[scratch.grid.item(s2)];
+                CHECK_EQ(scratch.grid.cellOf(scratch.grid.item(s2)), c);
+            }
+        }
+        bool exactlyOnce = true;
+        for (uint32_t i = 0; i < w.entities.count(); ++i) if (seen[i] != 1) exactlyOnce = false;
+        CHECK(exactlyOnce);
+        printf("    300기 격자 배치 — 전원 정확히 1회\n");
+    }
+
     dctest::section("틱 루프 — 재현성");
     {
         auto play = [&](uint64_t seed, int32_t ticks) {
             World w = makeWorld(seed);
-            for (int32_t i = 0; i < ticks; ++i) stepWorld(w, cfg);
+            static SimScratch scratch;
+            for (int32_t i = 0; i < ticks; ++i) stepWorld(w, cfg, scratch);
             return w.checksum();
         };
         CHECK_EQU(play(20250921, 2000), play(20250921, 2000));

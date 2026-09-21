@@ -73,8 +73,13 @@ target_link_libraries(dc_prd PRIVATE dc_core)
 add_executable(dc_recipe_bench tools/dc_recipe_bench.cpp)
 target_link_libraries(dc_recipe_bench PRIVATE dc_core)
 
+# 전장 구성 측정. balance_baseline.py의 미검증 모델 가정 3개를 실측으로 대체한다.
+add_executable(dc_field tools/dc_field.cpp)
+target_link_libraries(dc_field PRIVATE dc_core)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(dc_checksum PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_prd PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_recipe_bench PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(dc_field PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()

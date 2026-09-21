@@ -28,6 +28,10 @@ constexpr int32_t  HERO_CRIT_MULT_PERMILLE    = 1500;
 constexpr int32_t  HERO_CORRUPTION_MAX        = 1250;
 constexpr int32_t  HERO_ARMOR                 = 0;
 constexpr uint32_t HERO_PROC_PRD_C_Q16        = 2112;
+constexpr int32_t  HERO_MOVE_SPEED_PERMILLE   = 2000;   // 타일/초 × 1000
+constexpr int32_t  HERO_AOE_RADIUS_MILLITILE  = 1500;
+constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
+constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
 
 inline SimConfig devConfig() {
     SimConfig c;
@@ -56,6 +60,8 @@ inline SimConfig devConfig() {
 
     // data/hero.json
     c.procPrdCQ16 = HERO_PROC_PRD_C_Q16;
+    c.separationMilli     = MOB_SEPARATION_MILLITILE;
+    c.heroSeparationMilli = HERO_SEPARATION_MILLITILE;
 
     // data/monsters.json — 잡몹
     c.trash.hp             = Fixed(20);
@@ -65,7 +71,7 @@ inline SimConfig devConfig() {
     c.trash.archetype      = Archetype::Trash;
     // 접근 속도는 스폰 반경 19.8타일 / 접근 160틱(8초) = 2.475타일/초 (§2에서 역산)
     c.trash.approachSpeed  = Fixed::fromRaw((19800 * Fixed::ONE_RAW) / 1000 / 8);
-    c.trash.attackRange    = Fixed(1);
+    c.trash.attackRange    = Fixed::fromPermille(1200);   // 첫 링(1.0)이 닿는다
 
     // data/monsters.json — 엘리트 (target_priority가 순서를 정한다)
     struct E { int32_t hp, armor, dmg, prio, windup; uint16_t typeId; };
@@ -131,7 +137,7 @@ inline void applyHeroBaseline(World& w) {
     bases[statIndex(Stat::CorruptionMax)] = Fixed(HERO_CORRUPTION_MAX);
     bases[statIndex(Stat::CritChance)]    = Fixed::fromPermille(HERO_CRIT_CHANCE_PERMILLE);
     bases[statIndex(Stat::CritMult)]      = Fixed::fromPermille(HERO_CRIT_MULT_PERMILLE);
-    bases[statIndex(Stat::MoveSpeed)]     = Fixed(2);
+    bases[statIndex(Stat::MoveSpeed)]     = Fixed::fromPermille(HERO_MOVE_SPEED_PERMILLE);
     bounds[statIndex(Stat::CorruptionMax)] = StatBounds{Fixed(1), Fixed::fromPermille(-900)};
     bounds[statIndex(Stat::AttackSpeed)]   = StatBounds{Fixed::fromPermille(100),
                                                         Fixed::fromPermille(-900)};

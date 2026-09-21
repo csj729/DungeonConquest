@@ -112,7 +112,8 @@ inline void scriptTick(World& w) {
         w.notifyCorruptionChanged();
     }
 
-    stepWorld(w, devSimConfig());   // ← 실제 틱 루프
+    static SimScratch scratch;      // [파생] — 매 틱 재구축되므로 World 밖에 둔다
+    stepWorld(w, devSimConfig(), scratch);   // ← 실제 틱 루프
 }
 
 inline void runScript(World& w, int32_t ticks) {

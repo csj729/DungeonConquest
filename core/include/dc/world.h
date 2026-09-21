@@ -32,6 +32,11 @@ struct HeroState {
     Fixed    posX{};
     Fixed    posY{};
 
+    // 직전 이동 방향(단위 벡터). **[상태]다** — 위협 벡터가 상쇄되는 대칭 포위에서
+    // 이 값이 이동을 이어받으므로, 빠지면 그 순간 서버와 클라가 갈린다.
+    Fixed    facingX{};
+    Fixed    facingY{};
+
     // 잠식 게이지 — 체력의 자리를 대신한다 (§2·§9).
     // **누적값을 저장한다.** 체력처럼 `max - taken`으로 뒤집지 않으므로
     // 최대치가 이벤트로 오르내려도 손실이 없다.
@@ -92,6 +97,8 @@ struct HeroState {
     void hashInto(Hasher& h) const {
         h.feed(posX);
         h.feed(posY);
+        h.feed(facingX);
+        h.feed(facingY);
         h.feed(corruption);      // 저장값을 쓴다. corruptionLeft()는 [파생]이다
                                  // 최대치는 stats(CorruptionMax)가 들고 있다
         h.feed(level);

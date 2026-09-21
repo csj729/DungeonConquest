@@ -424,21 +424,126 @@ int main() {
         printf("    2000틱 × 2회 일치\n");
     }
 
+    dctest::section("잠식 정화 — 회복의 단일 통로");
+    {
+        World w = makeWorld(21);
+        w.hero.corruption = Fixed(500);
+        w.purgeCorruption(Fixed(200));
+        CHECK_EQ(w.hero.corruption.raw, Fixed(300).raw);
+        // **0 아래로 내려가지 않는다** — 음수 잠식은 여유를 몰래 저장하는 경로다
+        w.purgeCorruption(Fixed(9999));
+        CHECK_EQ(w.hero.corruption.raw, 0);
+        // 이미 0이면 아무 일도 없다
+        w.purgeCorruption(Fixed(100));
+        CHECK_EQ(w.hero.corruption.raw, 0);
+        // 음수·0 정화는 게이지를 올리지 않는다
+        w.hero.corruption = Fixed(400);
+        w.purgeCorruption(Fixed(-50));
+        w.purgeCorruption(Fixed{});
+        CHECK_EQ(w.hero.corruption.raw, Fixed(400).raw);
+    }
+
+    dctest::section("처치 정화 — 전진이 곧 회복이다");
+    {
+        // 잡몹 1점과 엘리트 10점이 **포인트 비율 그대로** 정화된다
+        World w = makeWorld(22);
+        w.hero.corruption = Fixed(1000);
+        const EntityId a = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0), 1), 0, 22);
+        w.hero.target = a;
+        combatRun(w, cfg);
+        const int32_t afterTrash = w.hero.corruption.raw;
+        CHECK_EQ(Fixed(1000).raw - afterTrash,
+                 Fixed(cfg.trashPoints * cfg.purgePerClearPoint).raw);
+
+        World w2 = makeWorld(23);
+        w2.hero.corruption = Fixed(1000);
+        const EntityId e = w2.entities.spawn(mob(Archetype::Elite, 20, Fixed(1), Fixed(0), 1), 0, 23);
+        w2.hero.target = e;
+        combatRun(w2, cfg);
+        CHECK_EQ(Fixed(1000).raw - w2.hero.corruption.raw,
+                 Fixed(cfg.elitePoints * cfg.purgePerClearPoint).raw);
+        printf("    잡몹 %d · 엘리트 %d 정화 (포인트 × %d)\n",
+               cfg.trashPoints * cfg.purgePerClearPoint,
+               cfg.elitePoints * cfg.purgePerClearPoint, cfg.purgePerClearPoint);
+    }
+
+    dctest::section("구간 진입 정화 — 건너뛴 칸 수만큼 준다");
+    {
+        World w = makeWorld(24);
+        w.hero.corruption = Fixed(1200);
+        w.run.clearPoints = cfg.segmentStartPoints[1];
+        progressRun(w, cfg);                       // 구간 1 → 2, 한 칸
+        CHECK_EQ(Fixed(1200).raw - w.hero.corruption.raw, Fixed(cfg.segmentClearPurge).raw);
+
+        // **한 틱에 두 구간을 넘겨도 두 칸분을 준다** — 한 번만 주면 빨리 미는
+        // 빌드가 오히려 손해를 본다
+        World w2 = makeWorld(25);
+        w2.hero.corruption = Fixed(1200);
+        w2.run.clearPoints = cfg.segmentStartPoints[3];
+        progressRun(w2, cfg);                      // 구간 1 → 4, 세 칸
+        CHECK_EQ(w2.run.segmentIndex, 3);
+        CHECK_EQ(Fixed(1200).raw - w2.hero.corruption.raw, Fixed(3 * cfg.segmentClearPurge).raw);
+    }
+
+    dctest::section("E_LEECH — 입힌 피해에 비례해 정화한다");
+    {
+        World w = makeWorld(26);
+        w.hero.corruption = Fixed(1000);
+        // 죽지 않을 만큼 단단한 대상 — 처치 정화가 섞이면 흡혈만 볼 수 없다
+        const EntityId t = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0), 100000),
+                                            0, 26);
+        w.hero.target = t;
+        w.cards.engrave[engraveIndex(EngraveId::Leech)] = Fixed::fromPermille(500);
+
+        const int32_t before = w.hero.corruption.raw;
+        executeSkill(w, cfg, 0, QteGrade::Miss);
+        const int32_t healed = before - w.hero.corruption.raw;
+        // 각인이 없으면 회복도 없다
+        World w2 = makeWorld(26);
+        w2.hero.corruption = Fixed(1000);
+        const EntityId t2 = w2.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0), 100000),
+                                              0, 26);
+        w2.hero.target = t2;
+        executeSkill(w2, cfg, 0, QteGrade::Miss);
+        CHECK_EQ(w2.hero.corruption.raw, Fixed(1000).raw);
+        CHECK(healed > 0);
+        // 흡혈률이 2배면 회복도 2배다
+        World w3 = makeWorld(26);
+        w3.hero.corruption = Fixed(1000);
+        const EntityId t3 = w3.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0), 100000),
+                                              0, 26);
+        w3.hero.target = t3;
+        w3.cards.engrave[engraveIndex(EngraveId::Leech)] = Fixed::fromPermille(1000);
+        executeSkill(w3, cfg, 0, QteGrade::Miss);
+        CHECK_EQ(Fixed(1000).raw - w3.hero.corruption.raw, healed * 2);
+        printf("    흡혈 50%%로 %.1f 회복 · 100%%에서 정확히 2배\n",
+               (double)healed / Fixed::ONE_RAW);
+    }
+
     dctest::section("구간 진행 — 게이지가 구간을 넘긴다");
     {
         World w = makeWorld(11);
-        // 게이지를 직접 밀어 경계마다 구간이 정확히 한 칸씩 오르는지 본다.
+        // 표는 오름차순이어야 하고, 마지막 구간 뒤에 클리어 목표가 온다
+        for (int32_t i = 1; i < cfg.segmentsPerMap; ++i) {
+            CHECK(cfg.segmentStartPoints[i] > cfg.segmentStartPoints[i - 1]);
+        }
+        CHECK(cfg.clearTargetPoints > cfg.segmentStartPoints[cfg.segmentsPerMap - 1]);
+
+        // 경계마다 구간이 정확히 한 칸씩 오르는지 본다. **균등 분할이 아니므로**
+        // 표를 직접 읽어 경계를 잡는다.
         for (int32_t seg = 0; seg < cfg.segmentsPerMap; ++seg) {
-            w.run.clearPoints = seg * cfg.clearPointsPerSegment;
+            w.run.clearPoints = cfg.segmentStartPoints[seg];
             progressRun(w, cfg);
             CHECK_EQ(w.run.segmentIndex, seg);
-            // 경계 직전은 아직 이전 구간이다
-            w.run.clearPoints = (seg + 1) * cfg.clearPointsPerSegment - 1;
+            // 다음 경계 직전은 아직 이 구간이다
+            const int32_t next = seg + 1 < cfg.segmentsPerMap
+                               ? cfg.segmentStartPoints[seg + 1] : cfg.clearTargetPoints;
+            w.run.clearPoints = next - 1;
             progressRun(w, cfg);
             CHECK_EQ(w.run.segmentIndex, seg);
         }
-        // 마지막 구간을 넘겨도 표 밖으로 나가지 않는다
-        w.run.clearPoints = cfg.clearPointsPerSegment * 1000;
+        // 목표를 넘겨도 표 밖으로 나가지 않는다
+        w.run.clearPoints = cfg.clearTargetPoints * 1000;
         progressRun(w, cfg);
         CHECK_EQ(w.run.segmentIndex, cfg.segmentsPerMap - 1);
         // **되돌아가지 않는다** — 게이지가 깎여도 구간은 유지된다

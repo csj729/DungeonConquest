@@ -123,11 +123,15 @@ inline void openCrisisQte(World& w, const SimConfig& cfg, EntityId src, int32_t 
 }
 
 // 피해 적용 + 처치 판정. 영웅 기본 공격과 스킬이 같은 경로를 쓴다.
-inline void applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage) {
-    if (w.entities.deadAt(i)) return;
-    w.entities.damageTaken[i] += mitigate(rawDamage, w.entities.armor[i], cfg.armorK);
-    if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) return;
-    if (!w.entities.markDead(w.entities.idAt(i))) return;
+// **실제로 입힌 피해를 돌려준다** — `E_LEECH`가 그 값에 비례해 정화하기 때문이다.
+// 굴리기 전 위력(rawDamage)이 아니라 방어 감쇠 후의 값이어야 방어력 높은 적에게
+// 흡혈이 덜 붙는다.
+inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage) {
+    if (w.entities.deadAt(i)) return Fixed{};
+    const Fixed dealt = mitigate(rawDamage, w.entities.armor[i], cfg.armorK);
+    w.entities.damageTaken[i] += dealt;
+    if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) return dealt;
+    if (!w.entities.markDead(w.entities.idAt(i))) return dealt;
     // 경험치는 실효 체력에 비례한다 (§4). Fixed가 아니라 정수 누적값이다 —
     // 고정소수점 범위 ±524,288을 훨씬 넘고 소수점이 필요 없다.
     {
@@ -135,9 +139,13 @@ inline void applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawD
                           * (cfg.armorK + toInt(w.entities.armor[i])) / (cfg.armorK > 0 ? cfg.armorK : 1);
         gainExp(w, cfg, ehp * cfg.expPerEhpPermille / 1000);
     }
+    // **전진이 곧 회복이다** (§2). 정화량을 처치 수가 아니라 클리어 게이지
+    // 충전량에 묶으므로 엘리트(10점)는 잡몹(1점)의 10배를 정화한다. 구간 램프가
+    // 처치율을 1 → 4점/초로 올리면 정화도 같이 올라간다 — 곡선이 하나로 끝난다.
     if (w.entities.archetype[i] == Archetype::Trash) {
         ++w.run.killedTrash;
         w.run.clearPoints += cfg.trashPoints;
+        w.purgeCorruption(Fixed(cfg.trashPoints * cfg.purgePerClearPoint));
     } else if (w.entities.archetype[i] == Archetype::Boss) {
         // **보스 처치가 곧 클리어다** (§2).
         w.run.bossAlive = false;
@@ -148,7 +156,9 @@ inline void applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawD
     } else {
         ++w.run.killedElite;
         w.run.clearPoints += cfg.elitePoints;
+        w.purgeCorruption(Fixed(cfg.elitePoints * cfg.purgePerClearPoint));
     }
+    return dealt;
 }
 
 // 스킬 실행. QTE 창이 열렸으면 등급 배율이 붙고, 못 열렸으면 기본 위력이다.
@@ -170,16 +180,25 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
     if (skillIndex >= cfg.skillCount) return;
     const SkillConfig& sk = cfg.skills[skillIndex];
     const Fixed dmg = w.hero.stats.value(Stat::AttackPower) * sk.mult * qteAmplify(cfg, g);
+    Fixed dealt{};
     if (sk.aoe) {
         // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
         uint32_t hit[config::MAX_ENTITIES];
         const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
                                            cfg.aoeRadius, hit, config::MAX_ENTITIES);
-        for (uint32_t k = 0; k < n; ++k) applySkillHit(w, cfg, hit[k], dmg);
+        for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], dmg);
     } else {
         const int32_t d = w.entities.denseOf(w.hero.target);
-        if (d >= 0) applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
+        if (d >= 0) dealt = applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
     }
+
+    // ── E_LEECH(흡혈) — 각인 계열의 유일한 회복 (§2) ──
+    // **`onHit` 훅이라 대상마다 붙는다.** 광역기가 5명을 때리면 5배로 들어오는데,
+    // 이것이 cards_vertical_slice.md가 예산 적합도 106%를 계산한 전제다.
+    // 그래서 흡혈은 물량 빌드와 맞물리고, 기저 정화(처치·구간)와 축이 다르다 —
+    // 기저는 **처치 수**에, 흡혈은 **입힌 피해**에 비례한다.
+    const Fixed leech = w.cards.engrave[engraveIndex(EngraveId::Leech)];
+    if (leech.raw > 0 && dealt.raw > 0) w.purgeCorruption(dealt * leech);
 }
 
 inline void qteRun(World& w, const SimConfig& cfg) {

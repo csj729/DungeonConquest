@@ -70,12 +70,17 @@ inline SpawnDesc makeDesc(const MonsterConfig& m, Fixed hp) {
 // segmentIndex는 지금은 clearPoints의 함수지만 [상태]로 남긴다 — 맵 진행
 // (mapIndex)이 붙으면 게이지가 리셋되면서 순수 함수가 아니게 된다.
 inline void progressRun(World& w, const SimConfig& cfg) {
-    if (cfg.clearPointsPerSegment <= 0 || cfg.segmentsPerMap <= 0) return;
-    int32_t seg = w.run.clearPoints / cfg.clearPointsPerSegment;
-    if (seg > cfg.segmentsPerMap - 1) seg = cfg.segmentsPerMap - 1;
+    if (cfg.segmentsPerMap <= 0) return;
+    const int32_t seg = cfg.segmentForPoints(w.run.clearPoints);
     // **진행도는 되돌아가지 않는다** (§2). 게이지가 줄지 않으므로 지금은
     // 성립하지만, 불변식을 코드에 남겨 나중에 깎는 효과가 생겨도 안전하게 한다.
-    if (seg > w.run.segmentIndex) w.run.segmentIndex = seg;
+    if (seg <= w.run.segmentIndex) return;
+
+    // 구간을 **몇 칸 건너뛰어도 한 칸당 한 번씩** 정화한다. 엘리트를 연달아 잡아
+    // 게이지가 한 틱에 두 구간을 넘길 수 있으므로, 넘긴 칸 수로 곱해야 한다 —
+    // 한 번만 주면 빨리 미는 빌드가 오히려 손해를 본다.
+    w.purgeCorruption(Fixed((seg - w.run.segmentIndex) * cfg.segmentClearPurge));
+    w.run.segmentIndex = seg;
 }
 
 inline void spawnRun(World& w, const SimConfig& cfg) {

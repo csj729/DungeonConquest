@@ -32,6 +32,23 @@ constexpr uint32_t MAX_LEGEND_POOL    = 32;
 constexpr uint32_t MAX_CARDS_PER_LEVEL = 4;
 constexpr uint32_t MAX_LEVEL_NEED     = 80;
 
+// 각인 인덱스. **`data/cards.json`의 배열 순서와 같아야 한다** —
+// `tools/verify_core_constants.py`가 둘을 대조한다.
+// 효과가 구현된 것만 코어가 이름으로 참조하고, 나머지는 아직 수치만 쌓인다.
+enum class EngraveId : uint16_t {
+    Pierce = 0,   // 관통
+    Chain  = 1,   // 연타
+    Decay  = 2,   // 부식
+    Leech  = 3,   // 흡혈 — 구현됨 (§2 잠식 회복)
+    Swarm  = 4,   // 군집
+    Crit   = 5,   // 예리함
+    Rend   = 6,   // 파쇄
+    Wide   = 7,   // 확장
+    Count  = 8,
+};
+
+constexpr uint16_t engraveIndex(EngraveId e) { return static_cast<uint16_t>(e); }
+
 // **뒤에만 덧붙인다** — 값이 바뀌면 기존 리플레이가 깨진다.
 enum class CardKind : uint8_t {
     None      = 0,

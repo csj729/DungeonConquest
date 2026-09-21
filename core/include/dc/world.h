@@ -289,6 +289,21 @@ public:
         return ctx;
     }
 
+    // 잠식 정화 — **회복의 단일 통로다** (§2).
+    //
+    // 잠식은 반전된 체력과 동형이라 회복은 게이지를 깎는 것이다. 경로가 셋
+    // (처치 · 구간 진입 · 흡혈)이지만 하한 클램프와 조건 재평가를 한 곳에 모은다 —
+    // 세 군데에 흩어지면 하나만 고치는 사고가 난다.
+    //
+    // **0 아래로 내려가지 않는다.** 음수 잠식은 "죽기까지의 여유"를 몰래 저장하는
+    // 것이라, 안전한 구간에서 쌓아두고 위험 구간에서 꺼내 쓰는 경로가 생긴다.
+    void purgeCorruption(Fixed amount) {
+        if (amount.raw <= 0 || hero.corruption.raw <= 0) return;
+        hero.corruption -= amount;
+        if (hero.corruption.raw < 0) hero.corruption = Fixed{};
+        notifyCorruptionChanged();
+    }
+
     // 잠식 게이지가 움직였을 때. 피격·물량 충전·흡혈 전부 여기로 온다.
     uint16_t notifyCorruptionChanged() {
         return hero.stats.refreshConditions(

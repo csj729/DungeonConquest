@@ -91,9 +91,6 @@ def _check_stats():
     return not bad
 
 
-if __name__ == "__main__":
-    report()
-
 
 def _check_dev_data():
     """`core/tools/dev_data.h`는 진짜 로더가 붙기 전까지의 임시 수치다.
@@ -170,6 +167,18 @@ def _check_dev_data():
          gd.PROGRESSION["corruption_threshold"]),
         ("trashPoints", scalar("c.trashPoints"), gd.SEGMENTS_DATA["trash_points"]),
         ("elitePoints", scalar("c.elitePoints"), gd.SEGMENTS_DATA["elite_points"]),
+        ("CLEAR_TARGET_POINTS", scalar("CLEAR_TARGET_POINTS"),
+         gd.SEGMENTS_DATA["clear_target_points"]),
+        ("SEGMENT_START_POINTS", ints("SEGMENT_START_POINTS"),
+         gd.SEGMENTS_DATA["segment_start_points"]),
+        ("purgePerClearPoint", scalar("c.purgePerClearPoint"),
+         gd.PROGRESSION["purge_per_clear_point"]),
+        ("segmentClearPurge", scalar("c.segmentClearPurge"),
+         gd.PROGRESSION["segment_clear_purge"]),
+        ("corruptionPerMobPermille", scalar("c.corruptionPerMobPermille"),
+         gd.PROGRESSION["corruption_per_mob_permille"]),
+        ("corruptionOverflowMultPermille", scalar("c.corruptionOverflowMultPermille"),
+         gd.PROGRESSION["corruption_overflow_mult_permille"]),
     ]
     bad = [n for n, got, want in checks if got != want]
     for n, got, want in checks:
@@ -178,3 +187,7 @@ def _check_dev_data():
     print(f"  {'OK ' if not bad else 'X  '} {'dev_data.h 대조':<18} "
           f"{len(checks) - len(bad)}/{len(checks)} 항목 일치")
     return not bad
+
+
+if __name__ == "__main__":
+    report()

@@ -81,10 +81,19 @@ struct SimConfig {
     int32_t corruptionPerMobPermille       = 0;
     int32_t corruptionOverflowMultPermille = 0;
 
+    // ── 잠식 회복 (§2) ──
+    // 유입이 구간 2 이후 초당 26~34라 **회복은 선택이 아니라 전제다.**
+    // 없으면 잠식 1250이 45초에 가득 차는데 맵 통과는 최소 210초다.
+    int32_t purgePerClearPoint = 0;   // 클리어 게이지 1점당 정화량 — 전진이 곧 회복
+    int32_t segmentClearPurge  = 0;   // 구간 진입 시 일괄 정화
+
     // ── 클리어 게이지 (segments.json) ──
     int32_t trashPoints          = 0;
     int32_t elitePoints          = 0;
-    int32_t clearPointsPerSegment = 0;
+    // 구간이 시작되는 누적 클리어 포인트. **구간은 균등하지 않다** — 잡몹이
+    // 21 → 66마리, 엘리트가 0 → 5마리로 늘어 마지막 구간이 첫 구간의 5.5배다.
+    // 파이썬이 segments.json의 구성에서 누적해 담은 표를 그대로 읽는다.
+    int32_t segmentStartPoints[16] = {0};   // batchBySegment와 같은 상한
 
     // ── 영웅 (hero.json) ──
     uint32_t procPrdCQ16 = 0;
@@ -145,6 +154,16 @@ struct SimConfig {
         if (s > totalSegments) s = totalSegments;
         if (s > 32) s = 32;
         return capBySegment[s - 1];
+    }
+
+    // 누적 클리어 포인트 → 맵 내 구간(0 기반). 표가 오름차순이므로 뒤에서부터 찾는다
+    // (구간 8개라 이진 탐색이 오히려 느리다).
+    int32_t segmentForPoints(int32_t points) const {
+        int32_t seg = 0;
+        for (int32_t i = segmentsPerMap - 1; i >= 0; --i) {
+            if (i < 16 && points >= segmentStartPoints[i]) { seg = i; break; }
+        }
+        return seg;
     }
 
     int32_t batchFor(int32_t mapSegment1Based) const {

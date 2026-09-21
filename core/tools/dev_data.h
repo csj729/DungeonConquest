@@ -57,6 +57,8 @@ constexpr uint32_t CARDS_PER_LEVEL  = 3;
 constexpr int32_t  EXP_PER_EHP_PERMILLE = 1000;
 // data/segments.json — 잡몹 294 × 1점 + 엘리트 19 × 10점
 constexpr int32_t  CLEAR_TARGET_POINTS  = 484;
+// 구간 시작 누적 포인트. 잡몹 21→66 · 엘리트 0→5로 늘어 **균등하지 않다.**
+constexpr int32_t  SEGMENT_START_POINTS[8] = {0, 21, 54, 99, 148, 202, 275, 368};
 // 일반 등급 스탯 카드 풀. **여기서 빌드 축이 갈린다** —
 // 화력(공격력·공속)이냐 생존(방어력·잠식 최대치)이냐.
 constexpr uint8_t  STAT_CARD_POOL[4] = {
@@ -80,6 +82,8 @@ inline SimConfig devConfig() {
     c.corruptionThreshold              = 20;
     c.corruptionPerMobPermille         = 600;
     c.corruptionOverflowMultPermille   = 3000;
+    c.purgePerClearPoint               = 6;      // progression.json
+    c.segmentClearPurge                = 150;    // progression.json
 
     // data/spawn.json
     for (int32_t i = 0; i < 24; ++i) c.capBySegment[i]   = CAP_BY_SEGMENT[i];
@@ -92,7 +96,8 @@ inline SimConfig devConfig() {
     // data/segments.json
     c.trashPoints           = 1;
     c.elitePoints           = 10;
-    c.clearPointsPerSegment = 50;
+    // data/segments.json — 구성에서 누적한 구간 시작 포인트. 균등 분할이 아니다.
+    for (uint32_t i = 0; i < 8; ++i) c.segmentStartPoints[i] = SEGMENT_START_POINTS[i];
 
     // data/hero.json
     c.procPrdCQ16 = HERO_PROC_PRD_C_Q16;

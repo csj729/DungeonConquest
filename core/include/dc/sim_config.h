@@ -107,6 +107,13 @@ struct SimConfig {
     // ── 영웅 (hero.json) ──
     uint32_t procPrdCQ16 = 0;
     Fixed    aoeRadius{};
+    // E_SWARM(군집) — 주변 적을 세는 반경과 중첩 상한.
+    Fixed    swarmRadius{};
+    int32_t  swarmMaxStacks = 0;
+    // E_DECAY(부식) 지속 · E_PIERCE(관통) 판정 폭
+    int32_t  decayTicks = 0;
+    Fixed    pierceWidth{};
+    Fixed    pierceLength{};
     // 타겟 우선순위 거리 감쇠 (타일당). 닿을 수 없는 표적에 묶이지 않게 한다.
     int32_t  targetPriorityFalloffPerTile = 0;
 

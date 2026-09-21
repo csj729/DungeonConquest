@@ -134,14 +134,99 @@ inline void openCrisisQte(World& w, const SimConfig& cfg, EntityId src, int32_t 
 }
 
 // 피해 적용 + 처치 판정. 영웅 기본 공격과 스킬이 같은 경로를 쓴다.
+// ── 각인 효과 (§4 공통 각인) ─────────────────────────────────────
+//
+// **전부 `w.cards.engrave[]`를 읽는다.** 카드가 수치를 누적해 두고 여기서 한 번만
+// 해석하므로, 새 각인을 붙여도 카드 쪽은 건드릴 게 없다.
+//
+// 수치형(E_CRIT·E_REND·E_WIDE·E_SWARM)은 피해 계산의 입력을 바꾼다.
+// 훅형(E_PIERCE·E_CHAIN·E_DECAY·E_LEECH)은 타격 전후에 일을 더 한다.
+
+inline Fixed engraveValue(const World& w, EngraveId e) {
+    return w.cards.engrave[engraveIndex(e)];
+}
+
+// E_REND(파쇄) — 대상 Armor의 일정 비율을 무시한다.
+// **방어 감쇠가 비율식이라 고방어 적에게 특히 크다** — 방패병(Armor 200)에서
+// 25% 무시는 실효 HP를 300 → 250으로 17% 깎는다.
+inline Fixed rendArmor(const World& w, Fixed armor) {
+    const Fixed rend = engraveValue(w, EngraveId::Rend);
+    if (rend.raw <= 0 || armor.raw <= 0) return armor;
+    Fixed left = Fixed::one() - rend;
+    if (left.raw < 0) left = Fixed{};          // 100% 초과 무시는 0으로 클램프
+    return armor * left;
+}
+
+// E_SWARM(군집) — 주변 적 1명당 피해 증가, 상한까지.
+// **물량이 곧 화력이 되는 유일한 축이다.** 전장이 고일수록 강해지므로
+// 잠식이 위험해지는 구간과 반격이 세지는 구간이 맞물린다.
+inline Fixed swarmMult(const World& w, const SimConfig& cfg) {
+    const Fixed per = engraveValue(w, EngraveId::Swarm);
+    if (per.raw <= 0 || cfg.swarmRadius.raw <= 0) return Fixed::one();
+    const int64_t r2 = static_cast<int64_t>(cfg.swarmRadius.raw)
+                     * static_cast<int64_t>(cfg.swarmRadius.raw);
+    int32_t n = 0;
+    const uint32_t cnt = w.entities.count();
+    for (uint32_t i = 0; i < cnt; ++i) {
+        if (w.entities.deadAt(i)) continue;
+        if (distanceSq(w.entities.posX[i], w.entities.posY[i], w.hero.posX, w.hero.posY) > r2) continue;
+        if (++n >= cfg.swarmMaxStacks) break;   // 상한에 닿으면 더 셀 이유가 없다
+    }
+    return Fixed::one() + per * n;
+}
+
+// E_CRIT(예리함) — 치확·치피를 얹는다. 치피는 치확의 2배로 들어간다.
+//
+// **치확 100% 초과분은 치피로 넘긴다** (§0 초과분 전환). 영웅 등급을 두 장 쌓아도
+// 죽은 수치가 생기지 않아야 하고, 그게 이 각인이 빌드 종속으로 기능하는 조건이다.
+inline void critWithEngrave(const World& w, Fixed* chance, Fixed* mult) {
+    const Fixed e = engraveValue(w, EngraveId::Crit);
+    if (e.raw <= 0) return;
+    *chance += e;
+    *mult   += e * Fixed(2);
+    if (chance->raw > Fixed::one().raw) {
+        *mult  += (*chance - Fixed::one());     // 초과분을 치피로 전환
+        *chance = Fixed::one();
+    }
+}
+
+// E_WIDE(확장) — 광역 반경을 늘린다. 단일기의 여파는 executeSkill이 따로 처리한다.
+inline Fixed wideRadius(const World& w, Fixed base) {
+    return base * (Fixed::one() + engraveValue(w, EngraveId::Wide));
+}
+
+// 관통은 스킬 경로에서도 쓰이므로 선언을 앞에 둔다 (정의는 아래).
+inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
+
+// E_DECAY(부식) — 타격한 적에게 도트를 건다.
+// **갱신이지 중첩이 아니다.** 다시 맞으면 지속이 새로 시작되고 틱당 피해는 큰 쪽이
+// 남는다. 중첩을 허용하면 연타(2타)·관통(다수)과 곱해져 각인 하나가 예산을 몇 배로
+// 먹는다 — 문서가 "누적 대상은 피해 비율뿐"이라고 못박은 것과 같은 이유다.
+inline void applyDecay(World& w, const SimConfig& cfg, uint32_t i) {
+    const Fixed rate = w.cards.engrave[engraveIndex(EngraveId::Decay)];
+    if (rate.raw <= 0 || cfg.decayTicks <= 0 || cfg.tickHz <= 0) return;
+    // 초당 공격력의 rate → 틱당으로 나눈다
+    const Fixed perTick = (w.hero.stats.value(Stat::AttackPower) * rate) / cfg.tickHz;
+    if (perTick.raw <= 0) return;
+    if (perTick.raw > w.entities.decayPerTick[i].raw) w.entities.decayPerTick[i] = perTick;
+    w.entities.decayLeft[i] = cfg.decayTicks;
+}
+
 // **실제로 입힌 피해를 돌려준다** — `E_LEECH`가 그 값에 비례해 정화하기 때문이다.
 // 굴리기 전 위력(rawDamage)이 아니라 방어 감쇠 후의 값이어야 방어력 높은 적에게
 // 흡혈이 덜 붙는다.
-inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage) {
+// `hooks`가 false면 onHit 각인을 건너뛴다. **도트 자신은 도트를 갱신하면 안 된다** —
+// decayRun이 매 틱 applyDecay를 다시 부르면 지속이 영원히 새로 시작되어 도트가
+// 끝나지 않는다. 테스트가 이걸 잡았다.
+inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage,
+                           bool hooks = true) {
     if (w.entities.deadAt(i)) return Fixed{};
-    const Fixed dealt = mitigate(rawDamage, w.entities.armor[i], cfg.armorK);
+    const Fixed dealt = mitigate(rawDamage, rendArmor(w, w.entities.armor[i]), cfg.armorK);
     w.entities.damageTaken[i] += dealt;
-    if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) return dealt;
+    if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) {
+        if (hooks) applyDecay(w, cfg, i);   // 살아남은 적에게만 · 도트 자신은 제외
+        return dealt;
+    }
     if (!w.entities.markDead(w.entities.idAt(i))) return dealt;
     // 경험치는 실효 체력에 비례한다 (§4). Fixed가 아니라 정수 누적값이다 —
     // 고정소수점 범위 ±524,288을 훨씬 넘고 소수점이 필요 없다.
@@ -200,17 +285,48 @@ inline Fixed qteAmplify(const SimConfig& cfg, QteGrade g) {
 inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, QteGrade g) {
     if (skillIndex >= cfg.skillCount) return;
     const SkillConfig& sk = cfg.skills[skillIndex];
-    const Fixed dmg = w.hero.stats.value(Stat::AttackPower) * sk.mult * qteAmplify(cfg, g);
+    Fixed dmg = w.hero.stats.value(Stat::AttackPower) * sk.mult * qteAmplify(cfg, g)
+              * swarmMult(w, cfg);
+
+    // E_CHAIN(연타) — **총 피해를 올리고 그만큼을 2회로 나눈다.**
+    // 합계만 올리면 수치형과 다를 게 없다. 나눠 때려야 과잉 피해가 줄고
+    // (한 대에 죽을 적에게 남는 몫이 다음 타로 가지 않는다) onHit 훅이 두 번 돈다.
+    const Fixed chain = engraveValue(w, EngraveId::Chain);
+    const int32_t hits = chain.raw > 0 ? 2 : 1;
+    if (hits == 2) dmg = dmg * (Fixed::one() + chain) / Fixed(2);
+
     Fixed dealt{};
-    if (sk.aoe) {
-        // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
-        uint32_t hit[config::MAX_ENTITIES];
-        const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
-                                           cfg.aoeRadius, hit, config::MAX_ENTITIES);
-        for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], dmg);
-    } else {
-        const int32_t d = w.entities.denseOf(w.hero.target);
-        if (d >= 0) dealt = applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
+    for (int32_t pass = 0; pass < hits; ++pass) {
+        if (sk.aoe) {
+            // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
+            uint32_t hit[config::MAX_ENTITIES];
+            const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
+                                               wideRadius(w, cfg.aoeRadius),
+                                               hit, config::MAX_ENTITIES);
+            for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], dmg);
+        } else {
+            const int32_t d = w.entities.denseOf(w.hero.target);
+            if (d >= 0) {
+                dealt += applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
+                applyPierce(w, cfg, static_cast<uint32_t>(d), dmg);
+            }
+
+            // E_WIDE(확장) — **단일기는 주변에 여파를 남긴다.**
+            // 광역기만 강화하면 단일 빌드에서 이 각인이 죽은 카드가 된다.
+            const Fixed wide = engraveValue(w, EngraveId::Wide);
+            if (wide.raw > 0 && d >= 0) {
+                uint32_t hit[config::MAX_ENTITIES];
+                const uint32_t n = collectInRadius(w.entities,
+                                                   w.entities.posX[static_cast<uint32_t>(d)],
+                                                   w.entities.posY[static_cast<uint32_t>(d)],
+                                                   wideRadius(w, cfg.aoeRadius),
+                                                   hit, config::MAX_ENTITIES);
+                for (uint32_t k = 0; k < n; ++k) {
+                    if (static_cast<int32_t>(hit[k]) == d) continue;   // 본체는 이미 맞았다
+                    dealt += applySkillHit(w, cfg, hit[k], dmg * wide);
+                }
+            }
+        }
     }
 
     // ── E_LEECH(흡혈) — 각인 계열의 유일한 회복 (§2) ──
@@ -288,6 +404,53 @@ inline void orbRun(World& w, const SimConfig& cfg) {
     }
 }
 
+// 도트 진행 (E_DECAY). **전투보다 먼저 돈다** — 도트로 죽을 적이 이번 틱에
+// 영웅을 때리지 않게 하기 위해서다. 순서를 뒤집으면 도트의 가치가 한 틱씩 늦는다.
+inline void decayRun(World& w, const SimConfig& cfg) {
+    const uint32_t n = w.entities.count();
+    for (uint32_t i = 0; i < n; ++i) {
+        if (w.entities.deadAt(i) || w.entities.decayLeft[i] <= 0) continue;
+        --w.entities.decayLeft[i];
+        const Fixed tick = w.entities.decayPerTick[i];
+        if (tick.raw <= 0) continue;
+        // **도트는 방어 감쇠를 그대로 받는다** — 무시하면 E_REND와 역할이 겹친다.
+        // hooks=false로 불러 도트가 자기 지속을 갱신하지 못하게 한다.
+        applySkillHit(w, cfg, i, tick, false);
+        if (w.entities.decayLeft[i] <= 0) w.entities.decayPerTick[i] = Fixed{};
+    }
+}
+
+// E_PIERCE(관통) — **타겟 뒤의 직선상 적에게 감쇠된 피해를 준다.**
+//
+// 영웅 → 타겟 방향의 반직선 위에서, 타겟보다 멀고 폭 안에 있는 적을 고른다.
+// 직선 판정은 내적(진행 거리)과 외적(수직 거리)으로 한다 — 제곱근이 필요 없고
+// 전부 정수 연산이라 결정론에 안전하다.
+inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage) {
+    const Fixed ratio = w.cards.engrave[engraveIndex(EngraveId::Pierce)];
+    if (ratio.raw <= 0 || cfg.pierceWidth.raw <= 0) return;
+
+    const int64_t dx = static_cast<int64_t>(w.entities.posX[target].raw) - w.hero.posX.raw;
+    const int64_t dy = static_cast<int64_t>(w.entities.posY[target].raw) - w.hero.posY.raw;
+    const int64_t len = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(dx * dx + dy * dy)));
+    if (len <= 0) return;
+
+    const uint32_t n = w.entities.count();
+    for (uint32_t i = 0; i < n; ++i) {
+        if (i == target || w.entities.deadAt(i)) continue;
+        const int64_t ex = static_cast<int64_t>(w.entities.posX[i].raw) - w.hero.posX.raw;
+        const int64_t ey = static_cast<int64_t>(w.entities.posY[i].raw) - w.hero.posY.raw;
+        // 진행 거리 = 내적 / |d| — 타겟보다 뒤이고 사거리 안이어야 한다
+        const int64_t along = (ex * dx + ey * dy) / len;
+        if (along <= len) continue;
+        if (along > len + static_cast<int64_t>(cfg.pierceLength.raw)) continue;
+        // 수직 거리 = |외적| / |d|
+        int64_t perp = (ex * dy - ey * dx) / len;
+        if (perp < 0) perp = -perp;
+        if (perp > static_cast<int64_t>(cfg.pierceWidth.raw)) continue;
+        applySkillHit(w, cfg, i, damage * ratio);
+    }
+}
+
 inline void combatRun(World& w, const SimConfig& cfg) {
     const uint32_t n = w.entities.count();
 
@@ -299,9 +462,12 @@ inline void combatRun(World& w, const SimConfig& cfg) {
         const Fixed range = w.hero.stats.value(Stat::Range);
         const int64_t r2 = static_cast<int64_t>(range.raw) * static_cast<int64_t>(range.raw);
         if (distanceSq(w.entities.posX[i], w.entities.posY[i], w.hero.posX, w.hero.posY) <= r2) {
-            Fixed dmg = w.hero.stats.value(Stat::AttackPower);
-            if (w.rngCombat.chanceQ16(chanceToQ16(w.hero.stats.value(Stat::CritChance)))) {
-                dmg = dmg * w.hero.stats.value(Stat::CritMult);
+            Fixed dmg = w.hero.stats.value(Stat::AttackPower) * swarmMult(w, cfg);
+            {
+                Fixed chance = w.hero.stats.value(Stat::CritChance);
+                Fixed mult   = w.hero.stats.value(Stat::CritMult);
+                critWithEngrave(w, &chance, &mult);
+                if (w.rngCombat.chanceQ16(chanceToQ16(chance))) dmg = dmg * mult;
             }
 
             // 통합 proc 판정은 기본 공격당 한 번만 (§3). 발동이 확정되면
@@ -318,6 +484,7 @@ inline void combatRun(World& w, const SimConfig& cfg) {
             }
 
             applySkillHit(w, cfg, i, dmg);
+            applyPierce(w, cfg, i, dmg);
             w.hero.attackCooldown = heroAttackInterval(w, cfg);
         }
     }

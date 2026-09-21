@@ -52,6 +52,11 @@ constexpr int32_t CARD_GRADE_BUDGET[5] = {30, 50, 100, 200, 500};
 constexpr int32_t CARD_GRADE_STEP[5]   = {600, 1000, 2000, 4000, 10000};   // 증가량 비 0.6 : 1 : 2 : 4 : 10
 constexpr int32_t ENGRAVE_BASE[8] = {250, 450, 300, 500, 90, 200, 250, 200};
 constexpr int32_t RELIC_BASE[6]   = {10, 400, 100, 150, 3, 200};
+constexpr int32_t  DECAY_TICKS            = 80;     // 4초 (20Hz)
+constexpr int32_t  PIERCE_WIDTH_MILLITILE  = 700;   // 직선 판정 반폭
+constexpr int32_t  PIERCE_LENGTH_MILLITILE = 3000;  // 타겟 뒤로 닿는 거리
+constexpr int32_t  SWARM_RADIUS_MILLITILE = 2500;
+constexpr int32_t  SWARM_MAX_STACKS       = 10;
 constexpr uint32_t LEGEND_POOL_SIZE = 9;
 constexpr uint32_t CARDS_PER_LEVEL  = 3;
 constexpr int32_t  EXP_PER_EHP_PERMILLE = 1000;
@@ -116,6 +121,11 @@ inline SimConfig devConfig() {
     // data/hero.json
     c.procPrdCQ16 = HERO_PROC_PRD_C_Q16;
     c.aoeRadius   = Fixed::fromPermille(HERO_AOE_RADIUS_MILLITILE);
+    c.swarmRadius    = Fixed::fromPermille(SWARM_RADIUS_MILLITILE);
+    c.swarmMaxStacks = SWARM_MAX_STACKS;
+    c.decayTicks   = DECAY_TICKS;
+    c.pierceWidth  = Fixed::fromPermille(PIERCE_WIDTH_MILLITILE);
+    c.pierceLength = Fixed::fromPermille(PIERCE_LENGTH_MILLITILE);
     c.targetPriorityFalloffPerTile = TARGET_PRIORITY_FALLOFF_PER_TILE;
     c.qteCooldownTicks          = HERO_QTE_COOLDOWN_TICKS;
     c.qtePerfectWindowTicks     = HERO_QTE_PERFECT_WINDOW;

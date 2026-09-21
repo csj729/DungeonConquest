@@ -269,5 +269,176 @@ int main() {
         CHECK(draw(77) != draw(78));
     }
 
+    dctest::section("각인 효과 — 수치형 넷");
+    {
+        // 각인은 **전부 w.cards.engrave[]를 읽는다.** 각 테스트는 "각인이 없을 때"와
+        // "있을 때"를 같은 상황에서 재서, 효과가 조용히 0이면 실패하게 만든다.
+        auto trash = [&](World& w, Fixed x, int32_t hp, int32_t armor) {
+            SpawnDesc d;
+            d.posX = x; d.posY = Fixed{};
+            d.maxHp = Fixed(hp); d.armor = Fixed(armor);
+            d.archetype = Archetype::Trash; d.attackRange = Fixed(1);
+            return w.entities.spawn(d, 0, 7);
+        };
+
+        // ── E_REND(파쇄) — 방어 무시 ──
+        {
+            World a; a.init(7); dev::applyHeroBaseline(a);
+            const EntityId ta = trash(a, Fixed(1), 100000, 200);
+            const Fixed plain = applySkillHit(a, cfg, static_cast<uint32_t>(a.entities.denseOf(ta)),
+                                              Fixed(100));
+            World b; b.init(7); dev::applyHeroBaseline(b);
+            b.cards.engrave[engraveIndex(EngraveId::Rend)] = Fixed::fromPermille(500);
+            const EntityId tb = trash(b, Fixed(1), 100000, 200);
+            const Fixed rend = applySkillHit(b, cfg, static_cast<uint32_t>(b.entities.denseOf(tb)),
+                                             Fixed(100));
+            CHECK(rend.raw > plain.raw);
+            // Armor 200 → 100이면 감쇠가 100/300 → 100/200이다
+            printf("    E_REND 50%%: Armor 200에서 피해 %.1f → %.1f\n",
+                   (double)plain.raw / Fixed::ONE_RAW, (double)rend.raw / Fixed::ONE_RAW);
+        }
+
+        // ── E_SWARM(군집) — 주변 적 수에 비례 ──
+        {
+            World w; w.init(7); dev::applyHeroBaseline(w);
+            CHECK_EQ(swarmMult(w, cfg).raw, Fixed::one().raw);     // 각인 없으면 1.0배
+            w.cards.engrave[engraveIndex(EngraveId::Swarm)] = Fixed::fromPermille(90);
+            CHECK_EQ(swarmMult(w, cfg).raw, Fixed::one().raw);     // 적이 없으면 여전히 1.0배
+            for (int32_t k = 0; k < 4; ++k) trash(w, Fixed(1), 100, 0);
+            const Fixed four = swarmMult(w, cfg);
+            CHECK(four.raw > Fixed::one().raw);
+            // **상한을 넘지 않는다** — 반경 안에 상한의 3배를 넣어도 같다
+            for (int32_t k = 0; k < cfg.swarmMaxStacks * 3; ++k) trash(w, Fixed(1), 100, 0);
+            const Fixed many = swarmMult(w, cfg);
+            const Fixed cap = Fixed::one() + Fixed::fromPermille(90) * cfg.swarmMaxStacks;
+            CHECK(many.raw <= cap.raw);
+            CHECK(many.raw > four.raw);
+            printf("    E_SWARM 9%%: 4마리 %.2f배 · 상한(%d) %.2f배\n",
+                   (double)four.raw / Fixed::ONE_RAW, cfg.swarmMaxStacks,
+                   (double)many.raw / Fixed::ONE_RAW);
+        }
+
+        // ── E_CRIT(예리함) — 치확 100% 초과분이 치피로 간다 ──
+        {
+            World w; w.init(7); dev::applyHeroBaseline(w);
+            Fixed ch = Fixed::fromPermille(100), mu = Fixed::fromPermille(1500);
+            critWithEngrave(w, &ch, &mu);
+            CHECK_EQ(ch.raw, Fixed::fromPermille(100).raw);        // 각인 없으면 그대로
+            CHECK_EQ(mu.raw, Fixed::fromPermille(1500).raw);
+
+            w.cards.engrave[engraveIndex(EngraveId::Crit)] = Fixed::fromPermille(200);
+            ch = Fixed::fromPermille(100); mu = Fixed::fromPermille(1500);
+            critWithEngrave(w, &ch, &mu);
+            CHECK_EQ(ch.raw, Fixed::fromPermille(300).raw);        // 치확 +20%p
+            CHECK_EQ(mu.raw, Fixed::fromPermille(1900).raw);       // 치피 +40%p (2배)
+
+            // **초과분 전환** — 죽은 수치가 생기면 빌드 종속 카드로 기능하지 못한다
+            w.cards.engrave[engraveIndex(EngraveId::Crit)] = Fixed::fromPermille(1000);
+            ch = Fixed::fromPermille(500); mu = Fixed::fromPermille(1500);
+            critWithEngrave(w, &ch, &mu);
+            CHECK_EQ(ch.raw, Fixed::one().raw);                    // 100%에서 멈춘다
+            // 치피 = 1500 + 2000(각인) + 500(초과분 전환) = 4000
+            CHECK_EQ(mu.raw, Fixed::fromPermille(4000).raw);
+            printf("    E_CRIT: 치확 150%%가 될 값이 100%%로 잘리고 초과 50%%p가 치피로\n");
+        }
+
+        // ── E_WIDE(확장) — 광역 반경 ──
+        {
+            World w; w.init(7); dev::applyHeroBaseline(w);
+            CHECK_EQ(wideRadius(w, cfg.aoeRadius).raw, cfg.aoeRadius.raw);
+            w.cards.engrave[engraveIndex(EngraveId::Wide)] = Fixed::fromPermille(200);
+            CHECK(wideRadius(w, cfg.aoeRadius).raw > cfg.aoeRadius.raw);
+            CHECK_EQ(wideRadius(w, cfg.aoeRadius).raw,
+                     (cfg.aoeRadius * Fixed::fromPermille(1200)).raw);
+        }
+    }
+
+    dctest::section("각인 효과 — 훅형 셋");
+    {
+        auto spawnAt = [&](World& w, Fixed x, Fixed y, int32_t hp) {
+            SpawnDesc d;
+            d.posX = x; d.posY = y;
+            d.maxHp = Fixed(hp);
+            d.archetype = Archetype::Trash; d.attackRange = Fixed(1);
+            return w.entities.spawn(d, 0, 8);
+        };
+
+        // ── E_DECAY(부식) — 도트가 시간에 걸쳐 들어간다 ──
+        {
+            World w; w.init(8); dev::applyHeroBaseline(w);
+            w.cards.engrave[engraveIndex(EngraveId::Decay)] = Fixed::fromPermille(300);
+            const EntityId t = spawnAt(w, Fixed(1), Fixed{}, 100000);
+            const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(t));
+            applySkillHit(w, cfg, i, Fixed(1));
+            CHECK_EQ(w.entities.decayLeft[i], cfg.decayTicks);
+            CHECK(w.entities.decayPerTick[i].raw > 0);
+
+            const Fixed before = w.entities.damageTaken[i];
+            for (int32_t k = 0; k < cfg.decayTicks; ++k) decayRun(w, cfg);
+            CHECK(w.entities.damageTaken[i].raw > before.raw);
+            CHECK_EQ(w.entities.decayLeft[i], 0);
+            // 지속이 끝나면 더 들어오지 않는다
+            const Fixed after = w.entities.damageTaken[i];
+            for (int32_t k = 0; k < 40; ++k) decayRun(w, cfg);
+            CHECK_EQ(w.entities.damageTaken[i].raw, after.raw);
+
+            // **갱신이지 중첩이 아니다** — 다시 맞아도 틱당 피해가 커지지 않는다
+            World w2; w2.init(8); dev::applyHeroBaseline(w2);
+            w2.cards.engrave[engraveIndex(EngraveId::Decay)] = Fixed::fromPermille(300);
+            const EntityId t2 = spawnAt(w2, Fixed(1), Fixed{}, 100000);
+            const uint32_t j = static_cast<uint32_t>(w2.entities.denseOf(t2));
+            applySkillHit(w2, cfg, j, Fixed(1));
+            const Fixed once = w2.entities.decayPerTick[j];
+            for (int32_t k = 0; k < 5; ++k) applySkillHit(w2, cfg, j, Fixed(1));
+            CHECK_EQ(w2.entities.decayPerTick[j].raw, once.raw);   // 중첩 없음
+            CHECK_EQ(w2.entities.decayLeft[j], cfg.decayTicks);    // 지속은 갱신
+            printf("    E_DECAY 30%%: %d틱 동안 %.1f 피해 · 재타격은 갱신만\n",
+                   cfg.decayTicks,
+                   (double)(after.raw - before.raw) / Fixed::ONE_RAW);
+        }
+
+        // ── E_PIERCE(관통) — 타겟 뒤 직선만 맞는다 ──
+        {
+            World w; w.init(8); dev::applyHeroBaseline(w);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            w.cards.engrave[engraveIndex(EngraveId::Pierce)] = Fixed::fromPermille(250);
+
+            const EntityId tgt    = spawnAt(w, Fixed(2), Fixed{},  100000);   // 타겟
+            const EntityId behind = spawnAt(w, Fixed(4), Fixed{},  100000);   // 뒤 — 맞는다
+            const EntityId side   = spawnAt(w, Fixed(4), Fixed(3), 100000);   // 옆 — 안 맞는다
+            const EntityId front  = spawnAt(w, Fixed(1), Fixed{},  100000);   // 앞 — 안 맞는다
+
+            applyPierce(w, cfg, static_cast<uint32_t>(w.entities.denseOf(tgt)), Fixed(100));
+            CHECK(w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(behind))].raw > 0);
+            CHECK_EQ(w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(side))].raw, 0);
+            CHECK_EQ(w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(front))].raw, 0);
+            // 타겟 자신은 관통으로 또 맞지 않는다
+            CHECK_EQ(w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(tgt))].raw, 0);
+            printf("    E_PIERCE 25%%: 뒤만 맞고 옆·앞·본체는 안 맞는다\n");
+        }
+
+        // ── E_CHAIN(연타) — 총 피해가 오르고 2회로 나뉜다 ──
+        {
+            auto totalDamage = [&](int32_t chainPermille) {
+                World w; w.init(8); dev::applyHeroBaseline(w);
+                if (chainPermille > 0) {
+                    w.cards.engrave[engraveIndex(EngraveId::Chain)] =
+                        Fixed::fromPermille(chainPermille);
+                }
+                const EntityId t = spawnAt(w, Fixed(1), Fixed{}, 100000);
+                w.hero.target = t;
+                executeSkill(w, cfg, 0, QteGrade::Miss);            // 0번은 단일기
+                return w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(t))];
+            };
+            const Fixed plain = totalDamage(0);
+            const Fixed chain = totalDamage(450);
+            CHECK(plain.raw > 0);
+            // 총 피해 +45%. 2회로 나뉘어도 합은 같다 (고정소수점 오차 1% 안)
+            const double ratio = (double)chain.raw / plain.raw;
+            CHECK(ratio > 1.43 && ratio < 1.47);
+            printf("    E_CHAIN 45%%: 총 피해 %.2f배 (2회 분할)\n", ratio);
+        }
+    }
+
     return dctest::summary("test_card");
 }

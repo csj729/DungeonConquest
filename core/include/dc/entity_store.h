@@ -93,6 +93,11 @@ public:
     // 넣어 엘리트·보스(60틱)가 첫 공격 이후 잡몹 주기(30틱)로 바뀌었다 —
     // 공격 빈도가 2배가 되어 QTE 빈도와 잠식 피해가 설계와 달라졌다.
     int32_t   attackInterval[CAPACITY]{};  // 스폰 시 고정, 공격 후 여기서 다시 채운다
+    // E_DECAY(부식) 도트. **갱신이지 중첩이 아니다** — 다시 맞으면 남은 시간이
+    // 새로 시작되고 틱당 피해는 큰 쪽을 남긴다. 중첩을 허용하면 연타·관통과
+    // 곱해져 각인 하나가 예산을 몇 배로 먹는다.
+    Fixed     decayPerTick[CAPACITY]{};
+    int32_t   decayLeft[CAPACITY]{};
     int32_t   windupLeft[CAPACITY]{};      // 남은 틱, 0이면 텔레그래프 중 아님
     int32_t   windupTicks[CAPACITY]{};     // 텔레그래프 길이(정적). 0이면 QTE 패턴 없음
     int32_t   groggyLeft[CAPACITY]{};      // QTE 완벽 판정 보상 — 행동 불가 남은 틱
@@ -153,6 +158,8 @@ public:
         targetPriority[dense]  = d.targetPriority;
         attackCooldown[dense]  = d.attackCooldownTicks;
         attackInterval[dense]  = d.attackCooldownTicks;
+        decayPerTick[dense]    = Fixed{};
+        decayLeft[dense]       = 0;
         windupLeft[dense]      = 0;
         windupTicks[dense]     = d.windupTicks;
         groggyLeft[dense]      = 0;
@@ -255,6 +262,8 @@ public:
         for (uint32_t i = 0; i < n; ++i) h.feed(targetPriority[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(attackCooldown[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(attackInterval[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(decayPerTick[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(decayLeft[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(windupLeft[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(windupTicks[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(groggyLeft[i]);
@@ -296,6 +305,8 @@ private:
         targetPriority[dst]  = targetPriority[src];
         attackCooldown[dst]  = attackCooldown[src];
         attackInterval[dst]  = attackInterval[src];
+        decayPerTick[dst]    = decayPerTick[src];
+        decayLeft[dst]       = decayLeft[src];
         windupLeft[dst]      = windupLeft[src];
         windupTicks[dst]     = windupTicks[src];
         groggyLeft[dst]      = groggyLeft[src];

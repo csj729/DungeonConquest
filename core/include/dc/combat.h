@@ -365,11 +365,23 @@ inline void combatRun(World& w, const SimConfig& cfg) {
     if (cfg.tickHz > 0 && cfg.corruptionThreshold > 0) {
         const int32_t alive = static_cast<int32_t>(aliveCount(w.entities));
         if (alive > cfg.corruptionThreshold) {
-            Fixed perSec = Fixed::fromPermille(cfg.corruptionPerMobPermille)
-                         * (alive - cfg.corruptionThreshold);
+            const Fixed perMob = Fixed::fromPermille(cfg.corruptionPerMobPermille);
+            Fixed perSec = perMob * (alive - cfg.corruptionThreshold);
+
+            // **상한 초과는 초과분에만 가속이 붙는다** (§2 "초과분에 ×3 가속").
+            //
+            // 전에는 `alive >= cap`에서 **전체 비율에** ×3을 곱했다. 스폰이 상한을
+            // 유지하므로 포화 구간에서는 상시 alive == cap이고, 그 순간 잠식이
+            // 6 → 18/초로 계단처럼 뛰었다. 그래서 처치율이 스폰율을 넘느냐 마느냐에
+            // 따라 결과가 양분됐다 — 실측에서 처치율 2.12 → 2.33마리/초 사이에
+            // 클리어율이 33% → 92%로 튀는 절벽이 이것이다.
+            //
+            // 한계 가속으로 바꾸면 연속 함수가 되어 **중간 난이도가 생긴다.**
+            // tools/balance_baseline.py의 corruption_from_mass()와 같은 식이다.
             const int32_t cap = cfg.capFor(w.run.globalSegment(cfg.segmentsPerMap) + 1);
-            if (cap > 0 && alive >= cap) {
-                perSec = perSec * Fixed::fromPermille(cfg.corruptionOverflowMultPermille);
+            if (cap > 0 && alive > cap) {
+                const Fixed extra = Fixed::fromPermille(cfg.corruptionOverflowMultPermille - 1000);
+                perSec += perMob * (alive - cap) * extra;
             }
             w.hero.corruption += perSec / cfg.tickHz;
             w.notifyCorruptionChanged();

@@ -534,6 +534,50 @@ int main() {
         }
     }
 
+    dctest::section("잠식 물량 충전 — 상한 초과는 초과분에만 가속");
+    {
+        // **회귀 테스트.** 전에는 alive >= cap에서 전체 비율에 ×3을 곱해,
+        // 상한에 닿는 순간 잠식이 계단처럼 뛰었다. 스폰이 상한을 유지하므로
+        // 포화 구간에서 상시 걸렸고, 처치율 2.12 → 2.33마리/초 사이에서
+        // 클리어율이 33% → 92%로 튀는 절벽을 만들었다.
+        // balance_baseline.py의 corruption_from_mass()와 같은 식이어야 한다.
+        const int32_t cap = cfg.capFor(1);
+        const int32_t th  = cfg.corruptionThreshold;
+        const double perMob = cfg.corruptionPerMobPermille / 1000.0;
+        const double extra  = (cfg.corruptionOverflowMultPermille - 1000) / 1000.0;
+
+        auto rateAt = [&](int32_t alive) {
+            World w = makeWorld(41);
+            w.hero.posX = Fixed(1000); w.hero.posY = Fixed(1000);   // 멀리 떼어 피격 제외
+            for (int32_t k = 0; k < alive; ++k) {
+                SpawnDesc d = mob(Archetype::Trash, 0, Fixed(-1000), Fixed(-1000), 100000);
+                d.approachSpeed = Fixed{};
+                w.entities.spawn(d, 0, 41);
+            }
+            const Fixed before = w.hero.corruption;
+            for (int32_t t = 0; t < cfg.tickHz; ++t) combatRun(w, cfg);   // 1초
+            return static_cast<double>(w.hero.corruption.raw - before.raw) / Fixed::ONE_RAW;
+        };
+
+        // 임계 아래는 0
+        CHECK(rateAt(th) < 0.01);
+        // 임계 위·상한 아래는 선형
+        const double below = rateAt(cap - 1);
+        CHECK(below > (cap - 1 - th) * perMob - 0.5);
+        CHECK(below < (cap - 1 - th) * perMob + 0.5);
+        // **상한에 정확히 걸렸을 때는 아직 가속이 없다** (`>` 이지 `>=` 가 아니다)
+        const double atCap = rateAt(cap);
+        CHECK(atCap < (cap - th) * perMob + 0.5);
+        // 상한 1 초과 → 초과분 1마리분만 가속이 붙는다
+        const double over = rateAt(cap + 1);
+        const double want = (cap + 1 - th) * perMob + 1 * perMob * extra;
+        CHECK(over > want - 0.5 && over < want + 0.5);
+        // **계단이 없다** — 상한 전후 증가분이 한 마리분 범위 안이다
+        CHECK(over - atCap < perMob * (1.0 + extra) + 0.5);
+        printf("    %d마리 %.1f/초 · %d(상한) %.1f · %d %.1f — 계단 없음\n",
+               cap - 1, below, cap, atCap, cap + 1, over);
+    }
+
     dctest::section("잠식 정화 — 회복의 단일 통로");
     {
         World w = makeWorld(21);

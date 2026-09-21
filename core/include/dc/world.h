@@ -20,6 +20,7 @@
 #include "config.h"
 #include "entity_store.h"
 #include "fixed.h"
+#include "card.h"
 #include "input.h"
 #include "inventory.h"
 #include "prd.h"
@@ -177,6 +178,7 @@ public:
         // 한다. 호출자가 데이터를 로드한 뒤 inventory.init(table)을 부른다.
         // **이걸 빠뜨리면 이전 런의 아이템이 다음 런에 샌다** (test_world가 잡는다).
         inventory = Inventory{};
+        cards     = CardState{};
         nextSourceId_ = 1;                   // 0은 "없음" 예약
 
         rngSpawn  = Rng::derive(masterSeed, RngStream::Spawn);
@@ -226,6 +228,7 @@ public:
             hero.hashInto(h);
             h.feed(nextSourceId_);
             inventory.hashInto(h);   // §10이 "인벤토리도 체크섬 입력"이라고 명시
+            cards.hashInto(h);
             c.hero = h.value();
         }
         {
@@ -317,7 +320,7 @@ public:
                 hero.qte.hasInput = 1;
                 return true;
             }
-            case InputKind::CardChoice:
+            case InputKind::CardChoice:   // SimConfig가 필요하므로 sim.h가 처리한다
             case InputKind::None:
             case InputKind::Count:
                 break;
@@ -355,6 +358,8 @@ public:
     // 인벤토리 (§5). RecipeTable은 정적 데이터라 World 밖에 살고, 조회가 필요한
     // 호출마다 인자로 받는다 — 포인터 멤버를 두면 memcpy 스냅샷이 깨진다.
     Inventory   inventory{};
+    // 레벨업 카드 (§4). 각인·유물 누적과 전설 풀 획득 비트마스크가 여기 산다.
+    CardState   cards{};
     RunState    run{};
     SpawnState  spawn{};
 

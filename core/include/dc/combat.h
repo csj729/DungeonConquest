@@ -7,6 +7,7 @@
 
 #include <cstdint>
 
+#include "levelup.h"
 #include "movement.h"
 #include "qte.h"
 #include "sim_config.h"
@@ -119,6 +120,13 @@ inline void applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawD
     w.entities.damageTaken[i] += mitigate(rawDamage, w.entities.armor[i], cfg.armorK);
     if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) return;
     if (!w.entities.markDead(w.entities.idAt(i))) return;
+    // 경험치는 실효 체력에 비례한다 (§4). Fixed가 아니라 정수 누적값이다 —
+    // 고정소수점 범위 ±524,288을 훨씬 넘고 소수점이 필요 없다.
+    {
+        const int64_t ehp = static_cast<int64_t>(toInt(w.entities.maxHp[i]))
+                          * (cfg.armorK + toInt(w.entities.armor[i])) / (cfg.armorK > 0 ? cfg.armorK : 1);
+        gainExp(w, cfg, ehp * cfg.expPerEhpPermille / 1000);
+    }
     if (w.entities.archetype[i] == Archetype::Trash) {
         ++w.run.killedTrash;
         w.run.clearPoints += cfg.trashPoints;

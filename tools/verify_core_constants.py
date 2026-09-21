@@ -104,7 +104,7 @@ def _check_dev_data():
     src = DEV_DATA_H.read_text(encoding="utf-8")
 
     def ints(name):
-        m = re.search(rf"{name}\[\d*\]\s*=\s*\{{([^}}]*)\}}", src, re.S)
+        m = re.search(rf"\b{name}\[\d*\]\s*=\s*\{{([^}}]*)\}}", src, re.S)
         return [int(x) for x in re.findall(r"-?\d+", m.group(1))] if m else None
 
     def scalar(name):
@@ -152,6 +152,20 @@ def _check_dev_data():
         ("HERO_QTE_PERFECT_WINDOW", scalar("HERO_QTE_PERFECT_WINDOW"),
          gd.HERO["qte_perfect_window_ticks"]),
         ("HERO_GROGGY_TICKS", scalar("HERO_GROGGY_TICKS"), gd.HERO["groggy_ticks"]),
+        ("LEVEL_NEED", ints("LEVEL_NEED"), gd.PROGRESSION["level_need_table"][:80]),
+        ("CARD_GRADE_RATE", ints("CARD_GRADE_RATE"),
+         [g["rate_permille"] for g in gd.CARDS["grades"]]),
+        ("CARD_GRADE_BUDGET", ints("CARD_GRADE_BUDGET"),
+         [g["power_budget_permille"] for g in gd.CARDS["grades"]]),
+        # grade_step은 배수(1·2·4)이고 C++는 permille로 담는다. 일반 0.6 · 전설 10을 덧붙인다.
+        ("CARD_GRADE_STEP", ints("CARD_GRADE_STEP"),
+         [600] + [x * 1000 for x in gd.CARDS["grade_step"]] + [10000]),
+        ("ENGRAVE_BASE", ints("ENGRAVE_BASE"),
+         [e["uncommon_permille"] for e in gd.CARDS["engravings"]]),
+        ("RELIC_BASE", ints("RELIC_BASE"),
+         [r["uncommon_permille"] for r in gd.CARDS["relics"]]),
+        ("LEGEND_POOL_SIZE", scalar("LEGEND_POOL_SIZE"), gd.CARDS["legend_pool_size"]),
+        ("CARDS_PER_LEVEL", scalar("CARDS_PER_LEVEL"), gd.CARDS["cards_per_level"]),
         ("corruptionThreshold", scalar("c.corruptionThreshold"),
          gd.PROGRESSION["corruption_threshold"]),
         ("trashPoints", scalar("c.trashPoints"), gd.SEGMENTS_DATA["trash_points"]),

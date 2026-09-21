@@ -62,8 +62,18 @@ inline const SimConfig& devSimConfig() {
 
 // 한 틱 — 실제 시스템 + 아직 없는 시스템의 자리만 흔든다.
 inline void scriptTick(World& w) {
-    // 카드 자리 (§4) — 레벨업 카드 선택이 붙기 전까지 모디파이어를 무작위로 얹는다
-    if (w.rngCards.chancePermille(40)) {
+    // 레벨업 카드 선택 — 실제 시스템. 프레젠테이션이 붙기 전까지 무작위로 고른다.
+    // **선택 자체가 빌드를 만드는 지점**이므로 몬테카를로 하네스는 여기에 정책을 꽂는다.
+    if (w.cards.offer.open()) {
+        InputEvent e;
+        e.tick  = w.tickCount();
+        e.kind  = InputKind::CardChoice;
+        e.value = w.rngEvents.range(w.cards.offer.count);
+        (void)applyInput(w, devSimConfig(), e);
+    }
+
+    // 아직 시스템이 없는 자리 — 카드 밖의 모디파이어 획득 경로를 흔든다
+    if (w.rngCards.chancePermille(10)) {
         const uint32_t src = w.allocSourceId();
         const Stat s  = static_cast<Stat>(w.rngCards.range(STAT_COUNT));
         const Fixed pm = Fixed::fromPermille(static_cast<int32_t>(w.rngCards.range(200)));

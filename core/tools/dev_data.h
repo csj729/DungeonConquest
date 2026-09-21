@@ -36,6 +36,26 @@ constexpr int32_t  HERO_QTE_PERFECT_PERMILLE  = 1400;
 constexpr int32_t  HERO_QTE_PERFECT_WINDOW    = 1;
 constexpr int32_t  HERO_QTE_PERFECT_CC_PERMILLE = 1000;
 constexpr int32_t  HERO_GROGGY_TICKS          = 40;
+
+// data/progression.json — 파이썬이 지수 곡선을 미리 푼 정수 표
+constexpr int64_t LEVEL_NEED[80] = {
+    380, 410, 442, 476, 513, 553, 596, 643, 693, 747, 805, 868,
+    936, 1009, 1088, 1172, 1264, 1362, 1469, 1583, 1707, 1840, 1983, 2138,
+    2305, 2485, 2678, 2887, 3112, 3355, 3617, 3899, 4203, 4531, 4885, 5266,
+    5676, 6119, 6596, 7111, 7665, 8263, 8908, 9603, 10352, 11159, 12029, 12968,
+    13979, 15070, 16245, 17512, 18878, 20351, 21938, 23649, 25494, 27482, 29626, 31937,
+    34428, 37113, 40008, 43129, 46493, 50119, 54028, 58243, 62785, 67683, 72962, 78653,
+    84788, 91401, 98531, 106216, 114501, 123432, 133060, 143438};
+// data/cards.json
+constexpr int32_t CARD_GRADE_RATE[5]   = {420, 300, 190, 75, 15};
+constexpr int32_t CARD_GRADE_BUDGET[5] = {30, 50, 100, 200, 500};
+constexpr int32_t CARD_GRADE_STEP[5]   = {600, 1000, 2000, 4000, 10000};   // 증가량 비 0.6 : 1 : 2 : 4 : 10
+constexpr int32_t ENGRAVE_BASE[8] = {250, 450, 300, 500, 90, 200, 250, 200};
+constexpr int32_t RELIC_BASE[6]   = {10, 400, 100, 150, 3, 200};
+constexpr uint32_t LEGEND_POOL_SIZE = 9;
+constexpr uint32_t CARDS_PER_LEVEL  = 3;
+constexpr int32_t  EXP_PER_EHP_PERMILLE = 1000;
+
 constexpr int32_t  TRASH_ATTACK_RANGE_MILLITILE = 1400;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
@@ -74,6 +94,21 @@ inline SimConfig devConfig() {
     c.qtePerfectMult            = Fixed::fromPermille(HERO_QTE_PERFECT_PERMILLE);
     c.qtePerfectCcGainPermille  = HERO_QTE_PERFECT_CC_PERMILLE;
     c.groggyTicks               = HERO_GROGGY_TICKS;
+
+    // data/progression.json · data/cards.json — 레벨업 카드
+    for (uint32_t i = 0; i < 80; ++i) c.levelNeed[i] = LEVEL_NEED[i];
+    for (uint32_t i = 0; i < 5; ++i) {
+        c.cardGradeRate[i]   = CARD_GRADE_RATE[i];
+        c.cardGradeBudget[i] = CARD_GRADE_BUDGET[i];
+        c.cardGradeStep[i]   = CARD_GRADE_STEP[i];
+    }
+    c.engraveCount = sizeof(ENGRAVE_BASE) / sizeof(ENGRAVE_BASE[0]);
+    c.relicCount   = sizeof(RELIC_BASE) / sizeof(RELIC_BASE[0]);
+    for (uint32_t i = 0; i < c.engraveCount; ++i) c.engraveBase[i] = ENGRAVE_BASE[i];
+    for (uint32_t i = 0; i < c.relicCount; ++i)   c.relicBase[i]   = RELIC_BASE[i];
+    c.legendPoolSize     = LEGEND_POOL_SIZE;
+    c.cardsPerLevel      = CARDS_PER_LEVEL;
+    c.expPerEhpPermille  = EXP_PER_EHP_PERMILLE;
 
     // data/skills.json — 전사 액티브 3종
     struct S { int32_t mult, weight; bool aoe; };

@@ -12,6 +12,7 @@
 
 #include <cstdint>
 
+#include "card.h"
 #include "config.h"
 #include "entity_store.h"
 #include "fixed.h"
@@ -99,6 +100,27 @@ struct SimConfig {
 
     SkillConfig skills[MAX_SKILLS]{};
     uint32_t    skillCount = 0;
+
+    // ── 레벨업 카드 (§4) ──
+    // 필요 경험치는 **파이썬이 지수 곡선을 미리 풀어 담은 정수 표**다.
+    // 코어가 실수 거듭제곱을 다시 풀지 않는다 (PRD 상수·스폰 램프와 같은 방식).
+    int64_t  levelNeed[MAX_LEVEL_NEED] = {0};
+    int32_t  cardGradeRate[MAX_CARD_GRADES]   = {0};   // permille
+    int32_t  cardGradeBudget[MAX_CARD_GRADES] = {0};   // 위력 증가분 permille
+    int32_t  cardGradeStep[MAX_CARD_GRADES]   = {0};   // 각인·유물 증가량 비 permille
+    int32_t  engraveBase[MAX_ENGRAVINGS] = {0};        // 고급 기준 수치 permille
+    int32_t  relicBase[MAX_RELICS]       = {0};
+    uint32_t engraveCount   = 0;
+    uint32_t relicCount     = 0;
+    uint32_t legendPoolSize = 0;
+    uint32_t cardsPerLevel  = 0;
+    int32_t  expPerEhpPermille = 0;
+
+    int64_t needFor(int32_t level) const {
+        if (level < 1) return 0;
+        const uint32_t i = static_cast<uint32_t>(level - 1);
+        return i < MAX_LEVEL_NEED ? levelNeed[i] : levelNeed[MAX_LEVEL_NEED - 1];
+    }
 
 
     // ── 로스터 ──

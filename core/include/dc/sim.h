@@ -15,6 +15,13 @@
 
 namespace dc {
 
+// 입력 진입점. 카드 선택만 `SimConfig`가 필요해서 여기서 갈라진다.
+// **모든 입력이 같은 `(틱 번호, 값)` 형식**이라는 성질은 그대로다.
+inline bool applyInput(World& w, const SimConfig& cfg, const InputEvent& e) {
+    if (e.kind == InputKind::CardChoice) return chooseCard(w, cfg, e.value);
+    return w.applyInput(e);
+}
+
 inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
     w.beginTick();                    // 틱 전진 + 시간 조건 만료 처리
 

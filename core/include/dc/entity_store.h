@@ -89,7 +89,9 @@ public:
     // archetype 고정 순서로는 그 판단을 표현할 수 없다.
     int32_t   targetPriority[CAPACITY]{};
     int32_t   attackCooldown[CAPACITY]{};  // 남은 틱
-    int32_t   windupLeft[CAPACITY]{};      // 남은 틱, 0이면 윈드업 중 아님
+    int32_t   windupLeft[CAPACITY]{};      // 남은 틱, 0이면 텔레그래프 중 아님
+    int32_t   windupTicks[CAPACITY]{};     // 텔레그래프 길이(정적). 0이면 QTE 패턴 없음
+    int32_t   groggyLeft[CAPACITY]{};      // QTE 완벽 판정 보상 — 행동 불가 남은 틱
 
     // 엘리트·보스 전용 — 대부분 0으로 남는다 (SoA라 비용이 없다)
     uint8_t   patternIndex[CAPACITY]{};
@@ -146,7 +148,9 @@ public:
         attackRange[dense]     = d.attackRange;
         targetPriority[dense]  = d.targetPriority;
         attackCooldown[dense]  = d.attackCooldownTicks;
-        windupLeft[dense]      = d.windupTicks;
+        windupLeft[dense]      = 0;
+        windupTicks[dense]     = d.windupTicks;
+        groggyLeft[dense]      = 0;
         patternIndex[dense]    = 0;
         patternCooldown[dense] = 0;
         ccGauge[dense]         = Fixed{};
@@ -246,6 +250,8 @@ public:
         for (uint32_t i = 0; i < n; ++i) h.feed(targetPriority[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(attackCooldown[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(windupLeft[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(windupTicks[i]);
+        for (uint32_t i = 0; i < n; ++i) h.feed(groggyLeft[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(patternIndex[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(patternCooldown[i]);
         for (uint32_t i = 0; i < n; ++i) h.feed(ccGauge[i]);
@@ -284,6 +290,8 @@ private:
         targetPriority[dst]  = targetPriority[src];
         attackCooldown[dst]  = attackCooldown[src];
         windupLeft[dst]      = windupLeft[src];
+        windupTicks[dst]     = windupTicks[src];
+        groggyLeft[dst]      = groggyLeft[src];
         patternIndex[dst]    = patternIndex[src];
         patternCooldown[dst] = patternCooldown[src];
         ccGauge[dst]         = ccGauge[src];

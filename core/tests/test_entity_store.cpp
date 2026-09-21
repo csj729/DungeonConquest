@@ -36,7 +36,11 @@ static bool fingerprintOk(const EntityStore& s, uint32_t dense, int32_t k) {
         && s.approachSpeed[dense].raw  == k * 1000 + 6
         && s.ccGaugeMax[dense].raw     == k * 1000 + 7
         && s.attackCooldown[dense]     == k * 10 + 1
-        && s.windupLeft[dense]         == k * 10 + 2
+        // 스폰 시 windupTicks는 정적 데이터로 들어가고 windupLeft는 0에서 시작한다
+        // (텔레그래프는 공격 시점에 시작되지 스폰 시점이 아니다 — §3)
+        && s.windupTicks[dense]        == k * 10 + 2
+        && s.windupLeft[dense]         == 0
+        && s.groggyLeft[dense]         == 0
         && s.typeId[dense]             == static_cast<uint16_t>(k + 1)
         && s.archetype[dense]          == ((k % 3 == 0) ? Archetype::Elite : Archetype::Trash)
         && s.flags[dense]              == ((k % 2 == 0) ? EntityFlag::Ranged : EntityFlag::None);

@@ -27,6 +27,7 @@ inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
 
     movementRun(w, cfg);              // 영웅 → 타겟, 몹 → 영웅. 양쪽 다 추격뿐
     separationRun(w, cfg, scratch);   // 적 간 충돌 — 균등 그리드를 쓰는 유일한 곳
+    qteRun(w, cfg);                   // 창이 닫힐 틱이면 판정 적용 — 전투보다 먼저
     combatRun(w, cfg);                // 사거리 안이면 공격 · 잠식 충전
 
     w.endTick();                      // 죽음 일괄 적용 (틱 종료 압축)

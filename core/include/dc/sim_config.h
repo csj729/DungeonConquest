@@ -18,8 +18,16 @@
 
 namespace dc {
 
+constexpr uint32_t MAX_SKILLS       = 8;
 constexpr uint32_t MAX_ELITE_TYPES  = 8;
 constexpr uint32_t MAX_ELITE_SPAWNS = 32;   // 맵당 19마리 + 여유
+
+// 고유 스킬 (§3). 발동은 통합 proc 1회, 어떤 스킬인지는 가중 추첨이다.
+struct SkillConfig {
+    Fixed   mult{};          // 기본 공격 대비 배율
+    int32_t weight = 0;      // 추첨 가중치(permille)
+    bool    aoe    = false;
+};
 
 // 몬스터 한 종류의 전투 데이터 (§9 "몬스터 전투 데이터").
 struct MonsterConfig {
@@ -79,6 +87,18 @@ struct SimConfig {
 
     // ── 영웅 (hero.json) ──
     uint32_t procPrdCQ16 = 0;
+    Fixed    aoeRadius{};
+
+    // ── QTE (§3) ──
+    int32_t  qteCooldownTicks     = 0;   // 빈도 상한. proc 확률로 조절하지 않는다
+    int32_t  qtePerfectWindowTicks = 0;  // 완벽 구간 반폭. 20Hz라 최소 1틱 = 50ms
+    Fixed    qteSuccessMult{};           // 스킬 증폭 — 성공
+    Fixed    qtePerfectMult{};           // 스킬 증폭 — 완벽
+    int32_t  qtePerfectCcGainPermille = 0;  // 위기 회피 완벽 — ccGauge 충전 비율
+    int32_t  groggyTicks          = 0;   // 그로기 지속
+
+    SkillConfig skills[MAX_SKILLS]{};
+    uint32_t    skillCount = 0;
 
 
     // ── 로스터 ──

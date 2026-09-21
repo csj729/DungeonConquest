@@ -106,6 +106,16 @@ inline void scriptTick(World& w) {
         (void)w.setManualTarget(w.entities.idAt(w.rngEvents.range(w.entities.count())));
     }
 
+    // QTE 입력 자리 (§3) — 프레젠테이션이 등급을 매기기 전까지 무작위로 흉내낸다.
+    // 입력 로그가 붙으면 (틱 번호, 등급)으로 기록된다.
+    if (w.hero.qte.open() && w.tickCount() == w.hero.qte.perfectTo) {
+        InputEvent e;
+        e.tick  = w.tickCount();
+        e.kind  = InputKind::QteGrade;
+        e.value = w.rngEvents.range(3);
+        (void)w.applyInput(e);
+    }
+
     // 잠식이 가득 차면 다시 시작한다 (게임오버 처리는 §14-9 이후)
     if (w.hero.dead()) {
         w.hero.corruption = Fixed{};

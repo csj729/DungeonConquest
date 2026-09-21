@@ -8,6 +8,7 @@
 #include <cstdint>
 
 #include "movement.h"
+#include "qte.h"
 #include "sim_config.h"
 #include "spawn.h"
 #include "targeting.h"
@@ -82,6 +83,120 @@ inline void movementRun(World& w, const SimConfig& cfg) {
     }
 }
 
+// 스킬 증폭 창. **쿨다운이 남아 있으면 열지 않는다** — 빈도 상한을 proc 확률이
+// 아니라 쿨다운으로 잡는 이유는 §7의 PRD 손익분기를 건드리지 않기 위해서다(§3).
+inline void openSkillQte(World& w, const SimConfig& cfg, uint32_t skillIndex) {
+    if (w.hero.qte.open() || w.hero.qteCooldown > 0) return;
+    const int32_t len = cfg.qtePerfectWindowTicks * 4 + 4;   // 완벽 구간을 품는 창
+    QteWindow q;
+    q.kind        = QteKind::SkillAmplify;
+    q.skillIndex  = static_cast<uint16_t>(skillIndex);
+    q.openTick    = w.tickCount();
+    q.closeTick   = w.tickCount() + len;
+    q.perfectTo   = q.closeTick - 1;                       // 입력 가능한 마지막 틱
+    q.perfectFrom = q.perfectTo - cfg.qtePerfectWindowTicks;
+    w.hero.qte        = q;
+    w.hero.qteCooldown = cfg.qteCooldownTicks;
+}
+
+// 위기 회피 창. **쿨다운을 무시하고 열되 소모는 한다.**
+// 창 길이가 곧 텔레그래프 길이이고, 완벽 구간은 타격 직전이다.
+inline void openCrisisQte(World& w, const SimConfig& cfg, EntityId src, int32_t windup) {
+    QteWindow q;
+    q.kind        = QteKind::CrisisEvade;
+    q.source      = src;
+    q.openTick    = w.tickCount();
+    q.closeTick   = w.tickCount() + windup;
+    q.perfectTo   = q.closeTick - 1;
+    q.perfectFrom = q.perfectTo - cfg.qtePerfectWindowTicks;
+    w.hero.qte         = q;
+    w.hero.qteCooldown = cfg.qteCooldownTicks;
+}
+
+// 피해 적용 + 처치 판정. 영웅 기본 공격과 스킬이 같은 경로를 쓴다.
+inline void applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage) {
+    if (w.entities.deadAt(i)) return;
+    w.entities.damageTaken[i] += mitigate(rawDamage, w.entities.armor[i], cfg.armorK);
+    if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) return;
+    if (!w.entities.markDead(w.entities.idAt(i))) return;
+    if (w.entities.archetype[i] == Archetype::Trash) {
+        ++w.run.killedTrash;
+        w.run.clearPoints += cfg.trashPoints;
+    } else {
+        ++w.run.killedElite;
+        w.run.clearPoints += cfg.elitePoints;
+    }
+}
+
+// 등급별 위력 배율. 실패는 **페널티가 아니라 보너스 없음**이다 (§3).
+inline Fixed qteAmplify(const SimConfig& cfg, QteGrade g) {
+    switch (g) {
+        case QteGrade::Perfect: return cfg.qtePerfectMult;
+        case QteGrade::Success: return cfg.qteSuccessMult;
+        case QteGrade::Miss:    break;
+    }
+    return Fixed::one();
+}
+
+// 창을 닫고 결과를 적용한다. **closeTick에 입력이 없으면 Miss로 자동 해결**된다 —
+// 판정을 미루면 그 틱의 다른 계산이 무엇을 봐야 할지가 모호해진다.
+inline void qteRun(World& w, const SimConfig& cfg) {
+    if (w.hero.qteCooldown > 0) --w.hero.qteCooldown;
+    if (!w.hero.qte.open()) return;
+    if (w.tickCount() < w.hero.qte.closeTick) return;
+
+    const QteWindow q = w.hero.qte;
+    const QteGrade  g = q.hasInput ? q.input : QteGrade::Miss;
+    w.hero.qte.reset();
+
+    if (q.kind == QteKind::SkillAmplify) {
+        if (q.skillIndex >= cfg.skillCount) return;
+        const SkillConfig& sk = cfg.skills[q.skillIndex];
+        const Fixed dmg = w.hero.stats.value(Stat::AttackPower)
+                        * sk.mult * qteAmplify(cfg, g);
+        if (sk.aoe) {
+            // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
+            uint32_t hit[config::MAX_ENTITIES];
+            const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
+                                               cfg.aoeRadius, hit, config::MAX_ENTITIES);
+            for (uint32_t k = 0; k < n; ++k) applySkillHit(w, cfg, hit[k], dmg);
+        } else {
+            const int32_t d = w.entities.denseOf(w.hero.target);
+            if (d >= 0) applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
+        }
+        return;
+    }
+
+    // ── 위기 회피 ──
+    // **QTE가 회피 판정 그 자체다** — 명중 굴림이 따로 없고, 실패하면 무조건 맞는다.
+    const int32_t d = w.entities.denseOf(q.source);
+    if (d < 0) return;                       // 텔레그래프 도중에 죽었다
+    const uint32_t i = static_cast<uint32_t>(d);
+    w.entities.attackCooldown[i] = cfg.trash.cooldownTicks;
+
+    if (g == QteGrade::Miss) {
+        w.hero.corruption += mitigate(w.entities.attackDamage[i],
+                                      w.hero.stats.value(Stat::Armor), cfg.armorK);
+        w.notifyCorruptionChanged();
+        return;
+    }
+    if (g != QteGrade::Perfect) return;      // 성공은 무피해까지
+
+    // 완벽 — CC 게이지를 채운다. **피해가 아니라 게이지로 주는 이유**는 보스의
+    // 실효 체력이 커서 반격 피해로는 체감이 없고, 게이지는 CC 스탯 없는 빌드에도
+    // 보스를 무력화할 경로를 열어주기 때문이다 (§3).
+    const Fixed gain = w.entities.ccGaugeMax[i]
+                     * Fixed::fromPermille(cfg.qtePerfectCcGainPermille);
+    w.entities.ccGauge[i] += gain;
+    if (w.entities.ccGaugeMax[i].raw > 0
+        && w.entities.ccGauge[i].raw >= w.entities.ccGaugeMax[i].raw) {
+        w.entities.ccGauge[i] = Fixed{};
+        ++w.entities.ccTriggerCount[i];
+        w.entities.groggyLeft[i] = cfg.groggyTicks;
+        w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i] | EntityFlag::Groggy);
+    }
+}
+
 inline void combatRun(World& w, const SimConfig& cfg) {
     const uint32_t n = w.entities.count();
 
@@ -97,24 +212,18 @@ inline void combatRun(World& w, const SimConfig& cfg) {
             if (w.rngCombat.chanceQ16(chanceToQ16(w.hero.stats.value(Stat::CritChance)))) {
                 dmg = dmg * w.hero.stats.value(Stat::CritMult);
             }
-            const Fixed applied = mitigate(dmg, w.entities.armor[i], cfg.armorK);
-            w.entities.damageTaken[i] += applied;
 
-            // 통합 proc 판정은 기본 공격당 한 번만 (§3). 어떤 스킬인지는
-            // 발동이 확정된 뒤 가중 추첨으로 고른다 — 그건 §14-9 QTE 단계다.
-            (void)w.hero.proc.roll(w.rngCombat, cfg.procPrdCQ16);
-
-            if (w.entities.damageTaken[i].raw >= w.entities.maxHp[i].raw) {
-                if (w.entities.markDead(w.entities.idAt(i))) {
-                    if (w.entities.archetype[i] == Archetype::Trash) {
-                        ++w.run.killedTrash;
-                        w.run.clearPoints += cfg.trashPoints;
-                    } else {
-                        ++w.run.killedElite;
-                        w.run.clearPoints += cfg.elitePoints;
-                    }
-                }
+            // 통합 proc 판정은 기본 공격당 한 번만 (§3). 발동이 확정되면
+            // 어떤 스킬인지는 가중 추첨으로 고른다 — 스킬마다 독립 확률을 굴리면
+            // PRD 손익분기가 체감선 밖으로 밀린다(§7).
+            if (w.hero.proc.roll(w.rngCombat, cfg.procPrdCQ16) && cfg.skillCount > 0) {
+                int32_t weights[MAX_SKILLS];
+                for (uint32_t k = 0; k < cfg.skillCount; ++k) weights[k] = cfg.skills[k].weight;
+                const uint32_t pick = w.rngCombat.weighted(weights, cfg.skillCount);
+                openSkillQte(w, cfg, pick);
             }
+
+            applySkillHit(w, cfg, i, dmg);
             w.hero.attackCooldown = heroAttackInterval(w, cfg);
         }
     }
@@ -134,8 +243,19 @@ inline void combatRun(World& w, const SimConfig& cfg) {
                          * static_cast<int64_t>(w.entities.attackRange[i].raw);
         if (d2 > r2) continue;
 
+        // 그로기 — QTE 완벽 판정의 보상. 행동 불가다 (§3).
+        if (w.entities.groggyLeft[i] > 0) { --w.entities.groggyLeft[i]; continue; }
+        // 텔레그래프 진행 중이면 QTE 창이 열려 있다. 해결은 qteRun이 한다.
         if (w.entities.windupLeft[i] > 0) { --w.entities.windupLeft[i]; continue; }
         if (w.entities.attackCooldown[i] > 0) { --w.entities.attackCooldown[i]; continue; }
+
+        // **QTE는 표시된 패턴에만 걸린다** (§3). 일반 몹은 windupTicks가 0이라
+        // 예비 동작 없이 즉시 들어가고 자동 판정된다.
+        if (w.entities.windupTicks[i] > 0 && !w.hero.qte.open()) {
+            w.entities.windupLeft[i] = w.entities.windupTicks[i];
+            openCrisisQte(w, cfg, w.entities.idAt(i), w.entities.windupTicks[i]);
+            continue;
+        }
 
         incoming += mitigate(w.entities.attackDamage[i], heroArmor, cfg.armorK);
         w.entities.attackCooldown[i] = cfg.trash.cooldownTicks;

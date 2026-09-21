@@ -13,5 +13,11 @@
   "move_speed_permille": 2000,
   "_aoe_radius": "광역기 기준 반경. balance_baseline.py의 AOE_TARGET_SHARE=0.13 가정이 실측에서 이 반경과 일치한다 (1.5타일 → 0.138). 미정이던 수치를 측정으로 확정한 것이다.",
   "aoe_radius_millitile": 1500,
+  "_qte": "QTE 증폭 배율. 스킬 평균 위력 2.575배 · 구간당 약 4회 발동 기준으로, 전부 완벽과 전부 실패의 총 DPS 차이가 11%가 되도록 잡았다 — 오토 배틀러에서 실력 격차 11%는 충분히 크고, 1.8배로 올리면 33%가 되어 실력이 빌드를 압도한다. 완벽 구간은 20Hz 해상도상 ±1틱(50ms)이 하한이다.",
+  "qte_success_mult_permille": 1150,
+  "qte_perfect_mult_permille": 1400,
+  "qte_perfect_window_ticks": 1,
+  "qte_perfect_cc_gain_permille": 1000,
+  "groggy_ticks": 40,
   "qte_cooldown_ticks": 120
 }

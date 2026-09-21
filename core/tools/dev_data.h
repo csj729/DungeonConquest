@@ -30,6 +30,12 @@ constexpr int32_t  HERO_ARMOR                 = 0;
 constexpr uint32_t HERO_PROC_PRD_C_Q16        = 2112;
 constexpr int32_t  HERO_MOVE_SPEED_PERMILLE   = 2000;   // 타일/초 × 1000
 constexpr int32_t  HERO_AOE_RADIUS_MILLITILE  = 1500;
+constexpr int32_t  HERO_QTE_COOLDOWN_TICKS    = 120;
+constexpr int32_t  HERO_QTE_SUCCESS_PERMILLE  = 1150;
+constexpr int32_t  HERO_QTE_PERFECT_PERMILLE  = 1400;
+constexpr int32_t  HERO_QTE_PERFECT_WINDOW    = 1;
+constexpr int32_t  HERO_QTE_PERFECT_CC_PERMILLE = 1000;
+constexpr int32_t  HERO_GROGGY_TICKS          = 40;
 constexpr int32_t  TRASH_ATTACK_RANGE_MILLITILE = 1400;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
@@ -61,6 +67,27 @@ inline SimConfig devConfig() {
 
     // data/hero.json
     c.procPrdCQ16 = HERO_PROC_PRD_C_Q16;
+    c.aoeRadius   = Fixed::fromPermille(HERO_AOE_RADIUS_MILLITILE);
+    c.qteCooldownTicks          = HERO_QTE_COOLDOWN_TICKS;
+    c.qtePerfectWindowTicks     = HERO_QTE_PERFECT_WINDOW;
+    c.qteSuccessMult            = Fixed::fromPermille(HERO_QTE_SUCCESS_PERMILLE);
+    c.qtePerfectMult            = Fixed::fromPermille(HERO_QTE_PERFECT_PERMILLE);
+    c.qtePerfectCcGainPermille  = HERO_QTE_PERFECT_CC_PERMILLE;
+    c.groggyTicks               = HERO_GROGGY_TICKS;
+
+    // data/skills.json — 전사 액티브 3종
+    struct S { int32_t mult, weight; bool aoe; };
+    constexpr S kSkills[3] = {
+        {3000, 400, false},   // W_SMASH  분쇄 강타
+        {2500, 350, true },   // W_WHIRL  회전 베기
+        {2000, 250, true },   // W_CLEAVE 대지 가르기
+    };
+    c.skillCount = 3;
+    for (uint32_t i = 0; i < 3; ++i) {
+        c.skills[i].mult   = Fixed::fromPermille(kSkills[i].mult);
+        c.skills[i].weight = kSkills[i].weight;
+        c.skills[i].aoe    = kSkills[i].aoe;
+    }
     c.separationMilli     = MOB_SEPARATION_MILLITILE;
     c.heroSeparationMilli = HERO_SEPARATION_MILLITILE;
 

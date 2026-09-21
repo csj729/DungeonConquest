@@ -20,8 +20,10 @@
 #include "config.h"
 #include "entity_store.h"
 #include "fixed.h"
+#include "input.h"
 #include "inventory.h"
 #include "prd.h"
+#include "qte.h"
 #include "rng.h"
 #include "stat_block.h"
 
@@ -52,7 +54,11 @@ struct HeroState {
     int64_t  exp          = 0;
 
     int32_t  attackCooldown = 0;   // 남은 틱
+    // QTE 쿨다운 — **두 종류가 공유한다.** 위기 회피는 쿨다운을 무시하고 열리되
+    // 소모는 한다. 놓치면 확정 피격인 QTE를 쿨다운으로 막으면 플레이어가
+    // 통제할 수 없는 이유로 맞게 되기 때문이다 (§3).
     int32_t  qteCooldown    = 0;   // 남은 틱
+    QteWindow qte{};
 
     // PRD 채널 (§7). 통합 proc은 기본 공격당 판정을 한 번만 굴리므로(§3)
     // 채널도 하나다. 어떤 스킬인지는 발동이 확정된 뒤 가중 추첨으로 고른다.
@@ -108,6 +114,7 @@ struct HeroState {
         proc.hashInto(h);        // §10이 명시적으로 요구하는 입력
         h.feed(target);
         h.feed(manualTarget);
+        qte.hashInto(h);
         stats.hashInto(h);
     }
 };
@@ -291,6 +298,31 @@ public:
             mask |= conditionKindBit(static_cast<ConditionKind>(k));
         }
         return hero.stats.refreshConditions(conditionContext(), mask);
+    }
+
+    // ── 플레이어 입력 ────────────────────────────────────────────
+    //
+    // 모든 입력이 `(틱 번호, 값)` 한 형식이다. 서버는 클라이언트가 보낸 로그를
+    // 그대로 재생해 체크섬을 비교한다 (§10).
+    bool applyInput(const InputEvent& e) {
+        switch (e.kind) {
+            case InputKind::ManualTarget:
+                if (e.value == 0) { clearManualTarget(); return true; }
+                return setManualTarget(EntityId{e.value});
+            case InputKind::QteGrade: {
+                if (!hero.qte.open()) return false;
+                if (e.value > static_cast<uint32_t>(QteGrade::Perfect)) return false;
+                // **시뮬은 등급을 믿지 않고 틱으로 검증한다.**
+                hero.qte.input    = hero.qte.judge(tick_, static_cast<QteGrade>(e.value));
+                hero.qte.hasInput = 1;
+                return true;
+            }
+            case InputKind::CardChoice:
+            case InputKind::None:
+            case InputKind::Count:
+                break;
+        }
+        return false;
     }
 
     // ── 플레이어 입력 (§3 수동 타게팅) ───────────────────────────

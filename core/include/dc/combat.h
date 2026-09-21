@@ -84,10 +84,17 @@ inline void movementRun(World& w, const SimConfig& cfg) {
     }
 }
 
-// 스킬 증폭 창. **쿨다운이 남아 있으면 열지 않는다** — 빈도 상한을 proc 확률이
-// 아니라 쿨다운으로 잡는 이유는 §7의 PRD 손익분기를 건드리지 않기 위해서다(§3).
-inline void openSkillQte(World& w, const SimConfig& cfg, uint32_t skillIndex) {
-    if (w.hero.qte.open() || w.hero.qteCooldown > 0) return;
+// 스킬 증폭 창.
+//
+// **쿨다운은 QTE 빈도를 제한하지 스킬을 봉인하지 않는다.** §3이 "상한은 QTE 자체
+// 쿨다운으로 잡는다 — proc 확률로 조절하지 않는다"고 한 것은 *QTE가 몇 번 뜨는가*에
+// 대한 규칙이다. 발동한 스킬은 창이 못 열려도 **기본 위력으로 즉시 나간다.**
+//
+// 이걸 혼동해 스킬까지 막았더니 몬테카를로에서 클리어율이 0%가 나왔다 —
+// 처치율이 0.92 → 0.55마리/초로 떨어져 게이지가 11%밖에 안 찼다.
+// 창을 못 열면 false를 돌려주고, 호출부가 즉시 실행한다.
+inline bool openSkillQte(World& w, const SimConfig& cfg, uint32_t skillIndex) {
+    if (w.hero.qte.open() || w.hero.qteCooldown > 0) return false;
     const int32_t len = cfg.qtePerfectWindowTicks * 4 + 4;   // 완벽 구간을 품는 창
     QteWindow q;
     q.kind        = QteKind::SkillAmplify;
@@ -98,6 +105,7 @@ inline void openSkillQte(World& w, const SimConfig& cfg, uint32_t skillIndex) {
     q.perfectFrom = q.perfectTo - cfg.qtePerfectWindowTicks;
     w.hero.qte        = q;
     w.hero.qteCooldown = cfg.qteCooldownTicks;
+    return true;
 }
 
 // 위기 회피 창. **쿨다운을 무시하고 열되 소모는 한다.**
@@ -130,11 +138,21 @@ inline void applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawD
     if (w.entities.archetype[i] == Archetype::Trash) {
         ++w.run.killedTrash;
         w.run.clearPoints += cfg.trashPoints;
+    } else if (w.entities.archetype[i] == Archetype::Boss) {
+        // **보스 처치가 곧 클리어다** (§2).
+        w.run.bossAlive = false;
+        if (!w.run.over()) {
+            w.run.outcome = RunOutcome::Cleared;
+            w.run.endTick = w.tickCount();
+        }
     } else {
         ++w.run.killedElite;
         w.run.clearPoints += cfg.elitePoints;
     }
 }
+
+// 스킬 실행. QTE 창이 열렸으면 등급 배율이 붙고, 못 열렸으면 기본 위력이다.
+inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, QteGrade g);
 
 // 등급별 위력 배율. 실패는 **페널티가 아니라 보너스 없음**이다 (§3).
 inline Fixed qteAmplify(const SimConfig& cfg, QteGrade g) {
@@ -148,6 +166,22 @@ inline Fixed qteAmplify(const SimConfig& cfg, QteGrade g) {
 
 // 창을 닫고 결과를 적용한다. **closeTick에 입력이 없으면 Miss로 자동 해결**된다 —
 // 판정을 미루면 그 틱의 다른 계산이 무엇을 봐야 할지가 모호해진다.
+inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, QteGrade g) {
+    if (skillIndex >= cfg.skillCount) return;
+    const SkillConfig& sk = cfg.skills[skillIndex];
+    const Fixed dmg = w.hero.stats.value(Stat::AttackPower) * sk.mult * qteAmplify(cfg, g);
+    if (sk.aoe) {
+        // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
+        uint32_t hit[config::MAX_ENTITIES];
+        const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
+                                           cfg.aoeRadius, hit, config::MAX_ENTITIES);
+        for (uint32_t k = 0; k < n; ++k) applySkillHit(w, cfg, hit[k], dmg);
+    } else {
+        const int32_t d = w.entities.denseOf(w.hero.target);
+        if (d >= 0) applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
+    }
+}
+
 inline void qteRun(World& w, const SimConfig& cfg) {
     if (w.hero.qteCooldown > 0) --w.hero.qteCooldown;
     if (!w.hero.qte.open()) return;
@@ -158,20 +192,7 @@ inline void qteRun(World& w, const SimConfig& cfg) {
     w.hero.qte.reset();
 
     if (q.kind == QteKind::SkillAmplify) {
-        if (q.skillIndex >= cfg.skillCount) return;
-        const SkillConfig& sk = cfg.skills[q.skillIndex];
-        const Fixed dmg = w.hero.stats.value(Stat::AttackPower)
-                        * sk.mult * qteAmplify(cfg, g);
-        if (sk.aoe) {
-            // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
-            uint32_t hit[config::MAX_ENTITIES];
-            const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
-                                               cfg.aoeRadius, hit, config::MAX_ENTITIES);
-            for (uint32_t k = 0; k < n; ++k) applySkillHit(w, cfg, hit[k], dmg);
-        } else {
-            const int32_t d = w.entities.denseOf(w.hero.target);
-            if (d >= 0) applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
-        }
+        executeSkill(w, cfg, q.skillIndex, g);
         return;
     }
 
@@ -228,7 +249,10 @@ inline void combatRun(World& w, const SimConfig& cfg) {
                 int32_t weights[MAX_SKILLS];
                 for (uint32_t k = 0; k < cfg.skillCount; ++k) weights[k] = cfg.skills[k].weight;
                 const uint32_t pick = w.rngCombat.weighted(weights, cfg.skillCount);
-                openSkillQte(w, cfg, pick);
+                // 창이 못 열려도 **스킬은 기본 위력으로 즉시 나간다.**
+                if (!openSkillQte(w, cfg, pick)) {
+                    executeSkill(w, cfg, pick, QteGrade::Miss);
+                }
             }
 
             applySkillHit(w, cfg, i, dmg);

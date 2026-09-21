@@ -424,6 +424,41 @@ int main() {
         printf("    2000틱 × 2회 일치\n");
     }
 
+    dctest::section("틱 루프 — 교착 금지 (분리가 이동보다 먼저다)");
+    {
+        // **회귀 테스트.** 분리를 이동 뒤에 두면 전투가 영구히 멎는다.
+        //
+        // 이동이 타겟을 사거리 안으로 들여놓아도 분리가 도로 밀어내고, 전투는
+        // 밀려난 좌표를 본다 — 실측에서 영웅이 2.877타일까지 붙었는데(사거리 3.0)
+        // 분리가 3.027로 되돌려 1200초 내내 처치가 0이었다. 잡몹 무리에 둘러싸인
+        // 채 멀리 있는 엘리트를 쫓을 때 터지므로 **단위 테스트로는 안 잡히고
+        // 긴 런에서만 드러난다.** 그래서 여기서 긴 런을 직접 돌린다.
+        World w = makeWorld(20250921);
+        static SimScratch scratch;
+        int32_t prevKills = 0, worstGap = 0, gap = 0;
+        for (int32_t i = 0; i < 6000; ++i) {     // 300초
+            stepWorld(w, cfg, scratch);
+            const int32_t kills = w.run.killedTrash + w.run.killedElite;
+            if (kills > prevKills) { prevKills = kills; gap = 0; }
+            else if (aliveCount(w.entities) > 0) {
+                ++gap;
+                if (gap > worstGap) worstGap = gap;
+            }
+        }
+        // 상한을 60초(1200틱)로 잡는 근거: 정상 런의 최장 공백은 **엘리트 한 마리를
+        // 때려잡는 시간**이다 (체력 100 · 방어 관통 후 초당 약 7 → 약 19초 = 380틱).
+        // 우선순위가 영웅을 엘리트에 묶어두는 동안 잡몹 처치가 멎기 때문이다.
+        // 교착은 그 스케일이 아니라 **영구**였다 — 24000틱을 돌려도 0이었다.
+        // 그래서 정상 최장의 3배에 선을 긋는다: 실제 동작에는 닿지 않고
+        // 교착은 확실히 걸린다.
+        CHECK(worstGap < 1200);
+        CHECK(prevKills > 0);
+        // 게이지가 실제로 오르는가 — 교착의 최종 증상은 게이지 정지였다.
+        CHECK(w.run.clearPoints > 100);
+        printf("    300초 런 — 처치 %d · 게이지 %d · 적 생존 중 최장 무처치 공백 %d틱\n",
+               prevKills, w.run.clearPoints, worstGap);
+    }
+
     dctest::section("틱 루프 — 죽음은 틱 끝에만 반영된다");
     {
         World w = makeWorld(6);

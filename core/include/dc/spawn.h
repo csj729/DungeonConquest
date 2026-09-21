@@ -66,6 +66,20 @@ inline void spawnRun(World& w, const SimConfig& cfg) {
 
     const int32_t globalSeg = w.run.globalSegment(cfg.segmentsPerMap) + 1;   // 1 기반
 
+    // ── 보스: 게이지가 다 차면 등장한다 (§2) ──
+    if (!w.run.bossSpawned && cfg.clearTargetPoints > 0
+        && w.run.clearPoints >= cfg.clearTargetPoints) {
+        Fixed bx, by;
+        spawnPosition(cfg, w.hero.posX, w.hero.posY, w.spawn.directionCursor & 3u, 0, &bx, &by);
+        SpawnDesc d = makeDesc(cfg.boss, cfg.boss.hp);
+        d.posX = bx;
+        d.posY = by;
+        if (w.entities.spawn(d, w.tickCount(), w.masterSeed()).valid()) {
+            w.run.bossSpawned = true;
+            w.run.bossAlive   = true;
+        }
+    }
+
     // ── 엘리트: 클리어 게이지 임계 (§2) ──
     // 시간이 아니라 **처치량**에 걸린다. 빌드가 빠르면 빨리 나오고 느리면 늦게 나온다.
     while (w.spawn.nextEliteIndex < cfg.eliteSpawnCount) {

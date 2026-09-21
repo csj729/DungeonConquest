@@ -115,6 +115,12 @@ struct SimConfig {
     uint32_t legendPoolSize = 0;
     uint32_t cardsPerLevel  = 0;
     int32_t  expPerEhpPermille = 0;
+    // 클리어 게이지 목표. 도달하면 보스가 등장하고, 보스를 잡으면 클리어다 (§2).
+    int32_t  clearTargetPoints = 0;
+    // 일반 등급 스탯 카드가 고를 수 있는 스탯. **여기서 빌드 축이 갈린다** —
+    // 화력(공격력·공속)이냐 생존(방어력·잠식 최대치)이냐.
+    uint8_t  statCardPool[8] = {0};
+    uint32_t statCardPoolSize = 0;
 
     int64_t needFor(int32_t level) const {
         if (level < 1) return 0;

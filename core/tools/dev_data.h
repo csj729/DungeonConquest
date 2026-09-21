@@ -55,6 +55,15 @@ constexpr int32_t RELIC_BASE[6]   = {10, 400, 100, 150, 3, 200};
 constexpr uint32_t LEGEND_POOL_SIZE = 9;
 constexpr uint32_t CARDS_PER_LEVEL  = 3;
 constexpr int32_t  EXP_PER_EHP_PERMILLE = 1000;
+// data/segments.json — 잡몹 294 × 1점 + 엘리트 19 × 10점
+constexpr int32_t  CLEAR_TARGET_POINTS  = 484;
+// 일반 등급 스탯 카드 풀. **여기서 빌드 축이 갈린다** —
+// 화력(공격력·공속)이냐 생존(방어력·잠식 최대치)이냐.
+constexpr uint8_t  STAT_CARD_POOL[4] = {
+    static_cast<uint8_t>(Stat::AttackPower),
+    static_cast<uint8_t>(Stat::AttackSpeed),
+    static_cast<uint8_t>(Stat::Armor),
+    static_cast<uint8_t>(Stat::CorruptionMax)};
 
 constexpr int32_t  TRASH_ATTACK_RANGE_MILLITILE = 1400;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
@@ -109,6 +118,9 @@ inline SimConfig devConfig() {
     c.legendPoolSize     = LEGEND_POOL_SIZE;
     c.cardsPerLevel      = CARDS_PER_LEVEL;
     c.expPerEhpPermille  = EXP_PER_EHP_PERMILLE;
+    c.clearTargetPoints  = CLEAR_TARGET_POINTS;
+    c.statCardPoolSize   = sizeof(STAT_CARD_POOL) / sizeof(STAT_CARD_POOL[0]);
+    for (uint32_t i = 0; i < c.statCardPoolSize; ++i) c.statCardPool[i] = STAT_CARD_POOL[i];
 
     // data/skills.json — 전사 액티브 3종
     struct S { int32_t mult, weight; bool aoe; };

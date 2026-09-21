@@ -120,6 +120,13 @@ struct HeroState {
     }
 };
 
+// 런의 끝. 몬테카를로 하네스가 이 값을 집계한다 (§14).
+enum class RunOutcome : uint8_t {
+    Running = 0,
+    Cleared = 1,   // 보스 처치
+    Dead    = 2,   // 잠식 게이지 만충
+};
+
 // 런 진행 — 맵·구간·클리어 게이지 (§2).
 struct RunState {
     int32_t mapIndex     = 0;   // 0 기반
@@ -127,7 +134,12 @@ struct RunState {
     int32_t clearPoints  = 0;   // 처치 포인트 누적 (잡몹 1 · 엘리트 10)
     int32_t killedTrash  = 0;
     int32_t killedElite  = 0;
-    bool    bossAlive    = false;
+    bool       bossAlive    = false;
+    bool       bossSpawned  = false;
+    RunOutcome outcome      = RunOutcome::Running;
+    int32_t    endTick      = 0;
+
+    bool over() const { return outcome != RunOutcome::Running; }
 
     // 전체 24구간 중 몇 번째인가. 동시 생존 상한 램프가 이 값을 쓴다 —
     // **맵 내 인덱스가 아니라 전역 인덱스다.** 맵별로 재시작하면 1맵과
@@ -143,6 +155,9 @@ struct RunState {
         h.feed(killedTrash);
         h.feed(killedElite);
         h.feed(bossAlive);
+        h.feed(bossSpawned);
+        h.feed(static_cast<uint8_t>(outcome));
+        h.feed(endTick);
         // globalSegment()는 [파생] — mapIndex·segmentIndex의 함수다
     }
 };

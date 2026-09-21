@@ -63,9 +63,19 @@ inline CardOffer rollCard(World& w, const SimConfig& cfg, const CardOfferSet& ta
 
     if (c.grade == 0) {
         // 일반 — 기본 스탯. **위력 증가분이 곧 등급 예산이다** (§4).
-        c.kind    = CardKind::StatBoost;
-        c.entryId = 0;
-        c.value   = Fixed::fromPermille(cfg.cardGradeBudget[0]);
+        // 어떤 스탯인지가 빌드 축을 가른다. 같은 화면 중복은 여기도 적용된다.
+        c.kind = CardKind::StatBoost;
+        c.value = Fixed::fromPermille(cfg.cardGradeBudget[0]);
+        if (cfg.statCardPoolSize == 0) { c.entryId = 0; return c; }
+        bool alive[8];
+        uint32_t n = 0;
+        for (uint32_t i = 0; i < cfg.statCardPoolSize && i < 8; ++i) {
+            alive[i] = !taken.contains(CardKind::StatBoost, cfg.statCardPool[i]);
+            if (alive[i]) ++n;
+        }
+        if (n == 0) { c.entryId = cfg.statCardPool[0]; return c; }
+        const int32_t pick = pickNth(alive, cfg.statCardPoolSize, w.rngCards.range(n));
+        c.entryId = cfg.statCardPool[pick >= 0 ? static_cast<uint32_t>(pick) : 0];
         return c;
     }
 
@@ -124,8 +134,10 @@ inline bool chooseCard(World& w, const SimConfig& cfg, uint32_t index) {
 
     switch (c.kind) {
         case CardKind::StatBoost:
-            // 위력 증가분을 공격력에 얹는다. PercentAdd는 누적합이라 순서 무관이다 (§9).
-            w.hero.stats.addPctAdd(Stat::AttackPower, c.value);
+            // PercentAdd는 누적합이라 순서 무관이다 (§9).
+            if (c.entryId < STAT_COUNT) {
+                w.hero.stats.addPctAdd(static_cast<Stat>(c.entryId), c.value);
+            }
             break;
         case CardKind::Engraving:
             if (c.entryId < MAX_ENGRAVINGS) w.cards.engrave[c.entryId] += c.value;

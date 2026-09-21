@@ -79,9 +79,14 @@ target_link_libraries(dc_recipe_bench PRIVATE dc_core)
 add_executable(dc_field tools/dc_field.cpp)
 target_link_libraries(dc_field PRIVATE dc_core)
 
+# 몬테카를로 밸런싱 하네스. 헤드리스 N판 → 클리어율 분포 (§14-11).
+add_executable(dc_montecarlo tools/dc_montecarlo.cpp)
+target_link_libraries(dc_montecarlo PRIVATE dc_core)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(dc_checksum PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_prd PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_recipe_bench PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_field PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(dc_montecarlo PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()

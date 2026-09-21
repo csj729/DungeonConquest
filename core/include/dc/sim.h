@@ -32,12 +32,30 @@ inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
     w.hero.target = selectTarget(w.entities, w.hero.posX, w.hero.posY, w.hero.manualTarget);
     w.notifyTargetChanged();          // 타겟 의존 조건부 모디파이어 재평가
 
-    movementRun(w, cfg);              // 영웅 → 타겟, 몹 → 영웅. 양쪽 다 추격뿐
+    // **분리가 이동보다 먼저다. 순서를 바꾸면 전투가 멎는다.**
+    //
+    // 분리를 이동 뒤에 두면 마지막 발언권이 제약에 넘어간다 — 이동이 사거리
+    // 안으로 들여놓은 타겟을 분리가 도로 밀어내고, 전투는 밀려난 좌표를 본다.
+    // 실측에서 영웅이 타겟을 2.877타일까지 따라붙었는데(사거리 3.0) 분리가
+    // 3.027로 되돌려 **매 틱 빗나갔다.** 잡몹 무리에 둘러싸인 채 엘리트를
+    // 쫓는 동안 1200초 내내 처치 0 — 런이 영구 교착에 빠진다.
+    //
+    // 분리를 앞에 두면 이동이 마지막 발언권을 갖고 전투는 이동의 결과를 본다.
+    // 첫 링 반지름은 변하지 않는다 — 분리가 몹을 영웅 이격(1.0)까지 밀어낸 뒤
+    // 이동이 사거리(1.4)로 좁히려 해도 이미 안쪽이라 움직이지 않는다.
     separationRun(w, cfg, scratch);   // 적 간 충돌 — 균등 그리드를 쓰는 유일한 곳
+    movementRun(w, cfg);              // 영웅 → 타겟, 몹 → 영웅. 양쪽 다 추격뿐
     qteRun(w, cfg);                   // 창이 닫힐 틱이면 판정 적용 — 전투보다 먼저
     combatRun(w, cfg);                // 사거리 안이면 공격 · 잠식 충전
 
     w.endTick();                      // 죽음 일괄 적용 (틱 종료 압축)
+
+    // 게임오버는 잠식 게이지 하나로 통합돼 있다 (§2) — HP와 몬스터 수 상한을
+    // 한 게이지가 흡수하므로 조건이 하나뿐이다.
+    if (!w.run.over() && w.hero.dead()) {
+        w.run.outcome = RunOutcome::Dead;
+        w.run.endTick = w.tickCount();
+    }
 }
 
 }  // namespace dc

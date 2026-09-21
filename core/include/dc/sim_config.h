@@ -84,8 +84,14 @@ struct SimConfig {
     // ── 잠식 회복 (§2) ──
     // 유입이 구간 2 이후 초당 26~34라 **회복은 선택이 아니라 전제다.**
     // 없으면 잠식 1250이 45초에 가득 차는데 맵 통과는 최소 210초다.
-    int32_t purgePerClearPoint = 0;   // 클리어 게이지 1점당 정화량 — 전진이 곧 회복
     int32_t segmentClearPurge  = 0;   // 구간 진입 시 일괄 정화
+
+    // 회복 구슬 — 잡몹은 확률, 엘리트는 무조건 드랍한다.
+    int32_t orbTrashDropPermille = 0;
+    int32_t orbTrashAmount       = 0;
+    int32_t orbEliteAmount       = 0;
+    int32_t orbPickupRadiusMilli = 0;
+    int32_t orbLifetimeTicks     = 0;
 
     // ── 클리어 게이지 (segments.json) ──
     int32_t trashPoints          = 0;

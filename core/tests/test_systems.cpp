@@ -443,28 +443,75 @@ int main() {
         CHECK_EQ(w.hero.corruption.raw, Fixed(400).raw);
     }
 
-    dctest::section("처치 정화 — 전진이 곧 회복이다");
+    dctest::section("회복 구슬 — 잡몹은 확률 · 엘리트는 무조건");
     {
-        // 잡몹 1점과 엘리트 10점이 **포인트 비율 그대로** 정화된다
+        // 엘리트는 **무조건** 드랍한다
         World w = makeWorld(22);
-        w.hero.corruption = Fixed(1000);
-        const EntityId a = w.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0), 1), 0, 22);
-        w.hero.target = a;
+        const EntityId e = w.entities.spawn(mob(Archetype::Elite, 20, Fixed(1), Fixed(0), 1), 0, 22);
+        w.hero.target = e;
         combatRun(w, cfg);
-        const int32_t afterTrash = w.hero.corruption.raw;
-        CHECK_EQ(Fixed(1000).raw - afterTrash,
-                 Fixed(cfg.trashPoints * cfg.purgePerClearPoint).raw);
+        CHECK_EQ(w.orbs.count, 1u);
+        CHECK_EQ(w.orbs.amount[0], cfg.orbEliteAmount);
 
-        World w2 = makeWorld(23);
+        // 잡몹은 확률이다 — 200판을 돌려 밴드 안인지 본다
+        int32_t drops = 0;
+        for (int32_t seed = 0; seed < 200; ++seed) {
+            World t = makeWorld(static_cast<uint64_t>(1000 + seed));
+            const EntityId a = t.entities.spawn(mob(Archetype::Trash, 0, Fixed(1), Fixed(0), 1),
+                                                0, static_cast<uint64_t>(1000 + seed));
+            t.hero.target = a;
+            combatRun(t, cfg);
+            drops += static_cast<int32_t>(t.orbs.count);
+            if (t.orbs.count > 0) CHECK_EQ(t.orbs.amount[0], cfg.orbTrashAmount);
+        }
+        // 기대 200 × 20% = 40. 이항분포 표준편차 5.7이라 ±4σ로 잡는다
+        CHECK(drops > 17 && drops < 63);
+        printf("    잡몹 200회 처치 → 구슬 %d개 (기대 %d, 드랍률 %d‰)\n",
+               drops, 200 * cfg.orbTrashDropPermille / 1000, cfg.orbTrashDropPermille);
+    }
+
+    dctest::section("회복 구슬 — 반경 안에서만 주워지고 수명이 지나면 사라진다");
+    {
+        const Fixed r = Fixed::fromPermille(cfg.orbPickupRadiusMilli);
+        World w = makeWorld(27);
+        w.hero.corruption = Fixed(1000);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+
+        // 반경 밖 — 주워지지 않는다
+        w.orbs.push(r + Fixed(1), Fixed{}, 100, 10000);
+        orbRun(w, cfg);
+        CHECK_EQ(w.orbs.count, 1u);
+        CHECK_EQ(w.hero.corruption.raw, Fixed(1000).raw);
+
+        // 반경 안 — 주워지고 그만큼 정화된다
+        w.orbs.push(Fixed{}, Fixed{}, 100, 10000);
+        orbRun(w, cfg);
+        CHECK_EQ(w.orbs.count, 1u);                       // 밖의 것만 남는다
+        CHECK_EQ(w.hero.corruption.raw, Fixed(900).raw);
+
+        // **수명이 지나면 줍지 않아도 사라진다** — 흘린 구슬이 실제 비용이 된다
+        World w2 = makeWorld(28);
         w2.hero.corruption = Fixed(1000);
-        const EntityId e = w2.entities.spawn(mob(Archetype::Elite, 20, Fixed(1), Fixed(0), 1), 0, 23);
-        w2.hero.target = e;
-        combatRun(w2, cfg);
-        CHECK_EQ(Fixed(1000).raw - w2.hero.corruption.raw,
-                 Fixed(cfg.elitePoints * cfg.purgePerClearPoint).raw);
-        printf("    잡몹 %d · 엘리트 %d 정화 (포인트 × %d)\n",
-               cfg.trashPoints * cfg.purgePerClearPoint,
-               cfg.elitePoints * cfg.purgePerClearPoint, cfg.purgePerClearPoint);
+        w2.orbs.push(r + Fixed(1), Fixed{}, 100, w2.tickCount() + 1);
+        w2.beginTick();
+        orbRun(w2, cfg);
+        CHECK_EQ(w2.orbs.count, 0u);
+        CHECK_EQ(w2.hero.corruption.raw, Fixed(1000).raw);   // 회복 없이 소멸
+    }
+
+    dctest::section("회복 구슬 — 가득 차면 가장 먼저 사라질 것을 밀어낸다");
+    {
+        World w = makeWorld(29);
+        for (uint32_t i = 0; i < OrbState::MAX_ORBS; ++i) {
+            w.orbs.push(Fixed(1000), Fixed{}, 1, 500 + static_cast<int32_t>(i));
+        }
+        CHECK_EQ(w.orbs.count, OrbState::MAX_ORBS);
+        CHECK_EQ(w.orbs.expireTick[0], 500);
+        w.orbs.push(Fixed(1000), Fixed{}, 7, 9999);        // 새 구슬
+        CHECK_EQ(w.orbs.count, OrbState::MAX_ORBS);
+        CHECK_EQ(w.orbs.expireTick[0], 501);                // 가장 이른 것이 밀려났다
+        CHECK_EQ(w.orbs.amount[OrbState::MAX_ORBS - 1], 7); // 새 것이 들어왔다
+        // 드랍을 조용히 버리면 물량이 많은 후반에 회복이 말라붙는다
     }
 
     dctest::section("구간 진입 정화 — 건너뛴 칸 수만큼 준다");

@@ -163,6 +163,65 @@ struct RunState {
 };
 
 // 스폰 (§2). 동시 생존 상한을 유지하는 방식이라 "다음 웨이브" 같은 상태가 없다.
+// 잠식 회복 구슬 (§2) — **처치가 회복으로 바뀌는 통로다.**
+//
+// 즉시 회복이 아니라 드랍·습득 2단계로 두는 이유는 **위치를 1급 요소로 유지**하기
+// 위해서다. 영웅은 추격 후 공격만 하므로(§3) 구슬을 주우러 돌아가지 않는다 —
+// 멀리 있는 엘리트를 쫓으면 뒤에 흘린 구슬이 그대로 소멸한다. 즉 "무엇을 언제
+// 때릴지"가 회복량까지 정하게 되고, 타겟 선택의 손잡이가 하나 더 늘지 않는다.
+//
+// EntityStore에 넣지 않는다 — 구슬은 전투 대상이 아니라서 타게팅·분리·충돌
+// 전부가 낭비다. 배열 하나면 된다.
+struct OrbState {
+    static constexpr uint32_t MAX_ORBS = 256;
+
+    // [상태] — 전부 체크섬 입력이다
+    Fixed    posX[MAX_ORBS]{};
+    Fixed    posY[MAX_ORBS]{};
+    int32_t  amount[MAX_ORBS]{};       // 정화량
+    int32_t  expireTick[MAX_ORBS]{};   // 이 틱에 사라진다
+    uint32_t count = 0;
+
+    // **안정 압축**이다 (EntityStore와 같은 규칙). swap-remove를 쓰면 배열 순서가
+    // 습득 순서에 의존해 디버깅이 어려워진다.
+    void removeAt(uint32_t i) {
+        if (i >= count) return;
+        for (uint32_t k = i + 1; k < count; ++k) {
+            posX[k - 1] = posX[k];
+            posY[k - 1] = posY[k];
+            amount[k - 1] = amount[k];
+            expireTick[k - 1] = expireTick[k];
+        }
+        --count;
+    }
+
+    // 가득 차면 **가장 먼저 사라질 구슬을 밀어낸다.** 드랍을 조용히 버리면
+    // 물량이 많은 후반에 회복이 말라붙는데, 그건 밀도가 높을수록 회복이 쉬워야
+    // 한다는 설계 의도와 정반대다.
+    bool push(Fixed x, Fixed y, int32_t amt, int32_t expire) {
+        if (amt <= 0) return false;
+        if (count >= MAX_ORBS) {
+            uint32_t oldest = 0;
+            for (uint32_t i = 1; i < count; ++i) {
+                if (expireTick[i] < expireTick[oldest]) oldest = i;
+            }
+            removeAt(oldest);
+        }
+        posX[count] = x; posY[count] = y;
+        amount[count] = amt; expireTick[count] = expire;
+        ++count;
+        return true;
+    }
+
+    void hashInto(Hasher& h) const {
+        h.feed(count);
+        for (uint32_t i = 0; i < count; ++i) {
+            h.feed(posX[i]); h.feed(posY[i]);
+            h.feed(amount[i]); h.feed(expireTick[i]);
+        }
+    }
+};
+
 struct SpawnState {
     int32_t  nextSpawnTick   = 0;
     uint32_t directionCursor = 0;   // 4방향 균등 배분. 나머지 배분 순서를 고정한다
@@ -188,6 +247,7 @@ public:
         hero  = HeroState{};
         run   = RunState{};
         spawn = SpawnState{};
+        orbs  = OrbState{};
         hero.stats.init(nullptr, nullptr);   // 데이터 로더가 붙으면 여기로 값이 온다
         // 인벤토리는 RecipeTable이 있어야 init할 수 있으므로 여기서는 완전 초기화만
         // 한다. 호출자가 데이터를 로드한 뒤 inventory.init(table)을 부른다.
@@ -254,6 +314,7 @@ public:
         {
             Hasher h;
             spawn.hashInto(h);
+            orbs.hashInto(h);    // 구슬은 스폰이 만들어낸 상태다
             c.spawn = h.value();
         }
         {
@@ -392,6 +453,7 @@ public:
     CardState   cards{};
     RunState    run{};
     SpawnState  spawn{};
+    OrbState    orbs{};
 
     Rng rngSpawn{};
     Rng rngCombat{};

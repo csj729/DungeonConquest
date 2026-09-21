@@ -82,8 +82,12 @@ inline SimConfig devConfig() {
     c.corruptionThreshold              = 20;
     c.corruptionPerMobPermille         = 600;
     c.corruptionOverflowMultPermille   = 3000;
-    c.purgePerClearPoint               = 6;      // progression.json
     c.segmentClearPurge                = 150;    // progression.json
+    c.orbTrashDropPermille             = 200;    // progression.json
+    c.orbTrashAmount                   = 45;
+    c.orbEliteAmount                   = 150;
+    c.orbPickupRadiusMilli             = 1500;
+    c.orbLifetimeTicks                 = 200;
 
     // data/spawn.json
     for (int32_t i = 0; i < 24; ++i) c.capBySegment[i]   = CAP_BY_SEGMENT[i];

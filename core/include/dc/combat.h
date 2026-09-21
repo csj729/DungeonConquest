@@ -139,13 +139,23 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
                           * (cfg.armorK + toInt(w.entities.armor[i])) / (cfg.armorK > 0 ? cfg.armorK : 1);
         gainExp(w, cfg, ehp * cfg.expPerEhpPermille / 1000);
     }
-    // **전진이 곧 회복이다** (§2). 정화량을 처치 수가 아니라 클리어 게이지
-    // 충전량에 묶으므로 엘리트(10점)는 잡몹(1점)의 10배를 정화한다. 구간 램프가
-    // 처치율을 1 → 4점/초로 올리면 정화도 같이 올라간다 — 곡선이 하나로 끝난다.
+    // ── 회복 구슬 드랍 (§2) ──
+    // **잡몹은 확률, 엘리트는 무조건이다.** 잡몹 쪽 확률은 기댓값을 유지하면서
+    // 분산을 만들어 "운 좋게 버티는 순간"을 열고, 엘리트 쪽 확정은 10~25초를
+    // 들인 위험에 확실한 보상을 준다 — 확률로 두면 체감이 도박이 된다.
+    //
+    // 드랍 위치는 **죽은 자리**다. 즉시 회복이 아니라서 영웅이 그 자리에 있어야
+    // 주워진다 — 멀리 있는 엘리트를 쫓는 동안 흘린 구슬은 그대로 소멸한다.
+    const int32_t orbExpire = w.tickCount() + cfg.orbLifetimeTicks;
     if (w.entities.archetype[i] == Archetype::Trash) {
         ++w.run.killedTrash;
         w.run.clearPoints += cfg.trashPoints;
-        w.purgeCorruption(Fixed(cfg.trashPoints * cfg.purgePerClearPoint));
+        // **굴림은 처치할 때마다 한 번씩** — 드랍 여부와 무관하게 소비해야
+        // 난수 소비 횟수가 처치 수만의 함수가 된다 (리플레이 안정성).
+        if (w.rngItems.chancePermille(cfg.orbTrashDropPermille)) {
+            w.orbs.push(w.entities.posX[i], w.entities.posY[i],
+                        cfg.orbTrashAmount, orbExpire);
+        }
     } else if (w.entities.archetype[i] == Archetype::Boss) {
         // **보스 처치가 곧 클리어다** (§2).
         w.run.bossAlive = false;
@@ -156,7 +166,7 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
     } else {
         ++w.run.killedElite;
         w.run.clearPoints += cfg.elitePoints;
-        w.purgeCorruption(Fixed(cfg.elitePoints * cfg.purgePerClearPoint));
+        w.orbs.push(w.entities.posX[i], w.entities.posY[i], cfg.orbEliteAmount, orbExpire);
     }
     return dealt;
 }
@@ -242,6 +252,28 @@ inline void qteRun(World& w, const SimConfig& cfg) {
         ++w.entities.ccTriggerCount[i];
         w.entities.groggyLeft[i] = cfg.groggyTicks;
         w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i] | EntityFlag::Groggy);
+    }
+}
+
+// 구슬 습득·소멸. **전투보다 먼저 돈다** — 이번 틱에 받을 피해보다 먼저
+// 회복이 들어와야 "아슬아슬하게 버텼다"가 성립한다. 반대로 두면 같은 틱에
+// 죽은 뒤 구슬이 주워지는 순서가 되어 회복이 한 틱씩 늦게 체감된다.
+//
+// 순회는 뒤에서 앞으로 한다 — 안정 압축이 뒤쪽을 당겨오므로 앞으로 돌면
+// 제거 직후의 원소를 건너뛴다.
+inline void orbRun(World& w, const SimConfig& cfg) {
+    if (w.orbs.count == 0) return;
+    const int64_t r = (static_cast<int64_t>(cfg.orbPickupRadiusMilli) * Fixed::ONE_RAW) / 1000;
+    const int64_t r2 = r * r;
+
+    for (int32_t i = static_cast<int32_t>(w.orbs.count) - 1; i >= 0; --i) {
+        const uint32_t k = static_cast<uint32_t>(i);
+        if (w.tickCount() >= w.orbs.expireTick[k]) { w.orbs.removeAt(k); continue; }
+        const int64_t dx = static_cast<int64_t>(w.orbs.posX[k].raw) - w.hero.posX.raw;
+        const int64_t dy = static_cast<int64_t>(w.orbs.posY[k].raw) - w.hero.posY.raw;
+        if (dx * dx + dy * dy > r2) continue;
+        w.purgeCorruption(Fixed(w.orbs.amount[k]));
+        w.orbs.removeAt(k);
     }
 }
 

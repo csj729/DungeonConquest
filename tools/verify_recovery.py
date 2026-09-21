@@ -18,7 +18,14 @@
 from gamedata import PROGRESSION as _PROG, HERO as _HERO, SEGMENTS_DATA as _SEG
 
 CORRUPTION_MAX = _HERO["corruption_max"]
-PURGE_PER_POINT = _PROG["purge_per_clear_point"]
+ORB_TRASH_RATE = _PROG["orb_trash_drop_permille"] / 1000.0
+ORB_TRASH_AMT = _PROG["orb_trash_amount"]
+ORB_ELITE_AMT = _PROG["orb_elite_amount"]
+# 습득률 — 구슬은 죽은 자리에 떨어지고 영웅은 주우러 가지 않는다(§3).
+# 실측(12시드 × 600초, 구간 진입 정화분을 뺀 구슬만): 전체 40%.
+# **구간이 갈수록 떨어진다** — 1구간 63% → 7구간 39%. 멀리 있는 엘리트를 쫓을수록
+# 뒤에 흘린 구슬이 소멸하기 때문이고, 이것이 드랍·습득 2단계로 둔 이유 그 자체다.
+ORB_PICKUP_RATE = 0.40
 SEGMENT_PURGE = _PROG["segment_clear_purge"]
 SEGMENTS = _SEG["segment_start_points"]
 CLEAR_TARGET = _SEG["clear_target_points"]
@@ -43,10 +50,16 @@ TARGET_BASELINE_COVERAGE = (0.55, 0.80)   # 기저 정화(처치+구간)가 덮�
 TARGET_BASELINE_CLEARS = False            # 기저만으로는 완주하지 못해야 한다
 
 
-def segment_points(i):
-    """구간 i(0 기반)에서 버는 클리어 포인트."""
-    nxt = SEGMENTS[i + 1] if i + 1 < len(SEGMENTS) else CLEAR_TARGET
-    return nxt - SEGMENTS[i]
+def segment_kills(i):
+    """구간 i(0 기반)에서 잡는 잡몹·엘리트 수."""
+    seg = _SEG["segments"][i]
+    return seg["melee"], len(seg["elites"])
+
+
+def orb_value(i):
+    """구간 i에서 드랍되는 구슬의 총 정화량 (습득 전 기댓값)."""
+    trash, elite = segment_kills(i)
+    return trash * ORB_TRASH_RATE * ORB_TRASH_AMT + elite * ORB_ELITE_AMT
 
 
 def report():
@@ -56,9 +69,8 @@ def report():
           f"{'덮는 비율':>9}")
     total_in = total_out = total_sec = 0.0
     for i, (inflow, sec) in enumerate(MEASURED):
-        pts = segment_points(i)
-        # 처치 정화 — 그 구간에서 버는 포인트 전부가 정화로 돌아온다
-        kill_purge = pts * PURGE_PER_POINT / sec
+        # 구슬 정화 — 드랍 기댓값 × 실측 습득률
+        kill_purge = orb_value(i) * ORB_PICKUP_RATE / sec
         # 구간 진입 정화 — 첫 구간은 진입 이벤트가 없다
         entry_purge = (SEGMENT_PURGE / sec) if i > 0 else 0.0
         out = kill_purge + entry_purge
@@ -92,12 +104,12 @@ def report():
     print("  ※ 카드 선택이 결과를 바꾸려면 기저가 완주를 보장하면 안 된다\n")
 
     print("=== 목표 3: 정화가 구간 램프를 따라 올라간다 ===")
-    print("  정화를 처치 수가 아니라 **클리어 포인트**에 묶은 이유를 본다")
-    first = segment_points(0) * PURGE_PER_POINT / MEASURED[0][1]
-    last = segment_points(7) * PURGE_PER_POINT / MEASURED[7][1]
+    print("  구슬 정화가 구간이 진행되며 늘어나는가 — 잡몹 21 → 66마리, 엘리트 0 → 5마리")
+    first = orb_value(0) * ORB_PICKUP_RATE / MEASURED[0][1]
+    last = orb_value(7) * ORB_PICKUP_RATE / MEASURED[7][1]
     good = last > first
     ok &= good
-    print(f"  구간 1 처치 정화 {first:.2f}/초 → 구간 8 {last:.2f}/초 "
+    print(f"  구간 1 구슬 정화 {first:.2f}/초 → 구간 8 {last:.2f}/초 "
           f"{'PASS' if good else 'FAIL'}")
     print("  ※ 구간이 길어질수록 초당 정화는 묽어진다 — 포인트 총량은 늘지만")
     print("     체류 시간이 더 빨리 늘기 때문이다. 이것이 후반 압박의 실체다\n")

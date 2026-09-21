@@ -113,38 +113,16 @@ inline void dealCards(World& w, const SimConfig& cfg) {
     }
 }
 
-// 레벨업 기본 성장 (§4) — **카드와 별개로 레벨 그 자체가 주는 몫이다.**
-//
-// 성장 총량은 레벨업당 +7%이고 그중 절반이 공속, 절반이 한 대 피해로 간다.
-// 배분이 클리어 시간을 바꾸지는 않는다(처리량 = 공속 × 한 대 피해). 바꾸는 것은
-// **잡몹 타수**이고, 타수가 치명타·공격력 성장이 오버킬로 버려지는 정도를 정한다.
-//
-// 누적 배율을 `PercentAdd`로 싣는다. 이전 레벨분을 빼고 새 레벨분을 더하는
-// 방식이라 **레벨이 여러 칸 한 번에 올라도 한 번에 정확히 맞는다** —
-// 레벨마다 곱하면 고정소수점 반올림이 레벨 수만큼 누적된다.
-inline void applyLevelGrowth(World& w, const SimConfig& cfg, int32_t levelBefore) {
-    const Fixed oldSpeed = Fixed::fromPermille(cfg.growthSpeedFor(levelBefore) - 1000);
-    const Fixed oldDmg   = Fixed::fromPermille(cfg.growthDamageFor(levelBefore) - 1000);
-    const Fixed newSpeed = Fixed::fromPermille(cfg.growthSpeedFor(w.hero.level) - 1000);
-    const Fixed newDmg   = Fixed::fromPermille(cfg.growthDamageFor(w.hero.level) - 1000);
-    w.hero.stats.removePctAdd(Stat::AttackSpeed, oldSpeed);
-    w.hero.stats.addPctAdd(Stat::AttackSpeed, newSpeed);
-    w.hero.stats.removePctAdd(Stat::AttackPower, oldDmg);
-    w.hero.stats.addPctAdd(Stat::AttackPower, newDmg);
-}
-
 // 경험치를 넣고, 필요분을 넘으면 레벨업 + 카드 제시.
 // **연속 레벨업도 한 번에 한 화면씩** 처리한다 — 밀린 수는 pendingLevelUps에 쌓인다.
 inline void gainExp(World& w, const SimConfig& cfg, int64_t amount) {
     if (amount <= 0) return;
     w.hero.exp += amount;
-    const int32_t levelBefore = w.hero.level;
     while (w.hero.exp >= cfg.needFor(w.hero.level)) {
         w.hero.exp -= cfg.needFor(w.hero.level);
         ++w.hero.level;
         ++w.cards.pendingLevelUps;
     }
-    if (w.hero.level != levelBefore) applyLevelGrowth(w, cfg, levelBefore);
     if (w.cards.pendingLevelUps > 0 && !w.cards.offer.open()) dealCards(w, cfg);
 }
 

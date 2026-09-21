@@ -125,21 +125,6 @@ struct SimConfig {
     // 필요 경험치는 **파이썬이 지수 곡선을 미리 풀어 담은 정수 표**다.
     // 코어가 실수 거듭제곱을 다시 풀지 않는다 (PRD 상수·스폰 램프와 같은 방식).
     int64_t  levelNeed[MAX_LEVEL_NEED] = {0};
-    // 레벨업 누적 성장 배율 (permille). **파이썬이 거듭제곱을 미리 푼 표다.**
-    // 이게 없으면 레벨업이 스탯을 전혀 올리지 않는다 — 실측에서 레벨 18의
-    // 기본공격 DPS가 레벨 1과 같았다.
-    int32_t  levelGrowthSpeed[MAX_LEVEL_NEED]  = {0};
-    int32_t  levelGrowthDamage[MAX_LEVEL_NEED] = {0};
-
-    // 레벨(1 기반) → 누적 배율. 표 밖은 마지막 값으로 물린다.
-    int32_t growthSpeedFor(int32_t level) const {
-        const uint32_t i = level > 0 ? static_cast<uint32_t>(level - 1) : 0;
-        return i < MAX_LEVEL_NEED ? levelGrowthSpeed[i] : levelGrowthSpeed[MAX_LEVEL_NEED - 1];
-    }
-    int32_t growthDamageFor(int32_t level) const {
-        const uint32_t i = level > 0 ? static_cast<uint32_t>(level - 1) : 0;
-        return i < MAX_LEVEL_NEED ? levelGrowthDamage[i] : levelGrowthDamage[MAX_LEVEL_NEED - 1];
-    }
     int32_t  cardGradeRate[MAX_CARD_GRADES]   = {0};   // permille
     int32_t  cardGradeBudget[MAX_CARD_GRADES] = {0};   // 위력 증가분 permille
     int32_t  cardGradeStep[MAX_CARD_GRADES]   = {0};   // 각인·유물 증가량 비 permille

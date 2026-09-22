@@ -77,8 +77,8 @@ constexpr int32_t DEV_ITEM_SLOW[DEV_ITEM_COUNT] = {0, 0, 0, 10, 10, 0, 0, 0, 0, 
 constexpr uint16_t DEV_COMMON_POOL[9] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
 constexpr RecipeData DEV_RECIPES[42] = {
     {9, 2, {0, 1, ITEM_NONE}},   // Af1
-    {10, 2, {0, 2, ITEM_NONE}},   // Af2
-    {11, 2, {1, 4, ITEM_NONE}},   // Af3
+    {10, 2, {8, 2, ITEM_NONE}},   // Af2
+    {11, 2, {8, 4, ITEM_NONE}},   // Af3
     {12, 2, {3, 4, ITEM_NONE}},   // Ac1
     {13, 2, {3, 5, ITEM_NONE}},   // Ac2
     {14, 2, {4, 6, ITEM_NONE}},   // Ac3
@@ -88,9 +88,9 @@ constexpr RecipeData DEV_RECIPES[42] = {
     {18, 2, {6, 7, ITEM_NONE}},   // As1
     {19, 2, {7, 1, ITEM_NONE}},   // As2
     {20, 2, {6, 0, ITEM_NONE}},   // As3
-    {21, 3, {9, 10, 8}},   // Bf1
+    {21, 2, {9, 10, ITEM_NONE}},   // Bf1
     {22, 2, {11, 9, ITEM_NONE}},   // Bf2
-    {23, 3, {12, 13, 8}},   // Bc1
+    {23, 2, {12, 13, ITEM_NONE}},   // Bc1
     {24, 2, {13, 14, ITEM_NONE}},   // Bc2
     {25, 2, {15, 16, ITEM_NONE}},   // Ba1
     {26, 2, {16, 17, ITEM_NONE}},   // Ba2

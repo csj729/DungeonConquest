@@ -93,6 +93,26 @@ def _check_dev_items():
         return [[int(x) for x in re.findall(r"-?\d+", r)]
                 for r in re.findall(r"\{([^}]*)\}", m.group(1))]
 
+    index_of = {it["id"]: i for i, it in enumerate(rows)}
+
+    def recipe_rows():
+        m = re.search(r"DEV_RECIPES\[\d+\] = \{(.*?)\n\};", src, re.S)
+        if not m:
+            return None
+        out = []
+        for res, cnt, ings in re.findall(r"\{(\w+), (\d+), \{([^}]*)\}\}", m.group(1)):
+            out.append([int(res), int(cnt),
+                        [x.strip() for x in ings.split(",")]])
+        return out
+
+    def want_recipes():
+        out = []
+        for r in items["recipes"]:
+            ing = [str(index_of[i]) for i in r["ingredients"]]
+            ing += ["ITEM_NONE"] * (3 - len(ing))
+            out.append([index_of[r["id"]], len(r["ingredients"]), ing])
+        return out
+
     checks = [
         ("DEV_ITEM_STATS", stat_rows(),
          [[it["stats_permille"].get(k, 0) for k in stat_names] for it in rows]),
@@ -107,6 +127,9 @@ def _check_dev_items():
         ("DEV_TIER_POWER", flat("DEV_TIER_POWER"), items["tier_power_permille"]),
         ("DEV_ITEM_COUNT", [int(re.search(r"DEV_ITEM_COUNT = (\d+)", src).group(1))],
          [len(rows)]),
+        # **조합식 42개도 두 곳에 산다.** 아이템 id는 commons → recipes 순서의
+        # 인덱스이고, 빈 자리는 ITEM_NONE으로 채운다.
+        ("DEV_RECIPES", recipe_rows(), want_recipes()),
     ]
 
     bad = [(n, g, w) for n, g, w in checks if g != w]

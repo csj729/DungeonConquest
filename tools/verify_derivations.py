@@ -186,6 +186,50 @@ def stored_item_stats():
             for it in items["commons"] + items["recipes"]}
 
 
+def recipe_economy():
+    """조합식 42개의 위력 수지 ← 등급 위력 + 조합 프리미엄.
+
+    **조합식의 "무엇과 무엇"은 설계 선택이라 값으로 도출되지 않는다.** 대신
+    그 선택이 사다리의 전제를 지키는지는 도출된다 — `상위 1개 = 하위 2개 ×
+    프리미엄 1.25`가 성립해야 조합이 이득이 되고, 설계가 "1.0이면 조합할 이유가
+    없다"고 적어 둔 것이 이 부등식이다.
+
+    조합식은 세 범주 중 하나여야 한다:
+
+    - **정상** — 재료 2개가 전부 결과 바로 아래 등급. 비율 = 프리미엄
+    - **건너뛰기** — 같은 아이템 3개로 두 등급 위. 비율 = 프리미엄² / 할인.
+      정상 경로로 같은 결과를 만들면 4개가 드는데 3개면 되므로 할인이 4분의 3이고,
+      그 대가가 **같은 아이템 세 개를 모아야 한다**는 조건이다
+    - **그 외** — 위반. 한때 Bf1·Bc1이 여기 있었다 (흔함 하나를 더 쓰는데
+      결과 등급이 같아 비율 1.04). 원인은 C9가 안흔함 조합식 어디에도 안 쓰여서
+      규칙 1을 채우려고 세 번째 재료로 붙어 있던 것이다
+
+    반환은 `{조합식 id: 반올림한 기대 비율(permille)}`이라 어느 조합식이
+    어느 범주에서 벗어났는지 바로 보인다. 분류에 실패하면 0을 넣어
+    저장값(실제 비율)과 반드시 어긋나게 만든다.
+    """
+    items = gd.load("items")
+    grades, tier = items["grades"], items["tier_power_permille"]
+    prem = items["craft_premium_permille"] / 1000
+    disc = items["skip_discount_permille"] / 1000
+    by_id = {it["id"]: it for it in items["commons"] + items["recipes"]}
+
+    want, got = {}, {}
+    for r in items["recipes"]:
+        g = grades.index(r["grade"])
+        ing_g = [grades.index(by_id[i]["grade"]) for i in r["ingredients"]]
+        cost = sum(tier[x] for x in ing_g)
+        got[r["id"]] = round(tier[g] / cost * 1000)
+        if len(r["ingredients"]) == 2 and all(x == g - 1 for x in ing_g):
+            want[r["id"]] = round(prem * 1000)
+        elif all(x == g - 2 for x in ing_g) and len(set(r["ingredients"])) == 1:
+            want[r["id"]] = round(prem * prem / disc * 1000)
+        else:
+            # 분류 밖이면 반드시 걸리게 한다 — 0은 어떤 실제 비율과도 다르다
+            want[r["id"]] = 0
+    return got, want
+
+
 def derive_full_boss_hp():
     """풀 게임 최종 보스 체력 ← 맵 3 보스의 투영.
 
@@ -207,6 +251,7 @@ def derive_full_boss_hp():
 # (이름, 저장값, 도출값, 허용 오차, 근거)
 def checks():
     starts, target = derive_segment_starts()
+    _recipe_got, _recipe_want = recipe_economy()
     return [
         ("segment_start_points", _SG["segment_start_points"], starts, 0,
          "구간 구성 누적 (잡몹 1점 · 엘리트 10점)"),
@@ -232,6 +277,10 @@ def checks():
          "target_sec 밴드 중앙 × DPS × 엘리트 피해 비중 / Armor"),
         ("items[].stats_permille", stored_item_stats(), derive_item_stats(), 0,
          "등급 위력 × 축 배분 / 1000 (half-up)"),
+        # 정수 반올림 때문에 안흔함이 1255 대 1250으로 5permille 뜬다 —
+        # 등급 위력 표가 정수라 생기는 오차이고 0.4%다.
+        ("recipes[] 조합 수지", _recipe_got, _recipe_want, 8,
+         "정상 = 프리미엄 · 건너뛰기 = 프리미엄²/할인 · 그 외는 위반"),
         ("boss.hp (풀 게임)", _MN["boss"]["hp"], derive_full_boss_hp(), 1,
          f"맵 {_PR['maps']} 보스 투영 (verify_exp_curve)"),
     ]
@@ -336,6 +385,9 @@ _POKES = [
     # 생존 축의 armor 배분 — items.json에서 유일한 문자열이라 앵커로 쓴다
     ("data/items.json", '"armor": 600,', '"armor": 610,',
      "items[].stats_permille"),
+    # 건너뛰기 할인 — 이걸 흔들면 Rskip/Eskip 4개가 범주에서 벗어난다
+    ("data/items.json", '"skip_discount_permille": 750,',
+     '"skip_discount_permille": 800,', "recipes[] 조합 수지"),
     ("data/monsters.json", '"hp": 27061,', '"hp": 27200,', "boss.hp"),
 ]
 

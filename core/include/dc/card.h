@@ -63,6 +63,18 @@ enum class RelicId : uint16_t {
 
 constexpr uint16_t relicIndex(RelicId r) { return static_cast<uint16_t>(r); }
 
+// 전설 풀 인덱스. **전설 유물 3종이 앞을 차지하고 뒤는 직업 고유 각인이다**
+// (전사 6종). 고유 각인은 아직 수치가 설계되지 않아 효과가 없다 —
+// 풀에는 남아 있으므로 뽑히기는 하고, 그만큼 전설 기대값이 낮다.
+enum class LegendId : uint16_t {
+    Echo  = 0,   // 무한의 메아리 — 기본 공격 1회 추가 발동
+    Storm = 1,   // 폭풍의 핵 — 영웅 주위 상시 회전 칼날
+    Forge = 2,   // 대장장이의 화로 — 구간 종료 시 아이템 획득 (아이템 효과 미구현)
+    UniqueFirst = 3,   // 3~8: 직업 고유 각인 (미설계)
+};
+
+constexpr uint32_t legendIndexOf(LegendId l) { return static_cast<uint32_t>(l); }
+
 // **뒤에만 덧붙인다** — 값이 바뀌면 기존 리플레이가 깨진다.
 enum class CardKind : uint8_t {
     None      = 0,

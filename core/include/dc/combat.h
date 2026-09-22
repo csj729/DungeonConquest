@@ -477,6 +477,33 @@ inline void decayRun(World& w, const SimConfig& cfg) {
     }
 }
 
+// RL_STORM(폭풍의 핵) — **영웅 주위를 상시 도는 칼날.**
+//
+// 회전 위치를 실제로 계산하지 않는다. 칼날이 한 바퀴 도는 시간이 틱보다 짧으므로
+// "반경 안에 있으면 맞는다"와 결과가 같고, 각도 상태를 [상태]로 들고 다니지
+// 않아도 된다 — 연출은 프레젠테이션이 자기 시계로 그리면 그만이다 (§10).
+//
+// 수치는 RL_ECHO와 같은 크기가 되도록 역산했다. ECHO는 기본 공격을 한 번 더
+// 넣어 +10.5 DPS인데, 반경 2.0타일에 평균 5.4마리가 들어오므로(dc_field 실측
+// 타격 비율 0.18 × 상한 30) 대상당 초당 공격력의 19%면 같은 이득이 된다.
+// **다만 축이 다르다** — ECHO는 단일 대상이고 STORM은 밀집도에 비례한다.
+inline void stormRun(World& w, const SimConfig& cfg) {
+    if (!w.cards.legendHas(legendIndexOf(LegendId::Storm))) return;
+    if (cfg.stormDpsPermille <= 0 || cfg.tickHz <= 0 || cfg.stormRadius.raw <= 0) return;
+
+    const Fixed perTick = (w.hero.stats.value(Stat::AttackPower)
+                        * Fixed::fromPermille(cfg.stormDpsPermille)
+                        * heroPowerMult(w, cfg)) / cfg.tickHz;
+    if (perTick.raw <= 0) return;
+
+    uint32_t hit[config::MAX_ENTITIES];
+    const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
+                                       cfg.stormRadius, hit, config::MAX_ENTITIES);
+    // **onHit 각인을 태우지 않는다** — 매 틱 도는 지속 피해에 부식·관통이 붙으면
+    // 각인 하나가 초당 20회 발동하는 꼴이 되어 예산이 통째로 무너진다.
+    for (uint32_t k = 0; k < n; ++k) applySkillHit(w, cfg, hit[k], perTick, false);
+}
+
 // R_BOLT(뇌전의 성물) — 주기마다 무작위 적 하나에 공격력 비례 피해.
 //
 // **틱 카운터로 주기를 잡는다** — 실시간 참조가 없어 결정론에 안전하다(문서 §2).
@@ -573,6 +600,17 @@ inline void combatRun(World& w, const SimConfig& cfg) {
 
             applySkillHit(w, cfg, i, dmg);
             applyPierce(w, cfg, i, dmg);
+
+            // RL_ECHO(무한의 메아리) — **기본 공격이 한 번 더 나간다.**
+            // proc은 굴리지 않는다(문서 §3). 파워는 크지만 영향이 "기본 공격 횟수"
+            // 하나에 갇히므로 QTE 예산에 아무 영향이 없다 — 초안이던 "proc을 한 번
+            // 더 굴린다"는 이득이 더 작으면서 구간당 스킬 발동을 6.8회로 밀어올려
+            // 쿨다운이 강제 개입해야 했다.
+            if (w.cards.legendHas(legendIndexOf(LegendId::Echo))
+                && !w.entities.deadAt(i)) {
+                applySkillHit(w, cfg, i, dmg);
+                applyPierce(w, cfg, i, dmg);
+            }
             w.hero.attackCooldown = heroAttackInterval(w, cfg);
         }
     }

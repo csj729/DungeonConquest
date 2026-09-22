@@ -119,6 +119,9 @@ struct SimConfig {
     int32_t  rageMaxStacks     = 0;
     int32_t  boltIntervalTicks = 0;
     Fixed    frostRadius{};
+    // RL_STORM(폭풍의 핵) — 반경과 초당 피해(공격력 대비 permille)
+    Fixed    stormRadius{};
+    int32_t  stormDpsPermille = 0;
     // 타겟 우선순위 거리 감쇠 (타일당). 닿을 수 없는 표적에 묶이지 않게 한다.
     int32_t  targetPriorityFalloffPerTile = 0;
 

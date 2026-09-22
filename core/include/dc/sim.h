@@ -50,6 +50,7 @@ inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
     movementRun(w, cfg);              // 영웅 → 타겟, 몹 → 영웅. 양쪽 다 추격뿐
     decayRun(w, cfg);                 // E_DECAY 도트 — 전투보다 먼저(도트로 죽을 적은 못 때린다)
     boltRun(w, cfg);                  // R_BOLT 주기 방전 — 도트와 같은 이유로 전투보다 먼저
+    stormRun(w, cfg);                 // RL_STORM 상시 회전 칼날 — 같은 이유로 전투보다 먼저
     orbRun(w, cfg);                   // 구슬 습득·소멸 — 전투보다 먼저(회복이 피해에 앞선다)
     qteRun(w, cfg);                   // 창이 닫힐 틱이면 판정 적용 — 전투보다 먼저
     combatRun(w, cfg);                // 사거리 안이면 공격 · 잠식 충전

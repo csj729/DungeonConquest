@@ -57,6 +57,8 @@ constexpr int32_t  RAGE_DURATION_TICKS    = 100;    // 5초
 constexpr int32_t  RAGE_MAX_STACKS        = 10;     // 등급 무관 고정
 constexpr int32_t  BOLT_INTERVAL_TICKS    = 120;    // 6초
 constexpr int32_t  FROST_RADIUS_MILLITILE = 4000;
+constexpr int32_t  STORM_RADIUS_MILLITILE = 2000;
+constexpr int32_t  STORM_DPS_PERMILLE     = 190;
 constexpr int32_t  PIERCE_WIDTH_MILLITILE  = 700;   // 직선 판정 반폭
 constexpr int32_t  PIERCE_LENGTH_MILLITILE = 3000;  // 타겟 뒤로 닿는 거리
 constexpr int32_t  SWARM_RADIUS_MILLITILE = 2500;
@@ -134,6 +136,8 @@ inline SimConfig devConfig() {
     c.rageMaxStacks     = RAGE_MAX_STACKS;
     c.boltIntervalTicks = BOLT_INTERVAL_TICKS;
     c.frostRadius       = Fixed::fromPermille(FROST_RADIUS_MILLITILE);
+    c.stormRadius       = Fixed::fromPermille(STORM_RADIUS_MILLITILE);
+    c.stormDpsPermille  = STORM_DPS_PERMILLE;
     c.targetPriorityFalloffPerTile = TARGET_PRIORITY_FALLOFF_PER_TILE;
     c.qteCooldownTicks          = HERO_QTE_COOLDOWN_TICKS;
     c.qtePerfectWindowTicks     = HERO_QTE_PERFECT_WINDOW;

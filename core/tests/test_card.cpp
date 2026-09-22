@@ -593,5 +593,84 @@ int main() {
         }
     }
 
+    dctest::section("전설 — 판의 규칙을 바꾸는 급");
+    {
+        auto spawnAt = [&](World& w, Fixed x, Fixed y, int32_t hp) {
+            SpawnDesc d;
+            d.posX = x; d.posY = y;
+            d.maxHp = Fixed(hp);
+            d.archetype = Archetype::Trash; d.attackRange = Fixed(1);
+            return w.entities.spawn(d, 0, 12);
+        };
+
+        // ── RL_ECHO(무한의 메아리) — 기본 공격이 한 번 더 ──
+        {
+            auto damageIn = [&](bool echo) {
+                World w; w.init(12); dev::applyHeroBaseline(w);
+                if (echo) w.cards.legendTake(legendIndexOf(LegendId::Echo));
+                const EntityId t = spawnAt(w, Fixed(1), Fixed{}, 100000);
+                w.hero.target = t;
+                w.beginTick(); combatRun(w, cfg); w.endTick();
+                return w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(t))];
+            };
+            const Fixed plain = damageIn(false);
+            const Fixed echo  = damageIn(true);
+            CHECK(plain.raw > 0);
+            // 기본 공격이 정확히 2회분이 된다 (스킬 proc은 시드에 따라 섞이므로 밴드로 본다)
+            const double ratio = (double)echo.raw / plain.raw;
+            CHECK(ratio > 1.9 && ratio < 2.1);
+            printf("    RL_ECHO: 한 틱 피해 %.2f배\n", ratio);
+        }
+
+        // ── RL_STORM(폭풍의 핵) — 반경 안 전원에게 매 틱 ──
+        {
+            World w; w.init(12); dev::applyHeroBaseline(w);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            const EntityId inside  = spawnAt(w, cfg.stormRadius - Fixed(1), Fixed{}, 100000);
+            const EntityId outside = spawnAt(w, cfg.stormRadius + Fixed(5), Fixed{}, 100000);
+
+            stormRun(w, cfg);   // 전설이 없으면 아무 일도 없다
+            CHECK_EQ(w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(inside))].raw, 0);
+
+            w.cards.legendTake(legendIndexOf(LegendId::Storm));
+            for (int32_t t = 0; t < cfg.tickHz; ++t) stormRun(w, cfg);   // 1초
+            const Fixed hit = w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(inside))];
+            CHECK(hit.raw > 0);
+            // **반경 밖은 안 맞는다** — 밀집도 축이라는 성질이 여기서 나온다
+            CHECK_EQ(w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(outside))].raw, 0);
+            // 초당 공격력의 stormDpsPermille 만큼 (감쇠 없음 · Armor 0)
+            const Fixed want = w.hero.stats.value(Stat::AttackPower)
+                             * Fixed::fromPermille(cfg.stormDpsPermille);
+            CHECK(hit.raw > want.raw * 9 / 10 && hit.raw < want.raw * 11 / 10);
+            printf("    RL_STORM: 반경 %.1f타일 안 1초에 %.2f (목표 %.2f) · 밖은 0\n",
+                   (double)cfg.stormRadius.raw / Fixed::ONE_RAW,
+                   (double)hit.raw / Fixed::ONE_RAW, (double)want.raw / Fixed::ONE_RAW);
+        }
+
+        // ── 폭풍은 onHit 각인을 태우지 않는다 ──
+        {
+            // 매 틱 도는 지속 피해에 부식이 붙으면 각인 하나가 초당 20회 발동하는
+            // 꼴이 되어 예산이 통째로 무너진다.
+            World w; w.init(12); dev::applyHeroBaseline(w);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            w.cards.legendTake(legendIndexOf(LegendId::Storm));
+            w.cards.engrave[engraveIndex(EngraveId::Decay)] = Fixed::fromPermille(300);
+            const EntityId t = spawnAt(w, Fixed(1), Fixed{}, 100000);
+            stormRun(w, cfg);
+            CHECK_EQ(w.entities.decayLeft[static_cast<uint32_t>(w.entities.denseOf(t))], 0);
+        }
+
+        // ── 전설 풀에는 아직 효과 없는 칸이 있다 ──
+        {
+            // 3~8번은 직업 고유 각인 자리인데 수치가 설계되지 않았다.
+            // **풀에는 남아 있어 뽑히므로 그만큼 전설 기대값이 낮다** — 이게 지표 1의
+            // 해석을 흐리는 요인이라 테스트로 사실을 박아둔다.
+            CHECK_EQ(cfg.legendPoolSize, 9u);
+            CHECK_EQ(legendIndexOf(LegendId::UniqueFirst), 3u);
+            printf("    전설 풀 %u칸 중 효과 구현 2칸(ECHO·STORM) · FORGE와 고유 각인 6칸은 미구현\n",
+                   cfg.legendPoolSize);
+        }
+    }
+
     return dctest::summary("test_card");
 }

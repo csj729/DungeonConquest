@@ -117,8 +117,8 @@ inline SimConfig devConfig() {
     c.corruptionOverflowMultPermille   = 3000;
     c.segmentClearPurge                = 150;    // progression.json
     c.orbTrashDropPermille             = 200;    // progression.json
-    c.orbTrashAmount                   = 90;
-    c.orbEliteAmount                   = 300;
+    c.orbTrashAmount                   = 117;
+    c.orbEliteAmount                   = 390;
     c.orbPickupRadiusMilli             = 1500;
     c.bossPhase2AtPermille             = 500;    // monsters.json: boss.phase2_at_permille
     c.bossPhase2Purge                  = 400;    // progression.json

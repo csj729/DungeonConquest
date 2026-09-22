@@ -31,6 +31,16 @@ ORB_ELITE_AMT = _PROG["orb_elite_amount"]
 # 2단계로 둔 이유 그 자체다.
 ORB_PICKUP_RATE = 0.46
 
+# **예산이 아니라 실효로 본다.** 잠식은 0에서 잘리고 구슬은 덩어리라, 잠식이
+# 390보다 낮을 때 엘리트 구슬을 먹으면 초과분이 통째로 버려진다. 예산 기준으로는
+# 97%를 덮는데 하네스 실측은 64.8%다 — 예산을 15% 올려도 실효는 2.8%p만 오른다
+# (1.00배 59.4% → 1.15배 62.2% → 1.30배 64.8%).
+#
+# **닫힌 식으로는 이 값을 못 만든다.** 구간 평균으로 잘라도 76%가 나온다 —
+# 낭비는 구슬 하나 단위로 일어나지 구간 단위로 일어나지 않기 때문이다.
+# 그래서 다른 실측 상수들과 같이 여기에 적어 두고 수치를 바꾸면 다시 잰다.
+REALIZED_COVERAGE = 0.648
+
 # 엘리트 공격이 만든 잠식 (12시드 × 맵 완주). **엘리트 damage를 0으로 둔 런과의
 # 차이로 잰다** — 엘리트가 살아 있는 것만으로 생기는 물량 잠식을 빼고 공격분만 남긴다.
 # balance_baseline.elite_pressure()와 같은 것을 재는 값이라 직접 비교할 수 있다.
@@ -39,6 +49,21 @@ ELITE_MEASURED = 5.9
 # 사거리가 2.0타일이던 때 1.3%까지 떨어져 엘리트 축이 통째로 죽어 있었다.
 ELITE_IN_RANGE = 0.514
 ELITE_IN_RANGE_MIN = 0.40
+# ── 보스전 (실측 · 하네스 24시드 중 도달 15판, 화력) ──────────────
+# **맵 8구간만 보던 도구에 빠져 있던 자리다.** 게이지를 채운 런의 절반 이상이
+# 여기서 죽는데 어느 도구도 보지 않았다. 보스전에는 구간 경계가 없어 숨 돌릴
+# 자리가 하나도 없었고, 그게 boss_phase2_purge가 생긴 이유다.
+BOSS_SEC        = 75.0    # 실측. 설계 밴드는 monsters.json:boss.target_sec 60~90
+BOSS_INFLOW     = 39.3    # /초. 맵 구간(22.8)보다 높다 — 보스 피해가 얹힌다
+BOSS_ORB        = 14.3    # /초. 보스전에도 잡몹 스폰이 상한을 유지해 구슬은 계속 나온다
+BOSS_LEECH      = 6.9     # /초. 회복 카드 몫 (화력 정책 기준)
+BOSS_ARRIVE     = 275.0   # 도달 시 잠식 (최대치 1250)
+BOSS_PHASE2_PURGE = _PROG["boss_phase2_purge"]
+# 보스전 적자가 남은 게이지의 몇 배여야 하는가. **1.0 근처가 목표다** —
+# 훨씬 낮으면 보스전이 잠식과 무관해지고, 훨씬 높으면 회복 카드를 들어도
+# 시간 안에 못 죽이면 지는 판이 되어 빌드가 사라진다.
+BOSS_DECIDED_BAND = (0.7, 1.1)
+
 SEGMENT_PURGE = _PROG["segment_clear_purge"]
 SEGMENTS = _SEG["segment_start_points"]
 CLEAR_TARGET = _SEG["clear_target_points"]
@@ -81,7 +106,6 @@ def report():
     print(f"  {'구간':>4} {'체류초':>7} {'유입/초':>8} {'정화/초':>8} {'수지/초':>8} "
           f"{'덮는 비율':>9}")
     total_in = total_out = total_sec = 0.0
-    realized = 0.0
     for i, (inflow, sec) in enumerate(MEASURED):
         # 구슬 정화 — 드랍 기댓값 × 실측 습득률
         kill_purge = orb_value(i) * ORB_PICKUP_RATE / sec
@@ -90,31 +114,28 @@ def report():
         out = kill_purge + entry_purge
         total_in += inflow * sec
         total_out += out * sec
-        # **넘치는 정화는 버려진다.** 잠식은 0에서 잘리므로 유입보다 많이 정화해도
-        # 다음 구간으로 넘기지 못한다. 예산으로는 덮여 보여도 실제로는 안 덮인다.
-        realized += min(out, inflow) * sec
         total_sec += sec
         print(f"  {i+1:>4} {sec:>7.1f} {inflow:>8.2f} {out:>8.2f} {out - inflow:>8.2f} "
               f"{out / inflow if inflow else 9.99:>8.0%}")
 
     coverage = total_out / total_in
     lo, hi = TARGET_BASELINE_COVERAGE
-    good = lo <= coverage <= hi
+    good = lo <= REALIZED_COVERAGE <= hi
     ok &= good
     print(f"  맵 전체 유입 {total_in:.0f} · 정화 {total_out:.0f} "
-          f"→ 덮는 비율 {coverage:.0%} (목표 {lo:.0%}~{hi:.0%}) "
-          f"{'PASS' if good else 'FAIL'}")
-    print(f"  ※ 이 중 실제로 쓰이는 몫은 {realized / total_in:.0%}다 — **잠식은 0에서 잘려")
-    print("     남는 정화를 다음 구간으로 넘기지 못한다.** 구간 1은 유입 1.2/초에 정화")
-    print("     6.0/초라 5분의 4가 버려진다. 회복을 더 얹을 자리는 초반이 아니라 후반이다")
-    print("     (구간 평균으로 본 값이라 낙관적이다 — 잘림은 틱 단위로 일어난다.")
-    print("      하네스 실측은 63%다: core/tools/dc_montecarlo)")
+          f"→ 예산 {coverage:.0%} · **실효 {REALIZED_COVERAGE:.0%}** "
+          f"(목표 {lo:.0%}~{hi:.0%}) {'PASS' if good else 'FAIL'}")
+    print("  ※ **게이트는 예산이 아니라 실효다.** 잠식은 0에서 잘리고 구슬은 덩어리라,")
+    print("     잠식이 390보다 낮을 때 엘리트 구슬을 먹으면 초과분이 통째로 버려진다.")
+    print("     구간 1이 극단이다 — 유입 1.2/초에 정화가 넘쳐 대부분을 버린다.")
+    print("     그래서 **정화를 후반에 몰아주면 오히려 나빠진다**: 예산을 고정한 채")
+    print("     엘리트 쪽으로 옮기면 클리어가 5.0% → 1.0%(엘리트 85%)로 떨어진다")
     print("  ※ 100%를 넘기면 잠식이 장식이 된다. 50% 아래면 회복 카드가 없는 빌드가")
     print("     확정 실패가 되어 §7의 '실패를 죽음이 아니라 지연으로'가 깨진다\n")
 
     print("=== 목표 2: 기저만으로는 완주하지 못한다 ===")
     # 게이지 1250을 들고 시작해 맵 전체 적자를 견딜 수 있는가
-    deficit = total_in - total_out
+    deficit = total_in * (1 - REALIZED_COVERAGE)
     survives = deficit < CORRUPTION_MAX
     good = survives == TARGET_BASELINE_CLEARS
     ok &= good
@@ -184,6 +205,40 @@ def report():
     print("  ※ 방패병 체력을 실효 300 → 186으로 내릴 때 damage를 33 → 83으로 올린 것이")
     print("     이 값을 지키기 위해서다 — 압박은 `상주 시간 × 피해`이고, 체력만 깎으면")
     print("     상주 시간이 0.4배가 되어 압박 예산이 같이 무너진다.\n")
+
+    print("=== 목표 6: 보스전이 빌드로 갈리는 자리인가 ===")
+    print("  **8구간만 보던 도구에 빠져 있던 자리다.** 게이지를 채운 런의 절반 이상이")
+    print("  여기서 죽는데 어느 도구도 보지 않았다. 보스전에는 구간 경계가 없어")
+    print("  숨 돌릴 자리가 하나도 없었고, 그게 boss_phase2_purge가 생긴 이유다.")
+    print("  맵 구간의 목표 1 + 2와 같은 모양으로 본다 — **기저만으로는 못 버티고,")
+    print("  회복 카드를 들면 버틸 수 있는가.**")
+    ph2 = BOSS_PHASE2_PURGE / BOSS_SEC
+    base_net  = BOSS_INFLOW - (BOSS_ORB + ph2)
+    total_net = base_net - BOSS_LEECH
+    room = CORRUPTION_MAX - BOSS_ARRIVE
+    print(f"  {BOSS_SEC:.0f}초 · 유입 {BOSS_INFLOW:.1f}/초 · 구슬 {BOSS_ORB:.1f}/초 "
+          f"· 페이즈2 {BOSS_PHASE2_PURGE}(1회 = {ph2:.1f}/초) · 흡혈 {BOSS_LEECH:.1f}/초")
+    print(f"  도달 시 잠식 {BOSS_ARRIVE:.0f}/{CORRUPTION_MAX} → 남은 게이지 {room:.0f}")
+    print(f"  {'':>14} {'수지/초':>8} {'적자':>7} {'남은 게이지 대비':>14}")
+    print(f"  {'기저만':>12} {-base_net:>8.1f} {base_net * BOSS_SEC:>7.0f} "
+          f"{base_net * BOSS_SEC / room:>13.0%}")
+    print(f"  {'회복 카드 포함':>11} {-total_net:>8.1f} {total_net * BOSS_SEC:>7.0f} "
+          f"{total_net * BOSS_SEC / room:>13.0%}")
+    lo, hi = BOSS_DECIDED_BAND
+    ratio = total_net * BOSS_SEC / room
+    good = base_net * BOSS_SEC > room and lo <= ratio <= hi
+    ok &= good
+    print(f"  기저만으로 {'실패' if base_net * BOSS_SEC > room else '완주'} · "
+          f"카드 포함 {ratio:.0%} (목표 {lo:.0%}~{hi:.0%})  {'PASS' if good else 'FAIL'}")
+    print("  ※ 1.0 근처라는 건 **보스전이 동전 던지기라는 뜻이 아니라 빌드로 갈린다는**")
+    print("     뜻이다 — 평균이 경계에 있으므로 회복·화력에 얼마나 투자했는지가")
+    print("     그대로 결과가 된다. 실측 도달 후 생존이 43%인 것이 그 모습이다")
+    print("  ※ 페이즈 2 정화를 더 키워도 여기는 거의 안 움직인다 — 도달 시 잠식이")
+    print(f"     {BOSS_ARRIVE:.0f}이라 {BOSS_PHASE2_PURGE}을 넘는 몫은 잘려 버려진다")
+    print("     (스윕 실측: 300 → 650으로 올려도 도달 후 생존 29.8% → 32.6%)")
+    print("  ※ 보스 damage로 이 자리를 풀 수 없다 — slice_boss_damage는 patterns[0]")
+    print("     삼연격의 **한 대** 값(63)을 임시로 쓰는 자리표시자이고, 설계된 패턴은")
+    print("     캐스팅당 평균 217이다. 패턴 시스템이 붙으면 보스는 더 세진다\n")
 
     print("전체: " + ("PASS" if ok else "FAIL"))
     return ok

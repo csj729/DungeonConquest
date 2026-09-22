@@ -120,6 +120,8 @@ inline SimConfig devConfig() {
     c.orbTrashAmount                   = 90;
     c.orbEliteAmount                   = 300;
     c.orbPickupRadiusMilli             = 1500;
+    c.bossPhase2AtPermille             = 500;    // monsters.json: boss.phase2_at_permille
+    c.bossPhase2Purge                  = 400;    // progression.json
     c.orbLifetimeTicks                 = 200;
 
     // data/spawn.json

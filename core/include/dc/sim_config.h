@@ -101,6 +101,14 @@ struct SimConfig {
     int32_t orbPickupRadiusMilli = 0;
     int32_t orbLifetimeTicks     = 0;
 
+    // 보스 페이즈 2 — 보스 체력이 이 비율 아래로 내려가면 **한 번** 일괄 정화한다.
+    // 구간 진입 정화가 맵에 준 "숨 돌리기" 리듬을 보스전에도 주는 장치다 —
+    // 보스전 57초 동안 수지가 -11.9/초인데 그 구간에는 경계가 하나도 없었다.
+    // **보스를 밀어붙인 것에 대한 보상**이라 패턴 시스템이 붙어 보스가 세져도
+    // 유효하다. 0이면 아무 일도 하지 않는다.
+    int32_t bossPhase2AtPermille = 0;
+    int32_t bossPhase2Purge      = 0;
+
     // ── 클리어 게이지 (segments.json) ──
     int32_t trashPoints          = 0;
     int32_t elitePoints          = 0;

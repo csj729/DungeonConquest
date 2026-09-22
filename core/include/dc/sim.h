@@ -63,6 +63,7 @@ inline void stepWorld(World& w, const SimConfig& cfg, SimScratch& scratch) {
     orbRun(w, cfg);                   // 구슬 습득·소멸 — 전투보다 먼저(회복이 피해에 앞선다)
     qteRun(w, cfg);                   // 창이 닫힐 틱이면 판정 적용 — 전투보다 먼저
     combatRun(w, cfg);                // 사거리 안이면 공격 · 잠식 충전
+    bossPhaseRun(w, cfg);             // 보스 페이즈 2 — 이번 틱 피해로 넘겼으면 같은 틱에 정화
 
     w.endTick();                      // 죽음 일괄 적용 (틱 종료 압축)
 

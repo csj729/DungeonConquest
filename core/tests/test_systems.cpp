@@ -794,6 +794,46 @@ int main() {
                prevKills, w.run.clearPoints, worstGap);
     }
 
+    dctest::section("보스 페이즈 2 — 임계에서 한 번만 정화한다");
+    {
+        World w = makeWorld(77);
+        SpawnDesc d = makeDesc(cfg.boss, Fixed(1000));
+        d.posX = Fixed(100); d.posY = Fixed(100);   // 영웅과 멀리 — 전투가 섞이지 않게
+        const EntityId id = w.entities.spawn(d, 0, 77);
+        CHECK(id.valid());
+        w.run.bossSpawned = true;
+        w.run.bossAlive   = true;
+        const int32_t dense = w.entities.denseOf(id);
+        CHECK(dense >= 0);
+
+        w.hero.corruption = Fixed(900);
+
+        // 임계(500permille) 위에서는 아무 일도 없다
+        w.entities.damageTaken[dense] = Fixed(400);   // 잔여 60%
+        bossPhaseRun(w, cfg);
+        CHECK(!w.run.bossPhase2);
+        CHECK_EQ(w.hero.corruption.raw, Fixed(900).raw);
+
+        // 임계 아래로 내려간 첫 틱에 정화한다
+        w.entities.damageTaken[dense] = Fixed(500);   // 잔여 정확히 50% — 경계 포함
+        bossPhaseRun(w, cfg);
+        CHECK(w.run.bossPhase2);
+        CHECK_EQ(w.hero.corruption.raw, Fixed(900 - 400).raw);
+
+        // **두 번 주지 않는다.** 체력이 더 떨어져도 한 번뿐이다.
+        w.entities.damageTaken[dense] = Fixed(900);
+        bossPhaseRun(w, cfg);
+        CHECK_EQ(w.hero.corruption.raw, Fixed(500).raw);
+
+        // 보스가 없으면 아무 일도 하지 않는다
+        World w2 = makeWorld(78);
+        w2.hero.corruption = Fixed(900);
+        bossPhaseRun(w2, cfg);
+        CHECK(!w2.run.bossPhase2);
+        CHECK_EQ(w2.hero.corruption.raw, Fixed(900).raw);
+        printf("    임계 위 무반응 · 경계 포함 발동 · 재발동 없음\n");
+    }
+
     dctest::section("틱 루프 — 죽음은 틱 끝에만 반영된다");
     {
         World w = makeWorld(6);

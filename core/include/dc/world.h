@@ -155,6 +155,8 @@ struct RunState {
     int32_t killedElite  = 0;
     bool       bossAlive    = false;
     bool       bossSpawned  = false;
+    // 페이즈 2 정화를 이미 줬는가. **[상태]다** — 한 번만 주므로 해시에 들어간다.
+    bool       bossPhase2   = false;
     RunOutcome outcome      = RunOutcome::Running;
     int32_t    endTick      = 0;
 
@@ -175,6 +177,7 @@ struct RunState {
         h.feed(killedTrash);
         h.feed(killedElite);
         h.feed(bossAlive);
+        h.feed(bossPhase2);
         h.feed(bossSpawned);
         h.feed(static_cast<uint8_t>(outcome));
         h.feed(endTick);

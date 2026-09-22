@@ -472,6 +472,33 @@ inline void orbRun(World& w, const SimConfig& cfg) {
     }
 }
 
+// 보스 페이즈 2 — 보스 체력이 임계 아래로 내려간 첫 틱에 한 번 정화한다.
+//
+// **전투 뒤에 돈다.** 이번 틱의 피해로 임계를 넘겼으면 같은 틱에 보상이 나가야
+// "밀어붙인 것에 대한 보상"이 된다. 뒤로 미루면 한 틱 늦는다.
+//
+// 구간 진입 정화와 같은 장치이고 같은 이유로 존재한다 — 보스전 57초에는
+// 구간 경계가 하나도 없어 숨 돌릴 자리가 없었다. 다른 점은 **시간이 아니라
+// 보스 체력이 조건**이라는 것뿐이다.
+inline void bossPhaseRun(World& w, const SimConfig& cfg) {
+    if (!w.run.bossAlive || w.run.bossPhase2) return;
+    if (cfg.bossPhase2AtPermille <= 0 || cfg.bossPhase2Purge <= 0) return;
+
+    const uint32_t n = w.entities.count();
+    for (uint32_t i = 0; i < n; ++i) {
+        if (w.entities.deadAt(i) || w.entities.archetype[i] != Archetype::Boss) continue;
+        // 비율 비교를 나눗셈 없이 한다 — hp * 1000 <= maxHp * 임계.
+        // **넓은 타입으로 승격한 뒤 곱한다** (부호 있는 정수 오버플로는 UB다).
+        const int64_t max = static_cast<int64_t>(w.entities.maxHp[i].raw);
+        const int64_t hp  = max - static_cast<int64_t>(w.entities.damageTaken[i].raw);
+        if (hp * 1000 <= max * cfg.bossPhase2AtPermille) {
+            w.purgeCorruption(Fixed(cfg.bossPhase2Purge));
+            w.run.bossPhase2 = true;
+        }
+        return;   // 보스는 하나다
+    }
+}
+
 // 도트 진행 (E_DECAY). **전투보다 먼저 돈다** — 도트로 죽을 적이 이번 틱에
 // 영웅을 때리지 않게 하기 위해서다. 순서를 뒤집으면 도트의 가치가 한 틱씩 늦는다.
 inline void decayRun(World& w, const SimConfig& cfg) {

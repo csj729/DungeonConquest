@@ -5,6 +5,7 @@
 #include <initializer_list>
 
 #include "../include/dc/sim.h"
+#include "../tools/card_policy.h"
 #include "../tools/dev_data.h"
 #include "test_main.h"
 
@@ -673,6 +674,75 @@ int main() {
             printf("    전설 풀 %u칸 중 효과 구현 2칸(ECHO·STORM) · FORGE와 고유 각인 6칸은 미구현\n",
                    cfg.legendPoolSize);
         }
+    }
+
+    dctest::section("조합 입력 — 전투 중 언제든, 그리고 리플레이로 재현된다");
+    {
+        // **조합은 언제든 할 수 있다** (§5) — 레벨업 모달과 달리 시뮬이 멈추지 않는다.
+        // 그래서 정확히 어느 틱에 눌렀는지가 결과를 바꾸고, 입력 로그에 남아야
+        // 서버가 재현할 수 있다. 이 테스트가 그 계약을 고정한다.
+        const RecipeTable& table = dev::devRecipeTable();
+
+        auto play = [&](bool craftMid, InputLog* log) {
+            World w;
+            w.init(77);
+            dev::applyHeroBaseline(w);
+            static SimScratch sc;
+            Rng cr = Rng::derive(77, RngStream::Cards);
+            for (int32_t i = 0; i < 4000; ++i) {
+                if (w.cards.offer.open()) {
+                    InputEvent e;
+                    e.tick = w.tickCount();
+                    e.kind = InputKind::CardChoice;
+                    e.value = dev::choose(dev::Policy::Power, cfg, w.cards.offer, cr);
+                    if (applyInput(w, cfg, table, e) && log != nullptr) (void)log->record(e);
+                }
+                // 전투 중에 조합을 시도한다 — 시뮬을 멈추지 않는다
+                if (craftMid && i % 500 == 0) {
+                    for (uint32_t r = 0; r < table.recipeCount(); ++r) {
+                        if (!w.inventory.craftable(r)) continue;
+                        InputEvent e;
+                        e.tick = w.tickCount();
+                        e.kind = InputKind::Craft;
+                        e.value = r;
+                        if (applyInput(w, cfg, table, e) && log != nullptr) (void)log->record(e);
+                        break;
+                    }
+                }
+                stepWorld(w, cfg, sc);
+            }
+            return w;
+        };
+
+        InputLog log;
+        const World live = play(true, &log);
+
+        // 조합이 실제로 일어났고 스탯에 반영됐다
+        CHECK(log.count() > 0);
+        bool sawCraft = false;
+        for (uint32_t i = 0; i < log.count(); ++i) {
+            if (log.at(i).kind == InputKind::Craft) sawCraft = true;
+        }
+        CHECK(sawCraft);
+
+        // **같은 로그를 재생하면 같은 체크섬이 나온다** — 조합이 결정론을 깨지 않는다
+        World replay;
+        replay.init(77);
+        dev::applyHeroBaseline(replay);
+        static SimScratch rsc;
+        log.rewind(0);
+        for (int32_t i = 0; i < 4000; ++i) {
+            InputEvent e;
+            while (log.next(replay.tickCount(), &e)) (void)applyInput(replay, cfg, table, e);
+            stepWorld(replay, cfg, rsc);
+        }
+        CHECK_EQU(replay.checksum(), live.checksum());
+
+        // 조합을 **안 한** 판은 다른 결과가 나온다 — 조합이 실제로 판을 바꾼다
+        const World noCraft = play(false, nullptr);
+        CHECK(noCraft.checksum() != live.checksum());
+        printf("    조합 입력 %u건 기록 · 재생 체크섬 일치 · 조합 없는 판과는 불일치\n",
+               log.count());
     }
 
     return dctest::summary("test_card");

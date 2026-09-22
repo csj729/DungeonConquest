@@ -5,6 +5,7 @@
 // 증상이 인벤 조작 순서에 의존해서 재현이 어렵다.
 #include <initializer_list>
 
+#include "../include/dc/craft_query.h"
 #include "../include/dc/inventory.h"
 #include "../include/dc/item.h"
 #include "../include/dc/world.h"
@@ -331,6 +332,85 @@ int main() {
         };
         CHECK_EQU(play(1), play(1));
         CHECK(play(1) != play(2));
+    }
+
+    dctest::section("조합 UI 조회 — 세 상태를 구분할 수 있다");
+    {
+        // UI가 "보유/미보유" 색만으로 그리면 두 가지를 거짓말한다:
+        //   1. 같은 재료 2개가 필요한데 1개만 있을 때 (색은 '있음'인데 조합 불가)
+        //   2. 재료 하나만 모자란 조합식과 전부 모자란 조합식이 같아 보인다
+        // 그래서 조회가 need/have와 모자란 종류 수를 따로 준다.
+        Inventory inv;
+        inv.init(table);
+
+        // 아무것도 없을 때 — 전부 모자란다
+        const RecipeView empty = viewRecipe(inv, table, 0);
+        CHECK(!empty.ready());
+        CHECK(empty.missingKinds > 0);
+
+        // 재료 하나만 채운다 — **'거의 다 됨'과 '멀었음'이 구분된다**
+        inv.add(table, C1, 1);
+        const RecipeView partial = viewRecipe(inv, table, 0);
+        CHECK(!partial.ready());
+        CHECK_EQ(partial.missingKinds, static_cast<uint8_t>(empty.missingKinds - 1));
+
+        // 전부 채우면 가능해지고, 조회와 캐시가 같은 답을 준다
+        inv.add(table, C2, 1);
+        const RecipeView full = viewRecipe(inv, table, 0);
+        CHECK(full.ready());
+        CHECK_EQ(full.ready(), inv.craftable(0));
+        CHECK_EQ(full.missingTotal, static_cast<uint16_t>(0));
+
+        // **수량을 센다** — 같은 재료를 여러 개 요구하는 조합식에서 색은 거짓말이 된다
+        for (uint8_t i = 0; i < full.count; ++i) {
+            CHECK(full.ingredients[i].need > 0);
+            CHECK(full.ingredients[i].enough());
+        }
+        printf("    재료 %u칸 · 빈 인벤 모자람 %u종 → 하나 채우면 %u종 → 전부 채우면 가능\n",
+               full.count, empty.missingKinds, partial.missingKinds);
+    }
+
+    dctest::section("조합 UI 조회 — 이 조합이 무엇을 막는지 알려준다");
+    {
+        // §5 다경로 설계의 직접 귀결이다. 재료가 경로 간에 공유되므로
+        // **지금 만들면 무엇을 포기하는가**가 빌드 설계의 핵심 판단이다.
+        Inventory inv;
+        inv.init(table);
+        inv.add(table, C1, 1);
+        inv.add(table, C2, 1);
+        inv.add(table, C3, 1);
+
+        // 0번(C1+C2)과 1번(C1+C3)이 C1을 공유한다 — 하나를 만들면 다른 하나가 막힌다
+        CHECK(inv.craftable(0));
+        CHECK(inv.craftable(1));
+        const RecipeView v = viewRecipe(inv, table, 0);
+        CHECK(v.ready());
+        CHECK(v.blocksOthers > 0);
+
+        // 실제로 만들어보면 예고한 대로 막힌다
+        CHECK(inv.craft(table, 0));
+        CHECK(!inv.craftable(1));
+        printf("    C1을 공유하는 조합식 — 조합 전 예고 %u개 · 조합 후 실제로 불가\n",
+               v.blocksOthers);
+    }
+
+    dctest::section("조합 UI 조회 — 아이템을 누르면 뜨는 목록");
+    {
+        Inventory inv;
+        inv.init(table);
+        inv.add(table, C1, 5);
+        RecipeView views[16];
+        const uint32_t n = viewRecipesUsing(inv, table, C1, views, 16);
+        CHECK(n > 0);
+        CHECK_EQ(n, table.fanout(C1));
+        for (uint32_t i = 0; i < n; ++i) {
+            // 목록에 뜬 조합식은 전부 C1을 실제로 재료로 쓴다
+            bool uses = false;
+            const RecipeData& r = table.recipe(views[i].recipeIndex);
+            for (uint8_t k = 0; k < r.count; ++k) if (r.ingredients[k] == C1) uses = true;
+            CHECK(uses);
+        }
+        printf("    C1을 재료로 쓰는 조합식 %u개\n", n);
     }
 
     return dctest::summary("test_inventory");

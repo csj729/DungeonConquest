@@ -435,6 +435,7 @@ public:
                 return true;
             }
             case InputKind::CardChoice:   // SimConfig가 필요하므로 sim.h가 처리한다
+            case InputKind::Craft:        // RecipeTable이 필요하므로 sim.h가 처리한다
             case InputKind::None:
             case InputKind::Count:
                 break;

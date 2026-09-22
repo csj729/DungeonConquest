@@ -21,7 +21,11 @@ enum class InputKind : uint8_t {
     ManualTarget = 1,   // value = EntityId.bits (0이면 해제)
     QteGrade     = 2,   // value = QteGrade
     CardChoice   = 3,   // value = 선택지 인덱스
-    Count        = 4,
+    // **조합은 언제든 할 수 있다** (§5) — 전투 중에도 인벤토리에서 바로 만든다.
+    // 그래서 레벨업 모달과 달리 시뮬이 멈추지 않고, 정확히 어느 틱에 눌렀는지가
+    // 결과를 바꾼다. 입력 이벤트로 남겨야 서버가 리플레이로 재현할 수 있다.
+    Craft        = 4,   // value = 조합식 인덱스
+    Count        = 5,
 };
 
 struct InputEvent {

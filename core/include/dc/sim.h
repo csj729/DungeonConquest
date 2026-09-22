@@ -6,6 +6,7 @@
 #define DC_SIM_H
 
 #include "combat.h"
+#include "items_apply.h"
 #include "grid.h"
 #include "separation.h"
 #include "sim_config.h"
@@ -20,6 +21,13 @@ namespace dc {
 inline bool applyInput(World& w, const SimConfig& cfg, const RecipeTable& table,
                        const InputEvent& e) {
     if (e.kind == InputKind::CardChoice) return chooseCard(w, cfg, table, e.value);
+    if (e.kind == InputKind::Craft) {
+        // 조합은 재료를 소모하고 결과물을 만든다. 둘 다 보유 스탯을 바꾸므로
+        // 성공했을 때만 다시 접는다 — 실패한 조합에 재계산 비용을 낼 이유가 없다.
+        if (!w.inventory.craft(table, e.value)) return false;
+        refreshItemStats(w, cfg);
+        return true;
+    }
     return w.applyInput(e);
 }
 

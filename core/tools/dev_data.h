@@ -48,10 +48,10 @@ constexpr int64_t LEVEL_NEED[80] = {
     84788, 91401, 98531, 106216, 114501, 123432, 133060, 143438};
 // data/cards.json
 constexpr int32_t CARD_GRADE_RATE[5]   = {420, 300, 190, 75, 15};
-constexpr int32_t CARD_GRADE_BUDGET[5] = {30, 50, 100, 200, 500};
+constexpr int32_t CARD_GRADE_BUDGET[5] = { 9, 15, 30, 60, 150 };
 constexpr int32_t CARD_GRADE_STEP[5]   = {600, 1000, 2000, 4000, 10000};   // 증가량 비 0.6 : 1 : 2 : 4 : 10
-constexpr int32_t ENGRAVE_BASE[8] = {250, 450, 300, 500, 90, 200, 250, 200};
-constexpr int32_t RELIC_BASE[6]   = {10, 400, 100, 150, 3, 112};
+constexpr int32_t ENGRAVE_BASE[8] = { 75, 135, 90, 150, 27, 65, 75, 60 };
+constexpr int32_t RELIC_BASE[6]   = { 3, 120, 30, 45, 1, 113 };
 constexpr int32_t  DECAY_TICKS            = 80;     // 4초 (20Hz)
 constexpr int32_t  RAGE_DURATION_TICKS    = 100;    // 5초
 constexpr int32_t  RAGE_MAX_STACKS        = 10;     // 등급 무관 고정

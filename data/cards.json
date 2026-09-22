@@ -12,31 +12,31 @@
     {
       "name": "일반",
       "rate_permille": 420,
-      "power_budget_permille": 30,
+      "power_budget_permille": 9,
       "value_unit_permille": 600
     },
     {
       "name": "고급",
       "rate_permille": 300,
-      "power_budget_permille": 50,
+      "power_budget_permille": 15,
       "value_unit_permille": 1000
     },
     {
       "name": "희귀",
       "rate_permille": 190,
-      "power_budget_permille": 100,
+      "power_budget_permille": 30,
       "value_unit_permille": 2000
     },
     {
       "name": "영웅",
       "rate_permille": 75,
-      "power_budget_permille": 200,
+      "power_budget_permille": 60,
       "value_unit_permille": 4000
     },
     {
       "name": "전설",
       "rate_permille": 15,
-      "power_budget_permille": 500,
+      "power_budget_permille": 150,
       "value_unit_permille": 10000
     }
   ],
@@ -45,49 +45,50 @@
     {
       "id": "E_PIERCE",
       "name": "관통",
-      "uncommon_permille": 250,
+      "uncommon_permille": 75,
       "desc": "뒤의 적에게 {v:.0%} 피해"
     },
     {
       "id": "E_CHAIN",
       "name": "연타",
-      "uncommon_permille": 450,
+      "uncommon_permille": 135,
       "desc": "총 피해 +{v:.0%} (2회 분할)"
     },
     {
       "id": "E_DECAY",
       "name": "부식",
-      "uncommon_permille": 300,
+      "uncommon_permille": 90,
       "desc": "초당 공격력의 {v:.0%}, 4초"
     },
     {
       "id": "E_LEECH",
       "name": "흡혈",
-      "uncommon_permille": 500,
+      "uncommon_permille": 150,
       "desc": "그 스킬 피해의 {v:.0%} 회복"
     },
     {
       "id": "E_SWARM",
       "name": "군집",
-      "uncommon_permille": 90,
+      "uncommon_permille": 27,
       "desc": "주변 적 1명당 +{v:.0%} (최대 10명)"
     },
     {
       "id": "E_CRIT",
       "name": "예리함",
-      "uncommon_permille": 200,
-      "desc": "치확 +{v:.0%}, 치피 +{v2:.0%}p"
+      "uncommon_permille": 65,
+      "desc": "치확 +{v:.0%}, 치피 +{v2:.0%}p",
+      "_": "60(균등 0.3배)이 아니라 65다. **기준 치명타(확률 10% · 배율 1.5)는 카드 예산이 아니라 영웅 기준선이라 같이 줄지 않았다** — 그래서 균등 스케일링에서 이 각인만 비율이 틀어져 '치명타에 투자해도 예산 효율 55%를 못 넘는' 상태가 됐다(51%). 65면 56%로 하한을 넘는다."
     },
     {
       "id": "E_REND",
       "name": "파쇄",
-      "uncommon_permille": 250,
+      "uncommon_permille": 75,
       "desc": "대상 Armor {v:.0%} 무시"
     },
     {
       "id": "E_WIDE",
       "name": "확장",
-      "uncommon_permille": 200,
+      "uncommon_permille": 60,
       "desc": "광역 반경 +{v:.0%} / 단일 여파 {v:.0%}"
     }
   ],
@@ -112,37 +113,37 @@
     {
       "id": "R_RAGE",
       "name": "분노의 토템",
-      "uncommon_permille": 10,
+      "uncommon_permille": 3,
       "desc": "피격 시 공격력 +{v:.0%} (최대 10중첩)"
     },
     {
       "id": "R_BOLT",
       "name": "뇌전의 성물",
-      "uncommon_permille": 400,
+      "uncommon_permille": 120,
       "desc": "6초마다 공격력의 {v:.0%} 피해"
     },
     {
       "id": "R_FROST",
       "name": "서리 오라",
-      "uncommon_permille": 100,
+      "uncommon_permille": 30,
       "desc": "반경 내 적 이동속도 −{v:.0%}"
     },
     {
       "id": "R_BEACON",
       "name": "추적의 신호탄",
-      "uncommon_permille": 150,
+      "uncommon_permille": 45,
       "desc": "엘리트·보스 피해 +{v:.0%}"
     },
     {
       "id": "R_TIDE",
       "name": "밀물의 인장",
-      "uncommon_permille": 3,
+      "uncommon_permille": 1,
       "desc": "웨이브 중 초당 공격력 +{v:.1%}"
     },
     {
       "id": "R_GREED",
       "name": "탐욕의 주머니",
-      "uncommon_permille": 112,
+      "uncommon_permille": 113,
       "desc": "경험치 획득 +{v:.0%}",
       "_": "골드가 아니라 **경험치**다. 골드는 코어·데이터 어디에도 없고 소비처(§6 리롤·추가 뽑기)도 미구현이라 곱할 대상이 없었다. 경험치는 이미 구현돼 있고(gainExp), '전투력 대신 선택지 품질을 산다'는 축의 의도도 그대로 산다 — 레벨이 빨라지면 카드를 더 많이 뽑는다.\n수치는 200 → 112로 내렸다. 골드일 때는 DPS 환산 기준이 없어 검산에서 빠져 있었는데(tools/verify_card_values.py가 None을 반환했다), 경험치로 바꾸니 경로가 닫혀 예산비 178%가 드러났다 — 경험치 +v가 레벨업을 log(1+v)/log(ratio)회 더 주고 그 레벨이 각각 위력 +7%를 얹기 때문이다. 112면 런 종료 시 +10%, 런 평균 +5%로 고급 예산과 같다."
     }

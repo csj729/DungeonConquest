@@ -156,7 +156,15 @@ LEVEL_NEED_RATIO = pm(_PROG["level_need_ratio_permille"])
 
 # 레벨업 1회당 유효 위력 성장. 레벨업이 아이템 뽑기/스펙업 카드의 **유일한**
 # 관문이므로(§4), 이 한 수치가 런 전체의 성장을 전부 담는다.
-POWER_PER_LEVELUP = pm(_PROG["power_per_levelup_permille"])
+# **카드 몫**이다. 성장의 전부가 아니다 (design.md §4: 아이템 70 : 카드 30).
+CARD_POWER_PER_LEVELUP = pm(_PROG["power_per_levelup_permille"])
+CARD_POWER_SHARE = pm(_PROG["card_power_share_permille"])
+
+# 이 모델이 쓰는 것은 **전체 성장**이다 — 카드 + 아이템 조합.
+# 곱셈 성장의 로그 지분이므로 카드 몫에서 역산한다: (1+card)^(1/share) - 1.
+# 아이템이 아직 구현되지 않았어도 모델은 설계값을 쓴다 — 그래야 "아이템이 없어서
+# 영웅이 안 큰다"가 "카드 수치가 틀렸다"로 잘못 나오지 않는다.
+POWER_PER_LEVELUP = (1 + CARD_POWER_PER_LEVELUP) ** (1 / CARD_POWER_SHARE) - 1
 
 # 그 성장이 **어디로 가는가.** 공격력으로 가면 잡몹은 계속 원샷이라 치명타도
 # 공격력 성장도 오버킬로 버려진다(tools/verify_crit_axis.py). 공속으로 실으면

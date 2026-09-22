@@ -2,7 +2,9 @@
   "_": "성장·스케일링 곡선. 이 파일 하나가 밸런스의 축이다.",
   "tick_hz": 20,
   "total_segments": 24,
-  "power_per_levelup_permille": 70,
+  "power_per_levelup_permille": 21,
+  "_card_power_share": "위력 배분 중 **카드 몫** (design.md §4: 아이템 70 : 카드 30). 곱셈 성장이라 로그 지분이다 — 레벨업 1회당 전체 성장을 T라 하면 카드가 T^0.3, 아이템 조합이 T^0.7을 담당한다.\\npower_per_levelup_permille(21)는 **카드 몫**이고, 전체는 여기서 역산한다: (1.021)^(1/0.3) - 1 = +7.0%. 밸런스 모델은 전체를 쓰고, 카드 예산 검산만 카드 몫을 쓴다 — 둘을 섞으면 '아이템이 없어서 영웅이 안 큰다'가 '카드 수치가 틀렸다'로 잘못 나온다.",
+  "card_power_share_permille": 300,
   "speed_growth_share_permille": 500,
   "level_need_base": 380,
   "level_need_ratio_permille": 1078,
@@ -108,5 +110,6 @@
     123432,
     133060,
     143438
-  ]
+  ],
+  "_power_per_levelup": "**카드가 담당하는 몫이다. 성장의 전부가 아니다.** 위력 배분은 아이템 70 : 카드 30 (design.md §4). 곱셈 성장이라 로그 지분으로 나눈다 — 원래 레벨업당 +7%가 성장 전부를 담당했으므로, 카드 몫 30%는 (1.07)^0.3 - 1 = +2.05%다.\\n나머지 70%는 아이템 조합이 책임진다. 이 값을 바꾸면 카드 등급 예산·각인·유물 수치가 전부 따라 움직인다 (tools/verify_card_values.py가 정합을 검사한다)."
 }

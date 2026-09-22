@@ -5,7 +5,7 @@ import math
 그래서 **등급별 파워 예산을 먼저 고정하고, 각 각인의 고유 단위를 그 예산에서
 역산**한다.
 
-예산의 출처는 경험치 곡선이다 — `POWER_PER_LEVELUP`(레벨업 1회당 +7%)은 곧
+예산의 출처는 경험치 곡선이다 — `CARD_POWER_PER_LEVELUP`(레벨업 1회당 카드 몫)은 곧
 **카드 한 장의 평균 가치**이고(레벨업당 정확히 한 장을 고르므로), 등급별 증가량
 비 1 : 2 : 4(§4)를 확률로 가중평균하면 각 등급의 절대값이 나온다.
 
@@ -18,7 +18,7 @@ import sys
 sys.path.insert(0, "tools")
 
 from balance_baseline import (
-    HERO, SKILLS, PROC_RATE, TICK_HZ, TRASH, ARMOR_K, POWER_PER_LEVELUP,
+    HERO, SKILLS, PROC_RATE, TICK_HZ, TRASH, ARMOR_K, CARD_POWER_PER_LEVELUP,
     LEVEL_NEED_RATIO,
     hero_dps, effective_hp, ELITES,
 )
@@ -136,13 +136,13 @@ def relic_delta(rid, v):
         # 경험치로 바꾸면 경로가 닫힌다 — 경험치 +v → 레벨업 n회 추가 → 위력 1.07^n.
         #
         # 필요 경험치가 등비(ratio^n)라 누적 경험치 ×(1+v)는 레벨을
-        # log(1+v)/log(ratio)회만큼 더 준다. 그 레벨이 각각 POWER_PER_LEVELUP만큼
+        # log(1+v)/log(ratio)회만큼 더 준다. 그 레벨이 각각 CARD_POWER_PER_LEVELUP만큼
         # 위력을 올린다.
         #
         # **런 평균으로 잡는다** — 효과가 0에서 시작해 종료 시점에 최대가 되므로
         # R_TIDE와 같은 이유로 절반을 쓴다.
         extra_levels = math.log(1 + v) / math.log(LEVEL_NEED_RATIO)
-        end_gain = (1 + POWER_PER_LEVELUP) ** extra_levels - 1
+        end_gain = (1 + CARD_POWER_PER_LEVELUP) ** extra_levels - 1
         return total * end_gain / 2
     if rid == "R_FROST":
         return None
@@ -156,17 +156,17 @@ def report():
 
     print("=== 등급별 파워 예산 (역산) ===")
     avg = sum(RATES[g] * GRADE_UNIT[g] for g in GRADE_UNIT)
-    unit = POWER_PER_LEVELUP / avg
-    print(f"  레벨업 1회당 위력 +{POWER_PER_LEVELUP:.0%} = 카드 한 장의 평균 가치")
+    unit = CARD_POWER_PER_LEVELUP / avg
+    print(f"  레벨업 1회당 카드 몫 +{CARD_POWER_PER_LEVELUP:.2%} = 카드 한 장의 평균 가치")
     print(f"  등급 가중치 {GRADE_UNIT} → 평균 {avg:.3f}단위 → 1단위 {unit:.2%}")
     print(f"  {'등급':>4} {'역산':>7} {'확정':>7} {'기준선 DPS':>11}")
     for g in GRADE_BUDGET:
         print(f"  {g:>4} {GRADE_UNIT[g]*unit:>7.1%} {GRADE_BUDGET[g]:>7.1%} "
               f"{total*GRADE_BUDGET[g]:>10.2f}")
     got = sum(RATES[g] * GRADE_BUDGET[g] for g in GRADE_BUDGET)
-    good = abs(got - POWER_PER_LEVELUP) / POWER_PER_LEVELUP < 0.05
+    good = abs(got - CARD_POWER_PER_LEVELUP) / CARD_POWER_PER_LEVELUP < 0.05
     ok &= good
-    print(f"  확정값 가중평균 {got:.2%} vs POWER_PER_LEVELUP {POWER_PER_LEVELUP:.0%}  "
+    print(f"  확정값 가중평균 {got:.2%} vs 카드 몫 {CARD_POWER_PER_LEVELUP:.2%}  "
           f"{'PASS' if good else 'FAIL'}")
     print("  ※ 이 한 줄이 경험치 곡선과 카드 수치를 잇는다. 곡선을 바꾸면 표 전체가 움직인다\n")
 

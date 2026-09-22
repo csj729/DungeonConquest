@@ -81,6 +81,7 @@ def report():
     print(f"  {'구간':>4} {'체류초':>7} {'유입/초':>8} {'정화/초':>8} {'수지/초':>8} "
           f"{'덮는 비율':>9}")
     total_in = total_out = total_sec = 0.0
+    realized = 0.0
     for i, (inflow, sec) in enumerate(MEASURED):
         # 구슬 정화 — 드랍 기댓값 × 실측 습득률
         kill_purge = orb_value(i) * ORB_PICKUP_RATE / sec
@@ -89,6 +90,9 @@ def report():
         out = kill_purge + entry_purge
         total_in += inflow * sec
         total_out += out * sec
+        # **넘치는 정화는 버려진다.** 잠식은 0에서 잘리므로 유입보다 많이 정화해도
+        # 다음 구간으로 넘기지 못한다. 예산으로는 덮여 보여도 실제로는 안 덮인다.
+        realized += min(out, inflow) * sec
         total_sec += sec
         print(f"  {i+1:>4} {sec:>7.1f} {inflow:>8.2f} {out:>8.2f} {out - inflow:>8.2f} "
               f"{out / inflow if inflow else 9.99:>8.0%}")
@@ -100,6 +104,11 @@ def report():
     print(f"  맵 전체 유입 {total_in:.0f} · 정화 {total_out:.0f} "
           f"→ 덮는 비율 {coverage:.0%} (목표 {lo:.0%}~{hi:.0%}) "
           f"{'PASS' if good else 'FAIL'}")
+    print(f"  ※ 이 중 실제로 쓰이는 몫은 {realized / total_in:.0%}다 — **잠식은 0에서 잘려")
+    print("     남는 정화를 다음 구간으로 넘기지 못한다.** 구간 1은 유입 1.2/초에 정화")
+    print("     6.0/초라 5분의 4가 버려진다. 회복을 더 얹을 자리는 초반이 아니라 후반이다")
+    print("     (구간 평균으로 본 값이라 낙관적이다 — 잘림은 틱 단위로 일어난다.")
+    print("      하네스 실측은 63%다: core/tools/dc_montecarlo)")
     print("  ※ 100%를 넘기면 잠식이 장식이 된다. 50% 아래면 회복 카드가 없는 빌드가")
     print("     확정 실패가 되어 §7의 '실패를 죽음이 아니라 지연으로'가 깨진다\n")
 

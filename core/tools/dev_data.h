@@ -117,8 +117,8 @@ inline SimConfig devConfig() {
     c.corruptionOverflowMultPermille   = 3000;
     c.segmentClearPurge                = 150;    // progression.json
     c.orbTrashDropPermille             = 200;    // progression.json
-    c.orbTrashAmount                   = 45;
-    c.orbEliteAmount                   = 150;
+    c.orbTrashAmount                   = 90;
+    c.orbEliteAmount                   = 300;
     c.orbPickupRadiusMilli             = 1500;
     c.orbLifetimeTicks                 = 200;
 

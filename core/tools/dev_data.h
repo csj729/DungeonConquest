@@ -10,6 +10,7 @@
 #define DC_DEV_DATA_H
 
 #include "../include/dc/sim_config.h"
+#include "dev_items.h"
 #include "../include/dc/stat_block.h"
 
 namespace dc::dev {
@@ -91,6 +92,17 @@ constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
 // 추격 정지 여유. 1400(잡몹 사거리) - 400 = 1000이라 첫 링 반지름이 변하지 않는다.
 constexpr int32_t  APPROACH_MARGIN_MILLITILE  = 400;
+
+// 조합 테이블. **정적 데이터라 World 밖에 산다** (§5) — 판마다 바뀌지 않는다.
+inline const RecipeTable& devRecipeTable() {
+    static RecipeTable table = [] {
+        RecipeTable t;
+        (void)t.build(DEV_RECIPES, sizeof(DEV_RECIPES) / sizeof(DEV_RECIPES[0]),
+                      DEV_ITEM_COUNT);
+        return t;
+    }();
+    return table;
+}
 
 inline SimConfig devConfig() {
     SimConfig c;
@@ -182,6 +194,15 @@ inline SimConfig devConfig() {
     c.approachMarginMilli = APPROACH_MARGIN_MILLITILE;
 
     // data/monsters.json — 잡몹
+    // ── 아이템 (§5) — 위력의 주력 ──
+    c.itemTypeCount = DEV_ITEM_COUNT;
+    for (uint32_t i = 0; i < DEV_ITEM_COUNT && i < DC_MAX_ITEM_TYPES_CFG; ++i) {
+        for (uint32_t s = 0; s < STAT_COUNT; ++s) c.itemStats[i][s] = DEV_ITEM_STATS[i][s];
+        c.itemSlowAura[i] = DEV_ITEM_SLOW[i];
+    }
+    c.commonPoolSize = sizeof(DEV_COMMON_POOL) / sizeof(DEV_COMMON_POOL[0]);
+    for (uint32_t i = 0; i < c.commonPoolSize; ++i) c.commonPool[i] = DEV_COMMON_POOL[i];
+
     c.trash.hp             = Fixed(20);
     c.trash.damage         = Fixed(5);
     c.trash.cooldownTicks  = 30;
@@ -248,7 +269,11 @@ inline SimConfig devConfig() {
 }
 
 // 영웅 기준선을 StatBlock에 심는다.
+// **`World::init()` 뒤에 반드시 부른다.** 인벤토리는 RecipeTable이 있어야 init할 수
+// 있어서 World::init이 완전 초기화만 하고 남겨둔다 — 이걸 빠뜨리면 아이템 뽑기가
+// 조용히 거부된다(Inventory::matches가 테이블 해시로 걸러낸다).
 inline void applyHeroBaseline(World& w) {
+    w.inventory.init(devRecipeTable());
     Fixed      bases[STAT_COUNT];
     StatBounds bounds[STAT_COUNT];
     for (uint32_t i = 0; i < STAT_COUNT; ++i) {
@@ -259,9 +284,8 @@ inline void applyHeroBaseline(World& w) {
     bases[statIndex(Stat::AttackSpeed)]   = Fixed(20) / HERO_ATTACK_INTERVAL_TICKS;  // 초당 1회
     bases[statIndex(Stat::Armor)]         = Fixed(HERO_ARMOR);
     bases[statIndex(Stat::Range)]         = Fixed(3);
-    // 아이템 축이 들어오는 두 스탯. 기준값 1.0 = 배율 그대로.
+    // 아이템 광역 축이 들어오는 스탯.
     bases[statIndex(Stat::AoeRadius)]     = Fixed::fromPermille(HERO_AOE_RADIUS_MILLITILE);
-    bases[statIndex(Stat::CcPower)]       = Fixed::one();
     bases[statIndex(Stat::CorruptionMax)] = Fixed(HERO_CORRUPTION_MAX);
     bases[statIndex(Stat::CritChance)]    = Fixed::fromPermille(HERO_CRIT_CHANCE_PERMILLE);
     bases[statIndex(Stat::CritMult)]      = Fixed::fromPermille(HERO_CRIT_MULT_PERMILLE);
@@ -269,7 +293,6 @@ inline void applyHeroBaseline(World& w) {
     bounds[statIndex(Stat::CorruptionMax)] = StatBounds{Fixed(1), Fixed::fromPermille(-900)};
     bounds[statIndex(Stat::AoeRadius)]    = StatBounds{Fixed::fromPermille(500),
                                                     Fixed::fromPermille(-900)};
-    bounds[statIndex(Stat::CcPower)]      = StatBounds{Fixed{}, Fixed::fromPermille(-1000)};
     bounds[statIndex(Stat::AttackSpeed)]   = StatBounds{Fixed::fromPermille(100),
                                                         Fixed::fromPermille(-900)};
     w.hero.stats.init(bases, bounds);

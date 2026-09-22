@@ -29,6 +29,7 @@ constexpr uint32_t MAX_CARD_GRADES    = 5;   // 일반 · 고급 · 희귀 · �
 constexpr uint32_t MAX_ENGRAVINGS     = 16;
 constexpr uint32_t MAX_RELICS         = 16;
 constexpr uint32_t MAX_LEGEND_POOL    = 32;
+// 아이템 뽑기 1칸 + 성장 카드 3장 (§4의 4칸 레이아웃).
 constexpr uint32_t MAX_CARDS_PER_LEVEL = 4;
 constexpr uint32_t MAX_LEVEL_NEED     = 80;
 
@@ -82,7 +83,10 @@ enum class CardKind : uint8_t {
     Engraving = 2,   // 고급~영웅 — 공통 각인. 등급은 수치 티어다
     Relic     = 3,   // 고급~영웅 — 유물. 스킬과 무관하게 독립 작동
     Legend    = 4,   // 전설 — 고유 각인 또는 전설 유물. 잭팟 자리
-    Count     = 5,
+    // **맨 왼쪽 고정 칸** (§4). 항상 흔함 등급 아이템을 뽑는다.
+    // 위력의 주력이 여기서 들어온다 — 한 판 성장의 70%가 아이템 조합 몫이다.
+    ItemDraw  = 5,
+    Count     = 6,
 };
 
 struct CardOffer {

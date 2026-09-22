@@ -75,6 +75,10 @@ struct HeroState {
     // R_BOLT(뇌전의 성물) — 다음 방전 틱. **틱 카운터 기반이라 결정론에 안전하다.**
     int32_t  boltNextTick   = 0;
 
+    // CC 축 아이템의 둔화 합 (permille). **[파생]이다** — 인벤토리에서 계산되므로
+    // 체크섬에 넣지 않는다(인벤토리가 이미 들어간다). 아이템이 바뀔 때만 갱신한다.
+    int32_t  slowAura       = 0;
+
     EntityId target{};             // 현재 타겟. stale이면 EntityStore가 걸러준다
 
     // 플레이어가 직접 지정한 타겟 (§3). 자동 우선순위를 덮어쓴다.
@@ -269,6 +273,8 @@ public:
         // 한다. 호출자가 데이터를 로드한 뒤 inventory.init(table)을 부른다.
         // **이걸 빠뜨리면 이전 런의 아이템이 다음 런에 샌다** (test_world가 잡는다).
         inventory = Inventory{};
+        for (uint32_t i = 0; i < STAT_COUNT; ++i) itemStatApplied[i] = 0;
+        hero.slowAura = 0;
         cards     = CardState{};
         nextSourceId_ = 1;                   // 0은 "없음" 예약
 
@@ -319,6 +325,7 @@ public:
             hero.hashInto(h);
             h.feed(nextSourceId_);
             inventory.hashInto(h);   // §10이 "인벤토리도 체크섬 입력"이라고 명시
+            for (uint32_t i = 0; i < STAT_COUNT; ++i) h.feed(itemStatApplied[i]);
             cards.hashInto(h);
             c.hero = h.value();
         }
@@ -465,6 +472,9 @@ public:
     // 인벤토리 (§5). RecipeTable은 정적 데이터라 World 밖에 살고, 조회가 필요한
     // 호출마다 인자로 받는다 — 포인터 멤버를 두면 memcpy 스냅샷이 깨진다.
     Inventory   inventory{};
+    // 아이템이 스탯에 실어둔 기여분(permille). **[상태]다** — 다음 갱신 때
+    // 정확히 같은 값을 빼야 하므로 저장이 필수다. 스냅샷에도 따라간다.
+    int32_t     itemStatApplied[STAT_COUNT] = {0};
     // 레벨업 카드 (§4). 각인·유물 누적과 전설 풀 획득 비트마스크가 여기 산다.
     CardState   cards{};
     RunState    run{};

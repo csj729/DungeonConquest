@@ -65,6 +65,9 @@ int main() {
         World w = makeWorld(7);
         // 전설만 나오도록 강제한다.
         SimConfig legendOnly = cfg;
+        // **아이템 뽑기 칸을 끈다.** 이 절은 성장 카드 추첨만 검증한다 —
+        // 0번 고정 칸이 있으면 offers[0]이 아이템이라 등급 검사가 어긋난다.
+        legendOnly.commonPoolSize = 0;
         for (uint32_t g = 0; g < MAX_CARD_GRADES; ++g) legendOnly.cardGradeRate[g] = 0;
         legendOnly.cardGradeRate[4] = 1000;
         legendOnly.cardsPerLevel = 1;
@@ -78,7 +81,7 @@ int main() {
             CHECK(!seen[c.entryId]);          // **같은 전설이 두 번 나오지 않는다**
             seen[c.entryId] = true;
             w.cards.pendingLevelUps = 1;
-            CHECK(chooseCard(w, legendOnly, 0));
+            CHECK(chooseCard(w, legendOnly, dev::devRecipeTable(), 0));
         }
         CHECK_EQ(w.cards.legendLeft(cfg.legendPoolSize), 0u);
         printf("    전설 %u종 전부 획득 — 중복 0\n", cfg.legendPoolSize);
@@ -126,15 +129,15 @@ int main() {
         c.value = Fixed::fromPermille(300);
         w.cards.offer.offers[0] = c;
         w.cards.offer.count = 1;
-        CHECK(chooseCard(w, cfg, 0));
+        CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
         const int32_t once = w.cards.engrave[2].raw;
         CHECK(once > 0);
 
         w.cards.offer.offers[0] = c; w.cards.offer.count = 1;
-        CHECK(chooseCard(w, cfg, 0));
+        CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
         CHECK_EQ(w.cards.engrave[2].raw, once * 2);   // **정확히 두 배** — 덧셈이다
         w.cards.offer.offers[0] = c; w.cards.offer.count = 1;
-        CHECK(chooseCard(w, cfg, 0));
+        CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
         CHECK_EQ(w.cards.engrave[2].raw, once * 3);
     }
 
@@ -163,11 +166,11 @@ int main() {
         for (int i = 4; i > 0; --i) {
             CHECK_EQ(w.cards.pendingLevelUps, i);
             CHECK(w.cards.offer.open());
-            CHECK(chooseCard(w, cfg, 0));
+            CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
         }
         CHECK_EQ(w.cards.pendingLevelUps, 0);
         CHECK(!w.cards.offer.open());
-        CHECK(!chooseCard(w, cfg, 0));      // 열린 화면이 없으면 거부
+        CHECK(!chooseCard(w, cfg, dev::devRecipeTable(), 0));      // 열린 화면이 없으면 거부
     }
 
     dctest::section("리롤 — 성장 카드를 통째로 다시");
@@ -207,11 +210,11 @@ int main() {
                         e.tick  = w.tickCount();
                         e.kind  = InputKind::CardChoice;
                         e.value = r.range(w.cards.offer.count);
-                        if (applyInput(w, cfg, e)) (void)log.record(e);
+                        if (applyInput(w, cfg, dev::devRecipeTable(), e)) (void)log.record(e);
                     }
                 } else {
                     InputEvent e;
-                    while (log.next(w.tickCount(), &e)) (void)applyInput(w, cfg, e);
+                    while (log.next(w.tickCount(), &e)) (void)applyInput(w, cfg, dev::devRecipeTable(), e);
                 }
                 stepWorld(w, cfg, sc);
             }
@@ -229,7 +232,7 @@ int main() {
         // 범위 밖 선택은 거부한다 — 입력 로그가 오염됐을 수 있다.
         World w = makeWorld(1);
         gainExp(w, cfg, cfg.needFor(1));
-        CHECK(!chooseCard(w, cfg, 99));
+        CHECK(!chooseCard(w, cfg, dev::devRecipeTable(), 99));
         CHECK(w.cards.offer.open());        // 거부해도 화면은 그대로다
     }
 

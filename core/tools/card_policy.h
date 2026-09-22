@@ -18,6 +18,8 @@
 #include <cstdint>
 
 #include "../include/dc/card.h"
+#include "../include/dc/sim_config.h"
+#include "dev_items.h"
 #include "../include/dc/stat_id.h"
 
 namespace dc::dev {
@@ -50,16 +52,41 @@ inline bool isSurvivalStat(uint16_t stat) {
 
 // 선호도 점수. 높을수록 먼저 고른다. **동점은 인덱스 오름차순**으로 갈라
 // 정책이 결정적이도록 한다.
-inline int32_t score(Policy p, const CardOffer& c) {
+//
+// ## 점수 단위는 위력 permille이다
+//
+// 전에는 카드 종류마다 임의의 상수(100 / 50 + 등급)를 썼다. 그래서 일반 등급
+// 공격력 카드(+0.9%)가 영웅 등급 각인(+6%)을 이기는 선택이 나왔고, 아이템 뽑기
+// 칸은 아예 0점이라 한 번도 안 골랐다.
+//
+// 지금은 **전부 같은 단위로 비교**한다 — 성장 카드는 등급 예산, 아이템 뽑기는
+// 흔함 등급의 위력이다. 그러면 설계가 의도한 순서가 그대로 나온다:
+//
+//     일반 9 · 고급 15 · 희귀 30 · **흔함 아이템 52** · 영웅 60 · 전설 150
+//
+// 즉 3장 중 영웅 이상이 없으면 아이템을 고른다. 그게 위력 배분 70:30을 만든다.
+inline int32_t cardPower(const SimConfig& cfg, const CardOffer& c) {
+    if (c.kind == CardKind::ItemDraw) return DEV_TIER_POWER[0];   // 흔함
+    return c.grade < MAX_CARD_GRADES ? cfg.cardGradeBudget[c.grade] : 0;
+}
+
+inline int32_t score(Policy p, const SimConfig& cfg, const CardOffer& c) {
+    const int32_t base = cardPower(cfg, c);
     switch (p) {
         case Policy::Greedy:
-            return c.grade * 10;
+            return base;                  // 위력만 본다 — 역할을 가리지 않는다
         case Policy::Power:
-            if (c.kind == CardKind::StatBoost) return isPowerStat(c.entryId) ? 100 : 10;
-            return 50 + c.grade;          // 각인·유물은 중립 — 등급으로 가른다
+            // 역할 가중치. 스탯 카드만 역할이 갈리고, 나머지는 중립이다 —
+            // 각인·유물의 **효과별 궁합**은 아직 안 본다 (그건 다음 단계다).
+            if (c.kind == CardKind::StatBoost) {
+                return isPowerStat(c.entryId) ? base * 2 : base / 2;
+            }
+            return base;
         case Policy::Survival:
-            if (c.kind == CardKind::StatBoost) return isSurvivalStat(c.entryId) ? 100 : 10;
-            return 50 + c.grade;
+            if (c.kind == CardKind::StatBoost) {
+                return isSurvivalStat(c.entryId) ? base * 2 : base / 2;
+            }
+            return base;
         case Policy::Random:
         case Policy::Count:
             break;
@@ -67,14 +94,14 @@ inline int32_t score(Policy p, const CardOffer& c) {
     return 0;
 }
 
-inline uint32_t choose(Policy p, const CardOfferSet& offer, Rng& rng) {
+inline uint32_t choose(Policy p, const SimConfig& cfg, const CardOfferSet& offer, Rng& rng) {
     if (offer.count == 0) return 0;
     if (p == Policy::Random) return rng.range(offer.count);
 
     uint32_t best = 0;
-    int32_t  bestScore = score(p, offer.offers[0]);
+    int32_t  bestScore = score(p, cfg, offer.offers[0]);
     for (uint32_t i = 1; i < offer.count && i < MAX_CARDS_PER_LEVEL; ++i) {
-        const int32_t sc = score(p, offer.offers[i]);
+        const int32_t sc = score(p, cfg, offer.offers[i]);
         if (sc > bestScore) { bestScore = sc; best = i; }
     }
     return best;

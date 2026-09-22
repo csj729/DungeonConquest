@@ -53,8 +53,8 @@ static RunResult runOnce(const SimConfig& cfg, uint64_t seed, dev::Policy policy
             InputEvent e;
             e.tick  = w.tickCount();
             e.kind  = InputKind::CardChoice;
-            e.value = dev::choose(policy, w.cards.offer, choiceRng);
-            (void)applyInput(w, cfg, e);
+            e.value = dev::choose(policy, cfg, w.cards.offer, choiceRng);
+            (void)applyInput(w, cfg, dev::devRecipeTable(), e);
         }
         stepWorld(w, cfg, scratch);
 

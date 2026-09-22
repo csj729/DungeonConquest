@@ -10,6 +10,7 @@
 
 #include "card.h"
 #include "sim_config.h"
+#include "items_apply.h"
 #include "world.h"
 
 namespace dc {
@@ -104,11 +105,30 @@ inline CardOffer rollCard(World& w, const SimConfig& cfg, const CardOfferSet& ta
     return c;
 }
 
+// 흔함 아이템 하나를 뽑는다. **맨 왼쪽 고정 칸**이 쓰는 경로다 (§4).
+//
+// 결과는 항상 흔함이다 — "왼쪽은 도박, 오른쪽은 확정"이라는 대비에서 도박은
+// 등급이 아니라 **무엇이 나오느냐**다. 조합 재료가 맞아떨어지느냐가 판을 가른다.
+inline CardOffer rollItemDraw(World& w, const SimConfig& cfg) {
+    CardOffer c;
+    c.kind  = CardKind::ItemDraw;
+    c.grade = 0;                       // 흔함은 등급 없이 일반 취급 (§4)
+    if (cfg.commonPoolSize == 0) { c.kind = CardKind::None; return c; }
+    c.entryId = cfg.commonPool[w.rngItems.range(cfg.commonPoolSize)];
+    return c;
+}
+
 inline void dealCards(World& w, const SimConfig& cfg) {
     w.cards.offer.clear();
     const uint32_t n = cfg.cardsPerLevel < MAX_CARDS_PER_LEVEL
                      ? cfg.cardsPerLevel : MAX_CARDS_PER_LEVEL;
-    for (uint32_t i = 0; i < n; ++i) {
+
+    // **0번은 아이템 뽑기로 고정**이다. 위치를 고정해야 "왼쪽은 도박, 오른쪽은
+    // 확정"이라는 대비가 유지된다 (§4). 리롤 대상도 오른쪽 3장뿐이다.
+    if (cfg.commonPoolSize > 0) {
+        w.cards.offer.offers[w.cards.offer.count++] = rollItemDraw(w, cfg);
+    }
+    for (uint32_t i = w.cards.offer.count; i < n; ++i) {
         w.cards.offer.offers[w.cards.offer.count++] = rollCard(w, cfg, w.cards.offer);
     }
 }
@@ -141,7 +161,10 @@ inline void gainExp(World& w, const SimConfig& cfg, int64_t amount) {
 }
 
 // 선택 적용. 인덱스가 범위를 벗어나면 거부한다 (입력 로그가 오염됐을 수 있다).
-inline bool chooseCard(World& w, const SimConfig& cfg, uint32_t index) {
+// **RecipeTable을 받는다.** 아이템 뽑기 칸이 인벤토리에 넣어야 하고, 인벤토리는
+// 어느 테이블 기준인지 알아야 캐시가 맞다 (Inventory::matches).
+inline bool chooseCard(World& w, const SimConfig& cfg, const RecipeTable& table,
+                       uint32_t index) {
     if (!w.cards.offer.open() || index >= w.cards.offer.count
         || index >= MAX_CARDS_PER_LEVEL) return false;
     const CardOffer c = w.cards.offer.offers[index];
@@ -163,6 +186,12 @@ inline bool chooseCard(World& w, const SimConfig& cfg, uint32_t index) {
             // **전설은 중첩 자체가 밸런스를 깬다** (§4) — 풀에서 빼고 다시 안 나온다.
             if (c.entryId < MAX_LEGEND_POOL) w.cards.legendTake(c.entryId);
             break;
+        case CardKind::ItemDraw:
+            // **위력의 주력이 여기서 들어온다.** 흔함 1개를 인벤토리에 넣고
+            // 스탯 기여분을 다시 접는다 — 조합으로 상위 등급이 되면 그때 또 접힌다.
+            if (!w.inventory.add(table, c.entryId)) return false;
+            refreshItemStats(w, cfg);
+            break;
         case CardKind::None:
         case CardKind::Count:
             return false;
@@ -179,6 +208,21 @@ inline bool chooseCard(World& w, const SimConfig& cfg, uint32_t index) {
 inline bool rerollCards(World& w, const SimConfig& cfg) {
     if (!w.cards.offer.open()) return false;
     ++w.cards.rerolls;
+    // **오른쪽 성장 카드만 다시 굴린다** (§4). 맨 왼쪽 아이템 뽑기 칸은 고정이라
+    // 리롤 대상이 아니다 — 어차피 흔함만 나오므로 굴릴 이유도 없다.
+    const bool hasItemSlot = w.cards.offer.count > 0
+                          && w.cards.offer.offers[0].kind == CardKind::ItemDraw;
+    if (hasItemSlot) {
+        const CardOffer keep = w.cards.offer.offers[0];
+        const uint32_t n = cfg.cardsPerLevel < MAX_CARDS_PER_LEVEL
+                         ? cfg.cardsPerLevel : MAX_CARDS_PER_LEVEL;
+        w.cards.offer.clear();
+        w.cards.offer.offers[w.cards.offer.count++] = keep;
+        for (uint32_t i = 1; i < n; ++i) {
+            w.cards.offer.offers[w.cards.offer.count++] = rollCard(w, cfg, w.cards.offer);
+        }
+        return true;
+    }
     dealCards(w, cfg);
     return true;
 }

@@ -10,10 +10,15 @@
 #ifndef DC_SIM_CONFIG_H
 #define DC_SIM_CONFIG_H
 
+// 아이템 스탯 표의 상한. 수직 슬라이스가 51종이라 여유를 둔 값이다 —
+// config::MAX_ITEM_TYPES(1024) 전체를 잡으면 SimConfig가 수십 KB가 된다.
+#define DC_MAX_ITEM_TYPES_CFG 64
+
 #include <cstdint>
 
 #include "card.h"
 #include "config.h"
+#include "stat_id.h"
 #include "entity_store.h"
 #include "fixed.h"
 
@@ -163,6 +168,19 @@ struct SimConfig {
         return i < MAX_LEVEL_NEED ? levelNeed[i] : levelNeed[MAX_LEVEL_NEED - 1];
     }
 
+
+    // ── 아이템 (§5) ──
+    //
+    // **위력의 주력이다** — 한 판 성장의 70%를 아이템 조합이 담당한다 (design.md §4).
+    // 아이템 하나가 주는 스탯 배율(permille)을 스탯별로 담는다. 보유 개수만큼
+    // 곱이 아니라 합으로 쌓인다 — 같은 아이템 2개가 제곱으로 뛰면 조합 사다리가 무너진다.
+    int32_t  itemStats[DC_MAX_ITEM_TYPES_CFG][STAT_COUNT] = {{0}};
+    int32_t  itemSlowAura[DC_MAX_ITEM_TYPES_CFG] = {0};   // CC 축 — 스탯이 아니라 둔화
+    uint32_t itemTypeCount = 0;
+
+    // 레벨업 화면 맨 왼쪽 고정 칸이 뽑는 풀. **항상 흔함 등급**이다 (§4).
+    uint16_t commonPool[16] = {0};
+    uint32_t commonPoolSize = 0;
 
     // ── 로스터 ──
     MonsterConfig   trash{};        // 잡몹은 근접 한 종류뿐이다 (원거리는 폐지)

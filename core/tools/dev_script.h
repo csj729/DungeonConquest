@@ -69,7 +69,7 @@ inline void scriptTick(World& w) {
         e.tick  = w.tickCount();
         e.kind  = InputKind::CardChoice;
         e.value = w.rngEvents.range(w.cards.offer.count);
-        (void)applyInput(w, devSimConfig(), e);
+        (void)applyInput(w, devSimConfig(), devRecipeTable(), e);
     }
 
     // 아직 시스템이 없는 자리 — 카드 밖의 모디파이어 획득 경로를 흔든다

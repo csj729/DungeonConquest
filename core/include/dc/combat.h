@@ -194,6 +194,11 @@ inline void critWithEngrave(const World& w, Fixed* chance, Fixed* mult) {
 }
 
 // E_WIDE(확장) — 광역 반경을 늘린다. 단일기의 여파는 executeSkill이 따로 처리한다.
+// 광역 반경 — **스탯에서 온다.** 전에는 SimConfig 고정값이라 아이템 광역 축이
+// 붙을 자리가 없었다. E_WIDE(확장)는 그 위에 곱해진다.
+inline Fixed aoeRadiusOf(const World& w) {
+    return w.hero.stats.value(Stat::AoeRadius);
+}
 inline Fixed wideRadius(const World& w, Fixed base) {
     return base * (Fixed::one() + engraveValue(w, EngraveId::Wide));
 }
@@ -239,7 +244,13 @@ inline Fixed beaconMult(const World& w, Archetype a) {
 
 // R_FROST(서리 오라) — 반경 안의 적 이동속도를 깎는다. 이동 시점에 곱한다.
 inline Fixed frostMult(const World& w, const SimConfig& cfg, uint32_t i) {
-    const Fixed frost = relicValue(w, RelicId::Frost);
+    // **R_FROST와 CC 축 아이템이 같은 경로를 쓴다.** 둔화가 두 군데에 따로 살면
+    // 합산 규칙이 두 벌이 되고, 한쪽만 고치는 사고가 난다.
+    //
+    // CC를 새 스탯으로 두지 않은 이유가 여기 있다 — 둔화는 적을 늦출 뿐 더 빨리
+    // 죽이지 않아 수익이 체감한다. 섞으면 클리어가 편해지지만 몰아도 이기지 못하므로
+    // **메인 빌드가 되지 않는다** (§4 보너스 축).
+    const Fixed frost = relicValue(w, RelicId::Frost) + Fixed::fromPermille(w.hero.slowAura);
     if (frost.raw <= 0 || cfg.frostRadius.raw <= 0) return Fixed::one();
     const int64_t r2 = static_cast<int64_t>(cfg.frostRadius.raw)
                      * static_cast<int64_t>(cfg.frostRadius.raw);
@@ -358,7 +369,7 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
             // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
             uint32_t hit[config::MAX_ENTITIES];
             const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
-                                               wideRadius(w, cfg.aoeRadius),
+                                               wideRadius(w, aoeRadiusOf(w)),
                                                hit, config::MAX_ENTITIES);
             for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], dmg);
         } else {
@@ -376,7 +387,7 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
                 const uint32_t n = collectInRadius(w.entities,
                                                    w.entities.posX[static_cast<uint32_t>(d)],
                                                    w.entities.posY[static_cast<uint32_t>(d)],
-                                                   wideRadius(w, cfg.aoeRadius),
+                                                   wideRadius(w, aoeRadiusOf(w)),
                                                    hit, config::MAX_ENTITIES);
                 for (uint32_t k = 0; k < n; ++k) {
                     if (static_cast<int32_t>(hit[k]) == d) continue;   // 본체는 이미 맞았다

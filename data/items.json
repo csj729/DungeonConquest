@@ -22,24 +22,25 @@
     819,
     2047
   ],
-  "_axis_stats": "축 → 스탯 배분. 한 축을 스탯 하나에 몰지 않는다 — 몰면 그 축 아이템끼리 완전 대체재가 되어 조합 경로 선택이 사라진다 (§5 다경로의 전제).",
+  "_axis_stats": "축 → 스탯 배분. **메인 축 둘(화력·생존) · 보너스 축 둘(광역·CC).**\\n보너스 축은 예산의 절반 이상이 메인 스탯으로 간다 — 그래야 '그 축만으로는 빌드가 서지 않는다'가 수치로 성립한다. 광역 반경은 40%, CC의 둔화는 20%뿐이다.\\nCC를 새 스탯으로 두지 않은 이유: 둔화는 적을 늦출 뿐 더 빨리 죽이지 않아 수익이 체감한다 — 섞으면 클리어가 편해지지만 몰아도 이기지 못한다. R_FROST가 쓰는 둔화 경로를 그대로 재사용한다(hero.slowAura).\\n한 축을 스탯 하나에 몰지 않는 것도 유지한다 — 몰면 그 축 아이템끼리 완전 대체재가 되어 조합 경로 선택이 사라진다 (§5 다경로의 전제).",
   "axis_stats_permille": {
     "화력": {
       "attack_power": 600,
       "attack_speed": 250,
       "crit_chance": 150
     },
-    "광역": {
-      "aoe_radius": 700,
-      "attack_power": 300
-    },
-    "CC": {
-      "cc_power": 700,
-      "attack_speed": 300
-    },
     "생존": {
       "armor": 600,
       "corruption_max": 400
+    },
+    "광역": {
+      "attack_power": 600,
+      "aoe_radius": 400
+    },
+    "CC": {
+      "attack_speed": 450,
+      "armor": 350,
+      "slow_aura": 200
     }
   },
   "commons": [
@@ -71,8 +72,8 @@
       "axis": "광역",
       "grade": "흔함",
       "stats_permille": {
-        "aoe_radius": 37,
-        "attack_power": 16
+        "attack_power": 31,
+        "aoe_radius": 21
       }
     },
     {
@@ -81,8 +82,9 @@
       "axis": "CC",
       "grade": "흔함",
       "stats_permille": {
-        "cc_power": 37,
-        "attack_speed": 16
+        "attack_speed": 24,
+        "armor": 18,
+        "slow_aura": 10
       }
     },
     {
@@ -91,8 +93,9 @@
       "axis": "CC",
       "grade": "흔함",
       "stats_permille": {
-        "cc_power": 37,
-        "attack_speed": 16
+        "attack_speed": 24,
+        "armor": 18,
+        "slow_aura": 10
       }
     },
     {
@@ -101,8 +104,8 @@
       "axis": "광역",
       "grade": "흔함",
       "stats_permille": {
-        "aoe_radius": 37,
-        "attack_power": 16
+        "attack_power": 31,
+        "aoe_radius": 21
       }
     },
     {
@@ -193,8 +196,9 @@
         "C5"
       ],
       "stats_permille": {
-        "cc_power": 92,
-        "attack_speed": 39
+        "attack_speed": 59,
+        "armor": 46,
+        "slow_aura": 26
       }
     },
     {
@@ -207,8 +211,9 @@
         "C6"
       ],
       "stats_permille": {
-        "cc_power": 92,
-        "attack_speed": 39
+        "attack_speed": 59,
+        "armor": 46,
+        "slow_aura": 26
       }
     },
     {
@@ -221,8 +226,9 @@
         "C7"
       ],
       "stats_permille": {
-        "cc_power": 92,
-        "attack_speed": 39
+        "attack_speed": 59,
+        "armor": 46,
+        "slow_aura": 26
       }
     },
     {
@@ -235,8 +241,8 @@
         "C4"
       ],
       "stats_permille": {
-        "aoe_radius": 92,
-        "attack_power": 39
+        "attack_power": 79,
+        "aoe_radius": 52
       }
     },
     {
@@ -249,8 +255,8 @@
         "C6"
       ],
       "stats_permille": {
-        "aoe_radius": 92,
-        "attack_power": 39
+        "attack_power": 79,
+        "aoe_radius": 52
       }
     },
     {
@@ -263,8 +269,8 @@
         "C1"
       ],
       "stats_permille": {
-        "aoe_radius": 92,
-        "attack_power": 39
+        "attack_power": 79,
+        "aoe_radius": 52
       }
     },
     {
@@ -351,8 +357,9 @@
         "C9"
       ],
       "stats_permille": {
-        "cc_power": 229,
-        "attack_speed": 98
+        "attack_speed": 147,
+        "armor": 115,
+        "slow_aura": 66
       }
     },
     {
@@ -365,8 +372,9 @@
         "Ac3"
       ],
       "stats_permille": {
-        "cc_power": 229,
-        "attack_speed": 98
+        "attack_speed": 147,
+        "armor": 115,
+        "slow_aura": 66
       }
     },
     {
@@ -379,8 +387,8 @@
         "Aa2"
       ],
       "stats_permille": {
-        "aoe_radius": 229,
-        "attack_power": 98
+        "attack_power": 196,
+        "aoe_radius": 131
       }
     },
     {
@@ -393,8 +401,8 @@
         "Aa3"
       ],
       "stats_permille": {
-        "aoe_radius": 229,
-        "attack_power": 98
+        "attack_power": 196,
+        "aoe_radius": 131
       }
     },
     {
@@ -465,8 +473,9 @@
         "Bc2"
       ],
       "stats_permille": {
-        "cc_power": 573,
-        "attack_speed": 246
+        "attack_speed": 368,
+        "armor": 287,
+        "slow_aura": 164
       }
     },
     {
@@ -479,8 +488,9 @@
         "Ba1"
       ],
       "stats_permille": {
-        "cc_power": 573,
-        "attack_speed": 246
+        "attack_speed": 368,
+        "armor": 287,
+        "slow_aura": 164
       }
     },
     {
@@ -493,8 +503,8 @@
         "Ba2"
       ],
       "stats_permille": {
-        "aoe_radius": 573,
-        "attack_power": 246
+        "attack_power": 491,
+        "aoe_radius": 328
       }
     },
     {
@@ -507,8 +517,8 @@
         "Bf2"
       ],
       "stats_permille": {
-        "aoe_radius": 573,
-        "attack_power": 246
+        "attack_power": 491,
+        "aoe_radius": 328
       }
     },
     {
@@ -625,8 +635,9 @@
         "Cc2"
       ],
       "stats_permille": {
-        "cc_power": 1433,
-        "attack_speed": 614
+        "attack_speed": 921,
+        "armor": 716,
+        "slow_aura": 409
       }
     },
     {
@@ -639,8 +650,9 @@
         "Ca1"
       ],
       "stats_permille": {
-        "cc_power": 1433,
-        "attack_speed": 614
+        "attack_speed": 921,
+        "armor": 716,
+        "slow_aura": 409
       }
     },
     {
@@ -653,8 +665,8 @@
         "Ca2"
       ],
       "stats_permille": {
-        "aoe_radius": 1433,
-        "attack_power": 614
+        "attack_power": 1228,
+        "aoe_radius": 819
       }
     },
     {
@@ -667,8 +679,8 @@
         "Cs1"
       ],
       "stats_permille": {
-        "aoe_radius": 1433,
-        "attack_power": 614
+        "attack_power": 1228,
+        "aoe_radius": 819
       }
     },
     {
@@ -724,8 +736,9 @@
         "Bc1"
       ],
       "stats_permille": {
-        "cc_power": 1433,
-        "attack_speed": 614
+        "attack_speed": 921,
+        "armor": 716,
+        "slow_aura": 409
       }
     },
     {
@@ -739,8 +752,8 @@
         "Ba2"
       ],
       "stats_permille": {
-        "aoe_radius": 1433,
-        "attack_power": 614
+        "attack_power": 1228,
+        "aoe_radius": 819
       }
     }
   ],

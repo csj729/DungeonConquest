@@ -208,6 +208,21 @@ def _check_dev_data():
         return [[int(x) for x in re.findall(r"-?\d+", r)]
                 for r in re.findall(r"\{([^}]*)\}", m.group(1))]
 
+    def skill_rows():
+        """kSkills 초기화 블록을 행 단위로 뜯는다 — {mult, weight, aoe}.
+
+        **엘리트 표와 같은 이유로 행을 통째로 본다.** damage 하나가 4.2배
+        어긋난 채 파이썬과 C++가 서로 다른 게임을 재고 있던 적이 있다.
+        """
+        m = re.search(r"kSkills\[\d*\]\s*=\s*\{(.*?)\n\s*\};", src, re.S)
+        if not m:
+            return None
+        out = []
+        for row in re.findall(r"\{([^}]*)\}", m.group(1)):
+            nums = [int(x) for x in re.findall(r"-?\d+", row)]
+            out.append([nums[0], nums[1], "true" in row])
+        return out
+
     def slice_boss_hp():
         m = re.search(r"c\.boss\.hp\s*=\s*Fixed\((\d+)\)", src)
         return int(m.group(1)) if m else None
@@ -246,6 +261,11 @@ def _check_dev_data():
         # 균등 분할 시절 값으로 남아 19마리 전부 구간 8 이전에 몰려 있었다.
         ("eliteSpawns", elite_spawns(),
          [list(r) for r in gd.SEGMENTS_DATA["elite_spawn_points"]]),
+        # **스킬 표도 그동안 대조 밖이었다.** 배율·가중치는 hero_dps와
+        # elite_damage_share가 둘 다 읽는 값이라 어긋나면 전체 모델이 흔들린다.
+        ("kSkills", skill_rows(),
+         [[k["mult_permille"], k["weight_permille"], k["aoe"]]
+          for k in gd.SKILLS_DATA["skills"]]),
         ("ELITE_COOLDOWN_TICKS", scalar("ELITE_COOLDOWN_TICKS"),
          gd.MONSTERS["elites"][0]["cooldown_ticks"]),
         ("ELITE_ATTACK_RANGE_MILLITILE", scalar("ELITE_ATTACK_RANGE_MILLITILE"),

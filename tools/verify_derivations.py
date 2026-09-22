@@ -47,6 +47,16 @@
 - `trash.hp` → `balance_baseline.py` 목표 1 (공격력 × 타수를 등식으로 본다)
 
 엘리트 체력은 목표 7이 **밴드만** 보므로 여기서 역산까지 한다.
+
+## 값이 아니라 관계만 보는 것
+
+`skills.json`의 배율·가중치·광역 여부는 **이미 하류에서 전부 보호된다** —
+셋 중 무엇을 흔들어도 `hero_dps`가 움직여 엘리트 체력·보스 체력 도출이 걸린다
+(실측: 배율 2.5 → 2.8에 3건, 가중치 350 → 300에 3건, 가중치 비례 확대에
+7개 도구). 값에 대한 역산 검사는 중복이므로 넣지 않는다.
+
+대신 **진단이 간접적인 것**을 고친다. 가중치 합이 깨지면 "보스 체력이 틀렸다"로
+뜨는데 그건 고칠 자리를 가리키지 않는다. 그래서 합과 순서만 이름으로 부른다.
 """
 import math
 import sys
@@ -230,6 +240,36 @@ def recipe_economy():
     return got, want
 
 
+def skill_invariants():
+    """스킬 표가 지켜야 하는 관계. **값이 아니라 관계다.**
+
+    `skills.json`의 배율·가중치·광역 여부는 이미 하류에서 전부 보호된다 —
+    셋 중 무엇을 흔들어도 `hero_dps`가 움직여 엘리트 체력·보스 체력 도출이
+    걸린다 (실측: 배율 2.5 → 2.8에 3건, 가중치 350 → 300에 3건, 가중치 비례
+    확대에 7개 도구). 그래서 **값에 대한 역산 검사는 중복이다.**
+
+    그런데 **진단이 간접적이다.** 가중치 합이 1000이 아니게 되면 "보스 체력이
+    틀렸다"로 뜬다 — 고칠 자리를 가리키지 않는다. 여기 두 줄은 커버리지가
+    아니라 **원인을 이름으로 부르기 위해** 있다.
+
+    1. **가중치 합 = 1000.** 추첨 분포이므로 합이 1이어야 한다.
+       `elite_damage_share = (1-proc) + proc × 광역가중치`는 이 합이 1이라는
+       전제 위에 서 있다 — 깨지면 "엘리트가 받는 피해 비중"이 1을 넘는다
+    2. **광역 배율 < 단일 배율.** 광역은 여러 마리를 때리므로 배율까지 높으면
+       단일 대상 스킬이 존재 이유를 잃는다. 실효 가치로는 밴드를 세울 수 없다 —
+       단일(3.0)이 광역(9.75)보다 낮은 것이 정상이고, 단일의 값어치는
+       엘리트·보스에 집중된다는 데 있어서 `elite_damage_share`가 따로 담는다
+    """
+    skills = gd.SKILLS_DATA["skills"]
+    total = sum(k["weight_permille"] for k in skills)
+    aoe = [k["mult_permille"] for k in skills if k["aoe"]]
+    single = [k["mult_permille"] for k in skills if not k["aoe"]]
+    return {
+        "가중치 합": (total, 1000),
+        "광역 최대 배율 < 단일 최소 배율": (max(aoe) < min(single), True),
+    }
+
+
 def derive_full_boss_hp():
     """풀 게임 최종 보스 체력 ← 맵 3 보스의 투영.
 
@@ -349,6 +389,17 @@ def report():
             if msg:
                 print(f"        → {msg}")
     print()
+    print("=== 값이 아니라 관계인 것 ===")
+    print("  스킬 배율·가중치는 이미 하류에서 보호된다 — 무엇을 흔들어도 hero_dps가")
+    print("  움직여 엘리트·보스 체력 도출이 걸린다. 아래 두 줄은 커버리지가 아니라")
+    print("  **원인을 이름으로 부르기 위해** 있다 (합이 깨지면 '보스 체력이 틀렸다'로")
+    print("  뜨는데, 그건 고칠 자리를 가리키지 않는다).")
+    for name, (got, want) in skill_invariants().items():
+        good = got == want
+        ok &= good
+        shown = f"{got} (기대 {want})" if got != want else str(got)
+        print(f"  {'OK ' if good else 'X  '} {name:<30} {shown}")
+    print()
     print("  ※ **도출식의 입력도 전부 데이터여야 한다.** 손으로 적은 목표치가 식 안에")
     print("     있으면 그 값이 다시 검사 밖으로 나간다 — slice_boss_target_sec를")
     print("     monsters.json으로 끌어올린 이유다")
@@ -388,6 +439,11 @@ _POKES = [
     # 건너뛰기 할인 — 이걸 흔들면 Rskip/Eskip 4개가 범주에서 벗어난다
     ("data/items.json", '"skip_discount_permille": 750,',
      '"skip_discount_permille": 800,', "recipes[] 조합 수지"),
+    # 스킬은 값이 아니라 관계를 본다 — 합이 깨지는 것과 순서가 뒤집히는 것
+    ("data/skills.json", '"weight_permille": 250,', '"weight_permille": 260,',
+     "가중치 합"),
+    ("data/skills.json", '"mult_permille": 2500,', '"mult_permille": 3200,',
+     "광역 최대 배율"),
     ("data/monsters.json", '"hp": 27061,', '"hp": 27200,', "boss.hp"),
 ]
 

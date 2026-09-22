@@ -259,11 +259,17 @@ inline void applyHeroBaseline(World& w) {
     bases[statIndex(Stat::AttackSpeed)]   = Fixed(20) / HERO_ATTACK_INTERVAL_TICKS;  // 초당 1회
     bases[statIndex(Stat::Armor)]         = Fixed(HERO_ARMOR);
     bases[statIndex(Stat::Range)]         = Fixed(3);
+    // 아이템 축이 들어오는 두 스탯. 기준값 1.0 = 배율 그대로.
+    bases[statIndex(Stat::AoeRadius)]     = Fixed::fromPermille(HERO_AOE_RADIUS_MILLITILE);
+    bases[statIndex(Stat::CcPower)]       = Fixed::one();
     bases[statIndex(Stat::CorruptionMax)] = Fixed(HERO_CORRUPTION_MAX);
     bases[statIndex(Stat::CritChance)]    = Fixed::fromPermille(HERO_CRIT_CHANCE_PERMILLE);
     bases[statIndex(Stat::CritMult)]      = Fixed::fromPermille(HERO_CRIT_MULT_PERMILLE);
     bases[statIndex(Stat::MoveSpeed)]     = Fixed::fromPermille(HERO_MOVE_SPEED_PERMILLE);
     bounds[statIndex(Stat::CorruptionMax)] = StatBounds{Fixed(1), Fixed::fromPermille(-900)};
+    bounds[statIndex(Stat::AoeRadius)]    = StatBounds{Fixed::fromPermille(500),
+                                                    Fixed::fromPermille(-900)};
+    bounds[statIndex(Stat::CcPower)]      = StatBounds{Fixed{}, Fixed::fromPermille(-1000)};
     bounds[statIndex(Stat::AttackSpeed)]   = StatBounds{Fixed::fromPermille(100),
                                                         Fixed::fromPermille(-900)};
     w.hero.stats.init(bases, bounds);

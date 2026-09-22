@@ -4,14 +4,51 @@
   "_min_pct_add": "PercentAdd 누적합의 하한. -1000permille = -100%.",
   "_override": "Override도 이 하한을 넘지 못한다. 불변식은 무조건 성립해야 하므로. 속박이 이동속도를 0으로 만들어야 하면 move_speed의 하한이 0이면 된다.",
   "stats": {
-    "attack_power":   { "min_value_permille": 0,    "min_pct_add_permille": -1000 },
-    "attack_speed":   { "min_value_permille": 100,  "min_pct_add_permille": -900  },
-    "armor":          { "min_value_permille": 0,    "min_pct_add_permille": -1000 },
-    "range":          { "min_value_permille": 500,  "min_pct_add_permille": -900  },
-    "corruption_max": { "min_value_permille": 1000, "min_pct_add_permille": -900  },
-    "crit_chance":    { "min_value_permille": 0,    "min_pct_add_permille": -1000 },
-    "crit_mult":      { "min_value_permille": 1000, "min_pct_add_permille": -1000 },
-    "proc_rate":      { "min_value_permille": 0,    "min_pct_add_permille": -1000 },
-    "move_speed":     { "min_value_permille": 0,    "min_pct_add_permille": -1000 }
+    "attack_power": {
+      "min_value_permille": 0,
+      "min_pct_add_permille": -1000
+    },
+    "attack_speed": {
+      "min_value_permille": 100,
+      "min_pct_add_permille": -900
+    },
+    "armor": {
+      "min_value_permille": 0,
+      "min_pct_add_permille": -1000
+    },
+    "range": {
+      "min_value_permille": 500,
+      "min_pct_add_permille": -900
+    },
+    "corruption_max": {
+      "min_value_permille": 1000,
+      "min_pct_add_permille": -900
+    },
+    "crit_chance": {
+      "min_value_permille": 0,
+      "min_pct_add_permille": -1000
+    },
+    "crit_mult": {
+      "min_value_permille": 1000,
+      "min_pct_add_permille": -1000
+    },
+    "proc_rate": {
+      "min_value_permille": 0,
+      "min_pct_add_permille": -1000
+    },
+    "move_speed": {
+      "min_value_permille": 0,
+      "min_pct_add_permille": -1000
+    },
+    "aoe_radius": {
+      "_": "광역기 반경. 아이템 광역 축이 여기로 들어온다 — 전에는 SimConfig 고정값이라 아이템이 붙을 자리가 없었다.",
+      "min_value_permille": 500,
+      "min_pct_add_permille": -900
+    },
+    "cc_power": {
+      "_": "CC 게이지 충전 배율. 아이템 CC 축이 여기로 들어온다. QTE 완벽 판정의 ccGauge 충전량에 곱해진다 — CC 축이 스킬 축을 침범하지 않으면서 \"무력화를 더 빨리 만든다\"로만 작동하게 하는 자리다.",
+      "min_value_permille": 0,
+      "min_pct_add_permille": -1000
+    }
   }
 }

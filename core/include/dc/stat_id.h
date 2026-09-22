@@ -22,7 +22,10 @@ enum class Stat : uint8_t {
     CritMult      = 6,
     ProcRate      = 7,   // 통합 proc 발동률 (§3)
     MoveSpeed     = 8,
-    Count         = 9,
+    // **뒤에만 덧붙인다** — 앞 값이 바뀌면 기존 리플레이가 전부 깨진다.
+    AoeRadius     = 9,   // 광역기 반경. 아이템 광역 축이 여기로 들어온다
+    CcPower       = 10,  // CC 게이지 충전 배율. 아이템 CC 축
+    Count         = 11,
 };
 
 constexpr uint32_t STAT_COUNT = static_cast<uint32_t>(Stat::Count);
@@ -43,6 +46,8 @@ inline const char* statName(Stat s) {
         case Stat::CritMult:      return "crit_mult";
         case Stat::ProcRate:      return "proc_rate";
         case Stat::MoveSpeed:     return "move_speed";
+        case Stat::AoeRadius:     return "aoe_radius";
+        case Stat::CcPower:       return "cc_power";
         case Stat::Count:         break;
     }
     return "?";

@@ -13,42 +13,128 @@
     "광역",
     "생존"
   ],
+  "_ladder": "위력 사다리. **상위 1개 = 하위 2개 × 조합 프리미엄 1.25**다. 조합이 재료를 소모하므로 이 부등식이 성립해야 조합이 이득이 된다 — 1.0이면 조합할 이유가 없고, 너무 크면 하위 아이템이 쓰레기가 된다.\\n흔함 5.24%는 카드와의 관계에서 나왔다: 희귀 카드(3.0%)보다 위, 영웅 카드(6.0%)보다 아래. 그래서 3장 중 영웅 이상이 뜰 때(24.6%)만 카드를 고르게 되고, 그 결과 아이템 7.5회 : 카드 2.5회로 위력 배분 70:30이 저절로 성립한다 (design.md §4).\\ntools/verify_item_values.py가 사다리·배분·조합 이득을 검산한다.",
+  "craft_premium_permille": 1250,
+  "tier_power_permille": [
+    52,
+    131,
+    328,
+    819,
+    2047
+  ],
+  "_axis_stats": "축 → 스탯 배분. 한 축을 스탯 하나에 몰지 않는다 — 몰면 그 축 아이템끼리 완전 대체재가 되어 조합 경로 선택이 사라진다 (§5 다경로의 전제).",
+  "axis_stats_permille": {
+    "화력": {
+      "attack_power": 600,
+      "attack_speed": 250,
+      "crit_chance": 150
+    },
+    "광역": {
+      "aoe_radius": 700,
+      "attack_power": 300
+    },
+    "CC": {
+      "cc_power": 700,
+      "attack_speed": 300
+    },
+    "생존": {
+      "armor": 600,
+      "corruption_max": 400
+    }
+  },
   "commons": [
     {
       "id": "C1",
-      "name": "낡은 강철 조각"
+      "name": "낡은 강철 조각",
+      "axis": "화력",
+      "grade": "흔함",
+      "stats_permille": {
+        "attack_power": 31,
+        "attack_speed": 13,
+        "crit_chance": 8
+      }
     },
     {
       "id": "C2",
-      "name": "짐승의 이빨"
+      "name": "짐승의 이빨",
+      "axis": "화력",
+      "grade": "흔함",
+      "stats_permille": {
+        "attack_power": 31,
+        "attack_speed": 13,
+        "crit_chance": 8
+      }
     },
     {
       "id": "C3",
-      "name": "C3"
+      "name": "C3",
+      "axis": "광역",
+      "grade": "흔함",
+      "stats_permille": {
+        "aoe_radius": 37,
+        "attack_power": 16
+      }
     },
     {
       "id": "C4",
-      "name": "C4"
+      "name": "C4",
+      "axis": "CC",
+      "grade": "흔함",
+      "stats_permille": {
+        "cc_power": 37,
+        "attack_speed": 16
+      }
     },
     {
       "id": "C5",
-      "name": "C5"
+      "name": "C5",
+      "axis": "CC",
+      "grade": "흔함",
+      "stats_permille": {
+        "cc_power": 37,
+        "attack_speed": 16
+      }
     },
     {
       "id": "C6",
-      "name": "C6"
+      "name": "C6",
+      "axis": "광역",
+      "grade": "흔함",
+      "stats_permille": {
+        "aoe_radius": 37,
+        "attack_power": 16
+      }
     },
     {
       "id": "C7",
-      "name": "C7"
+      "name": "C7",
+      "axis": "생존",
+      "grade": "흔함",
+      "stats_permille": {
+        "armor": 31,
+        "corruption_max": 21
+      }
     },
     {
       "id": "C8",
-      "name": "C8"
+      "name": "C8",
+      "axis": "생존",
+      "grade": "흔함",
+      "stats_permille": {
+        "armor": 31,
+        "corruption_max": 21
+      }
     },
     {
       "id": "C9",
-      "name": "정령의 눈물"
+      "name": "정령의 눈물",
+      "axis": "화력",
+      "grade": "흔함",
+      "stats_permille": {
+        "attack_power": 31,
+        "attack_speed": 13,
+        "crit_chance": 8
+      }
     }
   ],
   "recipes": [
@@ -60,7 +146,12 @@
       "ingredients": [
         "C1",
         "C2"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 79,
+        "attack_speed": 33,
+        "crit_chance": 20
+      }
     },
     {
       "id": "Af2",
@@ -70,7 +161,12 @@
       "ingredients": [
         "C1",
         "C3"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 79,
+        "attack_speed": 33,
+        "crit_chance": 20
+      }
     },
     {
       "id": "Af3",
@@ -80,7 +176,12 @@
       "ingredients": [
         "C2",
         "C5"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 79,
+        "attack_speed": 33,
+        "crit_chance": 20
+      }
     },
     {
       "id": "Ac1",
@@ -90,7 +191,11 @@
       "ingredients": [
         "C4",
         "C5"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 92,
+        "attack_speed": 39
+      }
     },
     {
       "id": "Ac2",
@@ -100,7 +205,11 @@
       "ingredients": [
         "C4",
         "C6"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 92,
+        "attack_speed": 39
+      }
     },
     {
       "id": "Ac3",
@@ -110,7 +219,11 @@
       "ingredients": [
         "C5",
         "C7"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 92,
+        "attack_speed": 39
+      }
     },
     {
       "id": "Aa1",
@@ -120,7 +233,11 @@
       "ingredients": [
         "C3",
         "C4"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 92,
+        "attack_power": 39
+      }
     },
     {
       "id": "Aa2",
@@ -130,7 +247,11 @@
       "ingredients": [
         "C3",
         "C6"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 92,
+        "attack_power": 39
+      }
     },
     {
       "id": "Aa3",
@@ -140,7 +261,11 @@
       "ingredients": [
         "C6",
         "C1"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 92,
+        "attack_power": 39
+      }
     },
     {
       "id": "As1",
@@ -150,7 +275,11 @@
       "ingredients": [
         "C7",
         "C8"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 79,
+        "corruption_max": 52
+      }
     },
     {
       "id": "As2",
@@ -160,7 +289,11 @@
       "ingredients": [
         "C8",
         "C2"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 79,
+        "corruption_max": 52
+      }
     },
     {
       "id": "As3",
@@ -170,7 +303,11 @@
       "ingredients": [
         "C7",
         "C1"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 79,
+        "corruption_max": 52
+      }
     },
     {
       "id": "Bf1",
@@ -181,7 +318,12 @@
         "Af1",
         "Af2",
         "C9"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 196,
+        "attack_speed": 82,
+        "crit_chance": 49
+      }
     },
     {
       "id": "Bf2",
@@ -191,7 +333,12 @@
       "ingredients": [
         "Af3",
         "Af1"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 196,
+        "attack_speed": 82,
+        "crit_chance": 49
+      }
     },
     {
       "id": "Bc1",
@@ -202,7 +349,11 @@
         "Ac1",
         "Ac2",
         "C9"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 229,
+        "attack_speed": 98
+      }
     },
     {
       "id": "Bc2",
@@ -212,7 +363,11 @@
       "ingredients": [
         "Ac2",
         "Ac3"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 229,
+        "attack_speed": 98
+      }
     },
     {
       "id": "Ba1",
@@ -222,7 +377,11 @@
       "ingredients": [
         "Aa1",
         "Aa2"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 229,
+        "attack_power": 98
+      }
     },
     {
       "id": "Ba2",
@@ -232,7 +391,11 @@
       "ingredients": [
         "Aa2",
         "Aa3"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 229,
+        "attack_power": 98
+      }
     },
     {
       "id": "Bs1",
@@ -242,7 +405,11 @@
       "ingredients": [
         "As1",
         "As2"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 196,
+        "corruption_max": 131
+      }
     },
     {
       "id": "Bs2",
@@ -252,7 +419,11 @@
       "ingredients": [
         "As2",
         "As3"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 196,
+        "corruption_max": 131
+      }
     },
     {
       "id": "Cf1",
@@ -262,7 +433,12 @@
       "ingredients": [
         "Bf1",
         "Bf2"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 491,
+        "attack_speed": 205,
+        "crit_chance": 123
+      }
     },
     {
       "id": "Cf2",
@@ -272,7 +448,12 @@
       "ingredients": [
         "Bf2",
         "Ba2"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 491,
+        "attack_speed": 205,
+        "crit_chance": 123
+      }
     },
     {
       "id": "Cc1",
@@ -282,7 +463,11 @@
       "ingredients": [
         "Bc1",
         "Bc2"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 573,
+        "attack_speed": 246
+      }
     },
     {
       "id": "Cc2",
@@ -292,7 +477,11 @@
       "ingredients": [
         "Bc2",
         "Ba1"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 573,
+        "attack_speed": 246
+      }
     },
     {
       "id": "Ca1",
@@ -302,7 +491,11 @@
       "ingredients": [
         "Ba1",
         "Ba2"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 573,
+        "attack_power": 246
+      }
     },
     {
       "id": "Ca2",
@@ -312,7 +505,11 @@
       "ingredients": [
         "Ba1",
         "Bf2"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 573,
+        "attack_power": 246
+      }
     },
     {
       "id": "Cs1",
@@ -322,7 +519,11 @@
       "ingredients": [
         "Bs1",
         "Bs2"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 491,
+        "corruption_max": 328
+      }
     },
     {
       "id": "Cs2",
@@ -332,7 +533,11 @@
       "ingredients": [
         "Bs1",
         "Ba2"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 491,
+        "corruption_max": 328
+      }
     },
     {
       "id": "Rskip_f",
@@ -343,7 +548,12 @@
         "Af3",
         "Af3",
         "Af3"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 491,
+        "attack_speed": 205,
+        "crit_chance": 123
+      }
     },
     {
       "id": "Rskip_s",
@@ -354,7 +564,11 @@
         "As3",
         "As3",
         "As3"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 491,
+        "corruption_max": 328
+      }
     },
     {
       "id": "Ef1",
@@ -364,7 +578,12 @@
       "ingredients": [
         "Cf1",
         "Cf2"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 1228,
+        "attack_speed": 512,
+        "crit_chance": 307
+      }
     },
     {
       "id": "Ef2",
@@ -374,7 +593,12 @@
       "ingredients": [
         "Cf1",
         "Rskip_f"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 1228,
+        "attack_speed": 512,
+        "crit_chance": 307
+      }
     },
     {
       "id": "Ef3",
@@ -384,7 +608,12 @@
       "ingredients": [
         "Cf2",
         "Rskip_f"
-      ]
+      ],
+      "stats_permille": {
+        "attack_power": 1228,
+        "attack_speed": 512,
+        "crit_chance": 307
+      }
     },
     {
       "id": "Ec1",
@@ -394,7 +623,11 @@
       "ingredients": [
         "Cc1",
         "Cc2"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 1433,
+        "attack_speed": 614
+      }
     },
     {
       "id": "Ec2",
@@ -404,7 +637,11 @@
       "ingredients": [
         "Cc2",
         "Ca1"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 1433,
+        "attack_speed": 614
+      }
     },
     {
       "id": "Ea1",
@@ -414,7 +651,11 @@
       "ingredients": [
         "Ca1",
         "Ca2"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 1433,
+        "attack_power": 614
+      }
     },
     {
       "id": "Ea2",
@@ -424,7 +665,11 @@
       "ingredients": [
         "Ca2",
         "Cs1"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 1433,
+        "attack_power": 614
+      }
     },
     {
       "id": "Es1",
@@ -434,7 +679,11 @@
       "ingredients": [
         "Cs1",
         "Cs2"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 1228,
+        "corruption_max": 819
+      }
     },
     {
       "id": "Es2",
@@ -444,7 +693,11 @@
       "ingredients": [
         "Cs1",
         "Rskip_s"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 1228,
+        "corruption_max": 819
+      }
     },
     {
       "id": "Es3",
@@ -454,7 +707,11 @@
       "ingredients": [
         "Cs2",
         "Rskip_s"
-      ]
+      ],
+      "stats_permille": {
+        "armor": 1228,
+        "corruption_max": 819
+      }
     },
     {
       "id": "Eskip_c",
@@ -465,7 +722,11 @@
         "Bc1",
         "Bc1",
         "Bc1"
-      ]
+      ],
+      "stats_permille": {
+        "cc_power": 1433,
+        "attack_speed": 614
+      }
     },
     {
       "id": "Eskip_a",
@@ -476,7 +737,11 @@
         "Ba2",
         "Ba2",
         "Ba2"
-      ]
+      ],
+      "stats_permille": {
+        "aoe_radius": 1433,
+        "attack_power": 614
+      }
     }
   ],
   "fire_subthemes": {

@@ -95,7 +95,8 @@
     "target_sec_max": 90
   },
   "slice_boss_armor": 50,
-  "slice_boss_hp": 3231,
+  "_slice_boss_hp": "**3231 → 2086.** 목표 처치 시간에서 역산하는 값인데, 그 역산이 실측 보정(balance_baseline.COMBAT_EFFICIENCY)을 빼고 있었다 — 모델이 61초로 볼 때 실측은 111초였다(하네스 11판, 잠식 고정). 설계 밴드는 60~90초다.\n**70초로 잡는다.** 설계 목표는 75초지만 맵 통과가 설계 294초 대비 344초라 75초면 한 판이 7.95분으로 5~8분 밴드에 3초만 남는다. 70초면 7.87분이고 보스 밴드 안이다. 맵이 설계값에 닿으면 75초로 되돌릴 자리다.",
+  "slice_boss_hp": 2086,
   "_slice_boss": "수직 슬라이스용 보스. 전체 게임 보스(hp 50769)와 달리 맵 1개 분량으로 축소한 값이다. damage는 patterns[0](삼연격 63)을 임시로 쓴다 — 보스 패턴 시스템(patternIndex/patternCooldown)이 붙으면 patterns에서 직접 읽고 이 값은 사라진다.",
   "slice_boss_damage": 63,
   "slice_boss_cooldown_ticks": 60,

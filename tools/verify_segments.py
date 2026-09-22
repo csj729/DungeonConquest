@@ -92,7 +92,11 @@ def simulate():
 
     boss_growth = power_mult(lv)
     boss_ehp = effective_hp(SLICE_BOSS_HP, SLICE_BOSS_ARMOR)
-    boss_sec = boss_ehp / (dps * boss_growth)
+    # **보스도 같은 보정을 받는다.** 한때 "보스는 단일 대상이라 포화도 표적 분산도
+    # 없다"고 보고 빼 두었는데, 실측이 111초일 때 모델이 61초였다 — 비율 0.55로
+    # 구간 쪽 보정(0.56)과 사실상 같다. 보스전에도 전장은 상한까지 차 있어
+    # 광역 프록과 이동이 출력을 똑같이 희석하기 때문이다.
+    boss_sec = boss_ehp / (dps * boss_growth) / COMBAT_EFFICIENCY
     carry += int(boss_ehp * EXP_PER_EHP)
     while carry >= level_need(lv + 1):
         carry -= level_need(lv + 1)

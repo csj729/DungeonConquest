@@ -243,7 +243,7 @@ inline SimConfig devConfig() {
     }
 
     // data/monsters.json — 보스
-    c.boss.hp             = Fixed(3231);      // slice_boss_hp
+    c.boss.hp             = Fixed(2086);      // slice_boss_hp
     c.boss.armor          = Fixed(50);        // slice_boss_armor
     c.boss.damage         = Fixed(SLICE_BOSS_DAMAGE);
     c.boss.targetPriority = 10;

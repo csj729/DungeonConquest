@@ -91,7 +91,8 @@ def run_sim(maps):
         # **보스 HP는 잡몹 스케일링이 아니라 목표 처치 시간에서 역산한다.**
         # 잡몹 배율에 묶으면 영웅 성장(25배)을 못 따라가 맵 2·3 보스가 무너진다.
         bsec = BOSS_TARGET_SEC
-        behp = bsec * dps * power_mult(lv)
+        # 구간 몹 수 역산과 같은 보정 — 보스도 실측이 모델의 1.8배다
+        behp = bsec * dps * power_mult(lv) * COMBAT_EFFICIENCY
         bhp = behp * ARMOR_K / (ARMOR_K + SLICE_BOSS_ARMOR)
         total_sec += bsec
         carry += int(behp * EXP_PER_EHP)

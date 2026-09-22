@@ -14,6 +14,7 @@
 
 #include "inventory.h"
 #include "item.h"
+#include "sim_config.h"
 
 namespace dc {
 
@@ -38,10 +39,6 @@ struct RecipeView {
 
     uint8_t  missingKinds = 0;   // 모자란 재료 **종류** 수 (0이면 지금 가능)
     uint16_t missingTotal = 0;   // 모자란 **개수** 합
-    // 이 조합을 하면 재료가 사라져 **만들 수 없게 되는 다른 조합식** 수.
-    // §5의 다경로 설계(재료 공유)에서 나오는 값이고, "철저한 빌드 설계"의 판단이
-    // 정확히 여기다 — 지금 만들면 무엇을 포기하는가.
-    uint8_t  blocksOthers = 0;
 
     bool ready() const { return missingKinds == 0; }
 };
@@ -78,23 +75,33 @@ inline RecipeView viewRecipe(const Inventory& inv, const RecipeTable& table,
         v.ingredients[v.count++] = iv;
     }
 
-    // 이 조합을 실행하면 막히는 다른 조합식 세기.
-    // 지금 만들 수 있는 조합식 중, 재료가 소모된 뒤에는 못 만들게 되는 것들이다.
-    if (v.ready()) {
-        for (uint32_t other = 0; other < table.recipeCount(); ++other) {
-            if (other == recipeIndex) continue;
-            if (!inv.craftable(other)) continue;
-            const RecipeData& o = table.recipe(other);
-            bool blocked = false;
-            for (uint8_t i = 0; i < o.count && !blocked; ++i) {
-                const ItemId ing = o.ingredients[i];
-                const uint16_t left = static_cast<uint16_t>(inv.count(ing) - neededOf(r, ing));
-                if (inv.count(ing) < neededOf(r, ing) || left < neededOf(o, ing)) blocked = true;
-            }
-            if (blocked && v.blocksOthers < 255) ++v.blocksOthers;
-        }
-    }
     return v;
+}
+
+// 조합하면 스탯이 얼마나 바뀌는가 — **결과물 − 재료 합**.
+//
+// 사다리상 항상 이득이지만(상위 1개 = 하위 2개 × 1.25), **그게 눈에 보여야**
+// 플레이어가 "조합은 하면 이득"이라는 규칙을 학습한다. 숫자를 안 보여주면
+// 재료를 쌓아두는 쪽이 안전해 보인다.
+//
+// `SimConfig`를 받는 것은 아이템 스탯 표가 거기 살기 때문이다. 재료·결과물 조회만
+// 하는 `viewRecipe`와 분리해 둔다 — 스탯 표가 필요 없는 호출자가 대부분이다.
+inline void craftStatDelta(const SimConfig& cfg, const RecipeTable& table,
+                           uint32_t recipeIndex, int32_t* outPermille) {
+    for (uint32_t s = 0; s < STAT_COUNT; ++s) outPermille[s] = 0;
+    if (recipeIndex >= table.recipeCount()) return;
+    const RecipeData& r = table.recipe(recipeIndex);
+    const uint32_t cap = cfg.itemTypeCount < DC_MAX_ITEM_TYPES_CFG
+                       ? cfg.itemTypeCount : DC_MAX_ITEM_TYPES_CFG;
+
+    if (r.result < cap) {
+        for (uint32_t s = 0; s < STAT_COUNT; ++s) outPermille[s] += cfg.itemStats[r.result][s];
+    }
+    for (uint8_t i = 0; i < r.count; ++i) {
+        const ItemId ing = r.ingredients[i];
+        if (ing >= cap) continue;
+        for (uint32_t s = 0; s < STAT_COUNT; ++s) outPermille[s] -= cfg.itemStats[ing][s];
+    }
 }
 
 // 한 아이템을 재료로 쓰는 조합식 전부. 아이템을 눌렀을 때 뜨는 목록이다.

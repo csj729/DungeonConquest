@@ -22,7 +22,10 @@ TIERS = ITEMS["grades"]
 TIER_POWER = [x / 1000 for x in ITEMS["tier_power_permille"]]
 PREMIUM = ITEMS["craft_premium_permille"] / 1000
 
-LEVELUPS_PER_RUN = 10        # 모델 가정 — 맵 1 기준. dc_montecarlo 실측 6.5~10.9
+# 맵 1개(8구간)의 레벨업 수. **balance_baseline의 TOTAL_LEVELUPS(60) ÷ 3맵**이다 —
+# 처음엔 10으로 잡았는데 설계값의 절반이었고, 그 상태로 사다리를 풀면 흔함 값이
+# 어긋난다. 모델 가정끼리 어긋나면 두 도구가 서로 다른 게임을 검산하게 된다.
+LEVELUPS_PER_RUN = 20
 CARD_GRADE = {g["name"]: g["power_budget_permille"] / 1000 for g in CARDS["grades"]}
 CARD_RATE = {g["name"]: g["rate_permille"] / 1000 for g in CARDS["grades"]}
 
@@ -64,14 +67,19 @@ def report():
 
     print("=== 목표 3: 아이템이 판 성장의 70%를 담당한다 ===")
     draws = (1 - p_card) * LEVELUPS_PER_RUN
-    # 흔함 draws개를 2개씩 위로 조합 — 특별함 1 + 안흔함 1 + 나머지 흔함
-    spare = draws - 6
-    held = (1 + TIER_POWER[2]) * (1 + TIER_POWER[1]) * (1 + TIER_POWER[0]) ** spare
+    # 흔함 draws개를 **위에서부터** 채운다 — 사다리가 등급당 2.5배라 상위 1개가
+    # 하위 여럿보다 항상 강하므로, 최적 조합은 가능한 한 높이 올리는 것이다.
+    spec = int(draws // 4)
+    rem = draws - spec * 4
+    unc = int(rem // 2)
+    spare = rem - unc * 2
+    held = ((1 + TIER_POWER[2]) ** spec * (1 + TIER_POWER[1]) ** unc
+            * (1 + TIER_POWER[0]) ** spare)
     want = total ** (1 - CARD_POWER_SHARE)
     err = abs(held - want) / want
     good = err < 0.10
     ok &= good
-    print(f"  판당 {draws:.1f}회 뽑아 특별함 1 + 안흔함 1 + 흔함 {spare:.1f}개로 조합")
+    print(f"  판당 {draws:.1f}회 뽑아 특별함 {spec} + 안흔함 {unc} + 흔함 {spare:.1f}개로 조합")
     print(f"  보유 위력 {held:.3f}배 vs 설계 목표 {want:.3f}배 (오차 {err:.1%})  "
           f"{'PASS' if good else 'FAIL'}")
     print(f"  전체 성장 {total:.3f}배 = 아이템 {want:.3f} × 카드 {total ** CARD_POWER_SHARE:.3f}\n")

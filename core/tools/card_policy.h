@@ -19,6 +19,7 @@
 
 #include "../include/dc/card.h"
 #include "../include/dc/sim_config.h"
+#include "../include/dc/inventory.h"
 #include "dev_items.h"
 #include "../include/dc/stat_id.h"
 
@@ -92,6 +93,81 @@ inline int32_t score(Policy p, const SimConfig& cfg, const CardOffer& c) {
             break;
     }
     return 0;
+}
+
+// ── 조합 정책 ─────────────────────────────────────────────────
+//
+// **여기서 처음으로 빌드 경로가 갈린다.** 카드 선택은 주어진 3장 중 고르는 것이라
+// 운이 크지만, 조합은 같은 재료로 **어느 축을 탈지** 플레이어가 정한다 — §5 다경로
+// 설계가 존재하는 이유이고, "철저한 빌드 설계"의 재미가 사는 자리다.
+//
+// 정책마다 선호 축이 다르다. 같은 흔함 더미를 받아도 화력형은 화력 경로로,
+// 생존형은 생존 경로로 올라간다.
+inline int32_t axisPreference(Policy p, uint8_t axis) {
+    // 0 화력 · 1 CC · 2 광역 · 3 생존
+    switch (p) {
+        case Policy::Power:    return axis == 0 ? 3 : (axis == 2 ? 2 : 1);   // 화력 > 광역
+        case Policy::Survival: return axis == 3 ? 3 : (axis == 1 ? 2 : 1);   // 생존 > CC
+        case Policy::Greedy:   return 1;                                     // 축을 가리지 않는다
+        case Policy::Random:
+        case Policy::Count:    break;
+    }
+    return 1;
+}
+
+// 지금 만들 수 있는 조합식 중 하나를 고른다. 없으면 -1.
+//
+// ## 축을 고집하는 것이 곧 빌드다
+//
+// 처음엔 "등급이 축보다 먼저"로 두고 만들 수 있으면 다 만들게 했다. 그랬더니
+// **화력형과 생존형이 똑같은 아이템을 들고 끝났다** (공격력 +32.3% 대 +31.0%) —
+// 재료가 들어오는 족족 아무 조합이나 실행하니 축을 고를 여지 자체가 없었다.
+//
+// 실제 플레이어는 그렇게 하지 않는다. 화력 빌드를 타는 사람은 생존 조합이
+// 가능해도 **재료를 아껴 화력 경로를 기다린다.** 그 판단이 §5 다경로 설계가
+// 존재하는 이유이고, 여기가 "철저한 빌드 설계"의 자리다.
+//
+// 그래서 화력형·생존형은 **자기 축(과 곁가지 보너스 축)만** 조합한다.
+// 등급탐욕은 축을 가리지 않고 최고 등급만 본다 — 세 정책의 차이가 여기서 난다.
+//
+// **재료를 아끼는 데는 대가가 있다.** 축을 고집하면 조합 횟수가 줄어 총 위력이
+// 낮을 수 있다. 그게 손해인지 이득인지는 하네스가 재야 할 값이지 미리 정할 값이 아니다.
+inline bool acceptsAxis(Policy p, uint8_t axis) {
+    // 0 화력 · 1 CC · 2 광역 · 3 생존
+    switch (p) {
+        case Policy::Power:    return axis == 0 || axis == 2;   // 화력 + 광역(보너스)
+        case Policy::Survival: return axis == 3 || axis == 1;   // 생존 + CC(보너스)
+        case Policy::Greedy:
+        case Policy::Random:
+        case Policy::Count:    break;
+    }
+    return true;
+}
+
+inline int32_t chooseCraft(Policy p, const Inventory& inv, const RecipeTable& table,
+                           Rng& rng) {
+    int32_t best = -1;
+    int32_t bestScore = -1;
+    uint32_t ties = 0;
+    for (uint32_t r = 0; r < table.recipeCount(); ++r) {
+        if (!inv.craftable(r)) continue;
+        const ItemId result = table.recipe(r).result;
+        if (result >= DEV_ITEM_COUNT) continue;
+        const uint8_t axis = DEV_ITEM_AXIS[result];
+        if (!acceptsAxis(p, axis)) continue;          // **축이 아니면 재료를 아낀다**
+        // 받아들인 축 안에서는 등급이 전부다 — 사다리가 등급당 2.5배다.
+        const int32_t score = p == Policy::Random
+            ? 0
+            : DEV_ITEM_TIER[result] * 10 + axisPreference(p, axis);
+        if (score > bestScore) { bestScore = score; best = static_cast<int32_t>(r); ties = 1; }
+        else if (score == bestScore) {
+            // **동점은 난수로 가른다** — 인덱스 순으로 고정하면 조합식 정의 순서가
+            // 빌드를 정해버려 정책 차이가 묻힌다. 저수지 표집이라 소비가 한 번씩이다.
+            ++ties;
+            if (rng.range(ties) == 0) best = static_cast<int32_t>(r);
+        }
+    }
+    return best;
 }
 
 inline uint32_t choose(Policy p, const SimConfig& cfg, const CardOfferSet& offer, Rng& rng) {

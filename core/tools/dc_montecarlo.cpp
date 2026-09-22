@@ -56,6 +56,19 @@ static RunResult runOnce(const SimConfig& cfg, uint64_t seed, dev::Policy policy
             e.value = dev::choose(policy, cfg, w.cards.offer, choiceRng);
             (void)applyInput(w, cfg, dev::devRecipeTable(), e);
         }
+        // **조합은 언제든** (§5). 플레이어가 상시 인벤토리를 보고 있다고 보고,
+        // 만들 수 있으면 바로 만든다 — 재료를 쌓아둘 이유가 없다(사다리가 항상 이득).
+        for (;;) {
+            const int32_t r = dev::chooseCraft(policy, w.inventory, dev::devRecipeTable(),
+                                               choiceRng);
+            if (r < 0) break;
+            InputEvent ce;
+            ce.tick  = w.tickCount();
+            ce.kind  = InputKind::Craft;
+            ce.value = static_cast<uint32_t>(r);
+            if (!applyInput(w, cfg, dev::devRecipeTable(), ce)) break;
+        }
+
         stepWorld(w, cfg, scratch);
 
         if (!r.reachedCheckpoint && w.tickCount() >= checkpointTick) {

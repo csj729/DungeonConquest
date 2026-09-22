@@ -13,14 +13,14 @@
     "광역",
     "생존"
   ],
-  "_ladder": "위력 사다리. **상위 1개 = 하위 2개 × 조합 프리미엄 1.25**다. 조합이 재료를 소모하므로 이 부등식이 성립해야 조합이 이득이 된다 — 1.0이면 조합할 이유가 없고, 너무 크면 하위 아이템이 쓰레기가 된다.\\n흔함 5.24%는 카드와의 관계에서 나왔다: 희귀 카드(3.0%)보다 위, 영웅 카드(6.0%)보다 아래. 그래서 3장 중 영웅 이상이 뜰 때(24.6%)만 카드를 고르게 되고, 그 결과 아이템 7.5회 : 카드 2.5회로 위력 배분 70:30이 저절로 성립한다 (design.md §4).\\ntools/verify_item_values.py가 사다리·배분·조합 이득을 검산한다.",
+  "_ladder": "위력 사다리. **상위 1개 = 하위 2개 × 조합 프리미엄 1.25**다. 조합이 재료를 소모하므로 이 부등식이 성립해야 조합이 이득이 된다 — 1.0이면 조합할 이유가 없고, 너무 크면 하위 아이템이 쓰레기가 된다.\\n흔함 4.91%는 카드와의 관계에서 나왔다: 희귀 카드(3.0%)보다 위, 영웅 카드(6.0%)보다 아래. 그래서 3장 중 영웅 이상이 뜰 때(24.6%)만 카드를 고르게 되고, 그 결과 아이템 15.1회 : 카드 4.9회로 위력 배분 70:30이 저절로 성립한다 (design.md §4).\\ntools/verify_item_values.py가 사다리·배분·조합 이득을 검산한다.",
   "craft_premium_permille": 1250,
   "tier_power_permille": [
-    52,
-    131,
-    328,
-    819,
-    2047
+    49,
+    123,
+    307,
+    767,
+    1918
   ],
   "_axis_stats": "축 → 스탯 배분. **메인 축 둘(화력·생존) · 보너스 축 둘(광역·CC).**\\n보너스 축은 예산의 절반 이상이 메인 스탯으로 간다 — 그래야 '그 축만으로는 빌드가 서지 않는다'가 수치로 성립한다. 광역 반경은 40%, CC의 둔화는 20%뿐이다.\\nCC를 새 스탯으로 두지 않은 이유: 둔화는 적을 늦출 뿐 더 빨리 죽이지 않아 수익이 체감한다 — 섞으면 클리어가 편해지지만 몰아도 이기지 못한다. R_FROST가 쓰는 둔화 경로를 그대로 재사용한다(hero.slowAura).\\n한 축을 스탯 하나에 몰지 않는 것도 유지한다 — 몰면 그 축 아이템끼리 완전 대체재가 되어 조합 경로 선택이 사라진다 (§5 다경로의 전제).",
   "axis_stats_permille": {
@@ -50,9 +50,9 @@
       "axis": "화력",
       "grade": "흔함",
       "stats_permille": {
-        "attack_power": 31,
-        "attack_speed": 13,
-        "crit_chance": 8
+        "attack_power": 29,
+        "attack_speed": 12,
+        "crit_chance": 7
       }
     },
     {
@@ -61,9 +61,9 @@
       "axis": "화력",
       "grade": "흔함",
       "stats_permille": {
-        "attack_power": 31,
-        "attack_speed": 13,
-        "crit_chance": 8
+        "attack_power": 29,
+        "attack_speed": 12,
+        "crit_chance": 7
       }
     },
     {
@@ -72,8 +72,8 @@
       "axis": "광역",
       "grade": "흔함",
       "stats_permille": {
-        "attack_power": 31,
-        "aoe_radius": 21
+        "attack_power": 29,
+        "aoe_radius": 20
       }
     },
     {
@@ -82,8 +82,8 @@
       "axis": "CC",
       "grade": "흔함",
       "stats_permille": {
-        "attack_speed": 24,
-        "armor": 18,
+        "attack_speed": 22,
+        "armor": 17,
         "slow_aura": 10
       }
     },
@@ -93,8 +93,8 @@
       "axis": "CC",
       "grade": "흔함",
       "stats_permille": {
-        "attack_speed": 24,
-        "armor": 18,
+        "attack_speed": 22,
+        "armor": 17,
         "slow_aura": 10
       }
     },
@@ -104,8 +104,8 @@
       "axis": "광역",
       "grade": "흔함",
       "stats_permille": {
-        "attack_power": 31,
-        "aoe_radius": 21
+        "attack_power": 29,
+        "aoe_radius": 20
       }
     },
     {
@@ -114,8 +114,8 @@
       "axis": "생존",
       "grade": "흔함",
       "stats_permille": {
-        "armor": 31,
-        "corruption_max": 21
+        "armor": 29,
+        "corruption_max": 20
       }
     },
     {
@@ -124,8 +124,8 @@
       "axis": "생존",
       "grade": "흔함",
       "stats_permille": {
-        "armor": 31,
-        "corruption_max": 21
+        "armor": 29,
+        "corruption_max": 20
       }
     },
     {
@@ -134,9 +134,9 @@
       "axis": "화력",
       "grade": "흔함",
       "stats_permille": {
-        "attack_power": 31,
-        "attack_speed": 13,
-        "crit_chance": 8
+        "attack_power": 29,
+        "attack_speed": 12,
+        "crit_chance": 7
       }
     }
   ],
@@ -151,9 +151,9 @@
         "C2"
       ],
       "stats_permille": {
-        "attack_power": 79,
-        "attack_speed": 33,
-        "crit_chance": 20
+        "attack_power": 74,
+        "attack_speed": 31,
+        "crit_chance": 18
       }
     },
     {
@@ -166,9 +166,9 @@
         "C3"
       ],
       "stats_permille": {
-        "attack_power": 79,
-        "attack_speed": 33,
-        "crit_chance": 20
+        "attack_power": 74,
+        "attack_speed": 31,
+        "crit_chance": 18
       }
     },
     {
@@ -181,9 +181,9 @@
         "C5"
       ],
       "stats_permille": {
-        "attack_power": 79,
-        "attack_speed": 33,
-        "crit_chance": 20
+        "attack_power": 74,
+        "attack_speed": 31,
+        "crit_chance": 18
       }
     },
     {
@@ -196,9 +196,9 @@
         "C5"
       ],
       "stats_permille": {
-        "attack_speed": 59,
-        "armor": 46,
-        "slow_aura": 26
+        "attack_speed": 55,
+        "armor": 43,
+        "slow_aura": 25
       }
     },
     {
@@ -211,9 +211,9 @@
         "C6"
       ],
       "stats_permille": {
-        "attack_speed": 59,
-        "armor": 46,
-        "slow_aura": 26
+        "attack_speed": 55,
+        "armor": 43,
+        "slow_aura": 25
       }
     },
     {
@@ -226,9 +226,9 @@
         "C7"
       ],
       "stats_permille": {
-        "attack_speed": 59,
-        "armor": 46,
-        "slow_aura": 26
+        "attack_speed": 55,
+        "armor": 43,
+        "slow_aura": 25
       }
     },
     {
@@ -241,8 +241,8 @@
         "C4"
       ],
       "stats_permille": {
-        "attack_power": 79,
-        "aoe_radius": 52
+        "attack_power": 74,
+        "aoe_radius": 49
       }
     },
     {
@@ -255,8 +255,8 @@
         "C6"
       ],
       "stats_permille": {
-        "attack_power": 79,
-        "aoe_radius": 52
+        "attack_power": 74,
+        "aoe_radius": 49
       }
     },
     {
@@ -269,8 +269,8 @@
         "C1"
       ],
       "stats_permille": {
-        "attack_power": 79,
-        "aoe_radius": 52
+        "attack_power": 74,
+        "aoe_radius": 49
       }
     },
     {
@@ -283,8 +283,8 @@
         "C8"
       ],
       "stats_permille": {
-        "armor": 79,
-        "corruption_max": 52
+        "armor": 74,
+        "corruption_max": 49
       }
     },
     {
@@ -297,8 +297,8 @@
         "C2"
       ],
       "stats_permille": {
-        "armor": 79,
-        "corruption_max": 52
+        "armor": 74,
+        "corruption_max": 49
       }
     },
     {
@@ -311,8 +311,8 @@
         "C1"
       ],
       "stats_permille": {
-        "armor": 79,
-        "corruption_max": 52
+        "armor": 74,
+        "corruption_max": 49
       }
     },
     {
@@ -326,9 +326,9 @@
         "C9"
       ],
       "stats_permille": {
-        "attack_power": 196,
-        "attack_speed": 82,
-        "crit_chance": 49
+        "attack_power": 184,
+        "attack_speed": 77,
+        "crit_chance": 46
       }
     },
     {
@@ -341,9 +341,9 @@
         "Af1"
       ],
       "stats_permille": {
-        "attack_power": 196,
-        "attack_speed": 82,
-        "crit_chance": 49
+        "attack_power": 184,
+        "attack_speed": 77,
+        "crit_chance": 46
       }
     },
     {
@@ -357,9 +357,9 @@
         "C9"
       ],
       "stats_permille": {
-        "attack_speed": 147,
-        "armor": 115,
-        "slow_aura": 66
+        "attack_speed": 138,
+        "armor": 107,
+        "slow_aura": 61
       }
     },
     {
@@ -372,9 +372,9 @@
         "Ac3"
       ],
       "stats_permille": {
-        "attack_speed": 147,
-        "armor": 115,
-        "slow_aura": 66
+        "attack_speed": 138,
+        "armor": 107,
+        "slow_aura": 61
       }
     },
     {
@@ -387,8 +387,8 @@
         "Aa2"
       ],
       "stats_permille": {
-        "attack_power": 196,
-        "aoe_radius": 131
+        "attack_power": 184,
+        "aoe_radius": 123
       }
     },
     {
@@ -401,8 +401,8 @@
         "Aa3"
       ],
       "stats_permille": {
-        "attack_power": 196,
-        "aoe_radius": 131
+        "attack_power": 184,
+        "aoe_radius": 123
       }
     },
     {
@@ -415,8 +415,8 @@
         "As2"
       ],
       "stats_permille": {
-        "armor": 196,
-        "corruption_max": 131
+        "armor": 184,
+        "corruption_max": 123
       }
     },
     {
@@ -429,8 +429,8 @@
         "As3"
       ],
       "stats_permille": {
-        "armor": 196,
-        "corruption_max": 131
+        "armor": 184,
+        "corruption_max": 123
       }
     },
     {
@@ -443,9 +443,9 @@
         "Bf2"
       ],
       "stats_permille": {
-        "attack_power": 491,
-        "attack_speed": 205,
-        "crit_chance": 123
+        "attack_power": 460,
+        "attack_speed": 192,
+        "crit_chance": 115
       }
     },
     {
@@ -458,9 +458,9 @@
         "Ba2"
       ],
       "stats_permille": {
-        "attack_power": 491,
-        "attack_speed": 205,
-        "crit_chance": 123
+        "attack_power": 460,
+        "attack_speed": 192,
+        "crit_chance": 115
       }
     },
     {
@@ -473,9 +473,9 @@
         "Bc2"
       ],
       "stats_permille": {
-        "attack_speed": 368,
-        "armor": 287,
-        "slow_aura": 164
+        "attack_speed": 345,
+        "armor": 269,
+        "slow_aura": 153
       }
     },
     {
@@ -488,9 +488,9 @@
         "Ba1"
       ],
       "stats_permille": {
-        "attack_speed": 368,
-        "armor": 287,
-        "slow_aura": 164
+        "attack_speed": 345,
+        "armor": 269,
+        "slow_aura": 153
       }
     },
     {
@@ -503,8 +503,8 @@
         "Ba2"
       ],
       "stats_permille": {
-        "attack_power": 491,
-        "aoe_radius": 328
+        "attack_power": 460,
+        "aoe_radius": 307
       }
     },
     {
@@ -517,8 +517,8 @@
         "Bf2"
       ],
       "stats_permille": {
-        "attack_power": 491,
-        "aoe_radius": 328
+        "attack_power": 460,
+        "aoe_radius": 307
       }
     },
     {
@@ -531,8 +531,8 @@
         "Bs2"
       ],
       "stats_permille": {
-        "armor": 491,
-        "corruption_max": 328
+        "armor": 460,
+        "corruption_max": 307
       }
     },
     {
@@ -545,8 +545,8 @@
         "Ba2"
       ],
       "stats_permille": {
-        "armor": 491,
-        "corruption_max": 328
+        "armor": 460,
+        "corruption_max": 307
       }
     },
     {
@@ -560,9 +560,9 @@
         "Af3"
       ],
       "stats_permille": {
-        "attack_power": 491,
-        "attack_speed": 205,
-        "crit_chance": 123
+        "attack_power": 460,
+        "attack_speed": 192,
+        "crit_chance": 115
       }
     },
     {
@@ -576,8 +576,8 @@
         "As3"
       ],
       "stats_permille": {
-        "armor": 491,
-        "corruption_max": 328
+        "armor": 460,
+        "corruption_max": 307
       }
     },
     {
@@ -590,9 +590,9 @@
         "Cf2"
       ],
       "stats_permille": {
-        "attack_power": 1228,
-        "attack_speed": 512,
-        "crit_chance": 307
+        "attack_power": 1151,
+        "attack_speed": 479,
+        "crit_chance": 288
       }
     },
     {
@@ -605,9 +605,9 @@
         "Rskip_f"
       ],
       "stats_permille": {
-        "attack_power": 1228,
-        "attack_speed": 512,
-        "crit_chance": 307
+        "attack_power": 1151,
+        "attack_speed": 479,
+        "crit_chance": 288
       }
     },
     {
@@ -620,9 +620,9 @@
         "Rskip_f"
       ],
       "stats_permille": {
-        "attack_power": 1228,
-        "attack_speed": 512,
-        "crit_chance": 307
+        "attack_power": 1151,
+        "attack_speed": 479,
+        "crit_chance": 288
       }
     },
     {
@@ -635,9 +635,9 @@
         "Cc2"
       ],
       "stats_permille": {
-        "attack_speed": 921,
-        "armor": 716,
-        "slow_aura": 409
+        "attack_speed": 863,
+        "armor": 671,
+        "slow_aura": 384
       }
     },
     {
@@ -650,9 +650,9 @@
         "Ca1"
       ],
       "stats_permille": {
-        "attack_speed": 921,
-        "armor": 716,
-        "slow_aura": 409
+        "attack_speed": 863,
+        "armor": 671,
+        "slow_aura": 384
       }
     },
     {
@@ -665,8 +665,8 @@
         "Ca2"
       ],
       "stats_permille": {
-        "attack_power": 1228,
-        "aoe_radius": 819
+        "attack_power": 1151,
+        "aoe_radius": 767
       }
     },
     {
@@ -679,8 +679,8 @@
         "Cs1"
       ],
       "stats_permille": {
-        "attack_power": 1228,
-        "aoe_radius": 819
+        "attack_power": 1151,
+        "aoe_radius": 767
       }
     },
     {
@@ -693,8 +693,8 @@
         "Cs2"
       ],
       "stats_permille": {
-        "armor": 1228,
-        "corruption_max": 819
+        "armor": 1151,
+        "corruption_max": 767
       }
     },
     {
@@ -707,8 +707,8 @@
         "Rskip_s"
       ],
       "stats_permille": {
-        "armor": 1228,
-        "corruption_max": 819
+        "armor": 1151,
+        "corruption_max": 767
       }
     },
     {
@@ -721,8 +721,8 @@
         "Rskip_s"
       ],
       "stats_permille": {
-        "armor": 1228,
-        "corruption_max": 819
+        "armor": 1151,
+        "corruption_max": 767
       }
     },
     {
@@ -736,9 +736,9 @@
         "Bc1"
       ],
       "stats_permille": {
-        "attack_speed": 921,
-        "armor": 716,
-        "slow_aura": 409
+        "attack_speed": 863,
+        "armor": 671,
+        "slow_aura": 384
       }
     },
     {
@@ -752,8 +752,8 @@
         "Ba2"
       ],
       "stats_permille": {
-        "attack_power": 1228,
-        "aoe_radius": 819
+        "attack_power": 1151,
+        "aoe_radius": 767
       }
     }
   ],

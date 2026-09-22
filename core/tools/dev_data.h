@@ -221,10 +221,10 @@ inline SimConfig devConfig() {
     // 4.2배 다른 상태로 몬테카를로를 돌리고 있었다. verify_core_constants.py가
     // 이제 이 표 전체를 대조한다.
     constexpr E kElites[4] = {
-        {185, 0,  167, 35, 60, 1},   // GE_ARCHER  궁병대장 — QTE 소스
-        { 62, 200, 83, 20,  0, 2},   // GE_SHIELD  방패병   — QTE 없음 (실효 300 → 186, 압박 보전분 damage 33 → 83)
-        {138, 0,   21, 40,  0, 3},   // GE_SHAMAN  주술사   — 소환, 방치 비용 최대
-        {231, 0,   13, 30, 30, 4},   // GE_MAD     미친 고블린 — QTE 소스
+        {178, 0,  167, 35, 60, 1},   // GE_ARCHER  궁병대장 — QTE 소스
+        { 59, 200, 83, 20,  0, 2},   // GE_SHIELD  방패병   — QTE 없음 (실효 300 → 177, 압박 보전분 damage 33 → 83)
+        {141, 0,   21, 40,  0, 3},   // GE_SHAMAN  주술사   — 소환, 방치 비용 최대
+        {235, 0,   13, 30, 30, 4},   // GE_MAD     미친 고블린 — QTE 소스
     };
     c.eliteCount = 4;
     for (uint32_t i = 0; i < 4; ++i) {

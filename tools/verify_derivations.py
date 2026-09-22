@@ -18,7 +18,7 @@
    31마리를 요구했다. 있지도 않은 몹에서 경험치를 받고 있었다
 4. **`slice_boss_hp`** — 같은 보정이 빠져 보스전이 설계의 1.8배(111초)였다
 5. **`monsters.json:boss.hp`** — 도출 없이 33000을 ×1.538 했다. 이 도구가 처음
-   돌 때 50769 대 도출값 29002로 잡혔다
+   돌 때 50769 대 도출값 27061로 잡혔다 (1.9배)
 
 다섯 중 넷이 한 문장으로 요약된다 — **파생 값이 그 파생의 전제를 빼먹고
 계산되어 있었다.** 특히 `COMBAT_EFFICIENCY`처럼 **여러 도출식이 공유하는
@@ -42,7 +42,9 @@
 - `proc_prd_c_q16` → `verify_prd.py` (PRD 상수 C를 목표 발동률에서 푼다)
 - `tier_power_permille` → `verify_item_values.py` (조합 사다리)
 - 카드 등급 예산 → `verify_card_values.py` (레벨업 위력에서 역산)
-- 엘리트 체력 밴드 → `balance_baseline.py` 목표 7
+- `trash.hp` → `balance_baseline.py` 목표 1 (공격력 × 타수를 등식으로 본다)
+
+엘리트 체력은 목표 7이 **밴드만** 보므로 여기서 역산까지 한다.
 """
 import math
 import sys
@@ -50,7 +52,8 @@ import sys
 sys.path.insert(0, "tools")
 
 from balance_baseline import (
-    ARMOR_K, COMBAT_EFFICIENCY, concurrent_cap, hero_dps, spawn_batch,
+    ARMOR_K, COMBAT_EFFICIENCY, ELITES, concurrent_cap, elite_damage_share,
+    hero_dps, spawn_batch,
 )
 from verify_spawn import SCREEN_TILES, SPAWN_MARGIN
 from verify_segments import simulate
@@ -121,12 +124,43 @@ def derive_slice_boss_hp():
     return ehp * ARMOR_K / (ARMOR_K + _MN["slice_boss_armor"])
 
 
+def derive_elite_hp():
+    """엘리트 체력 ← target_sec 밴드의 중앙에서 역산.
+
+    hp = 중앙초 × DPS × 엘리트 피해 비중 × ARMOR_K/(ARMOR_K + armor).
+
+    **밴드만 보는 검사로는 부족하다.** `balance_baseline` 목표 7은 처치 시간이
+    밴드 안인지만 보는데 밴드가 7~12초처럼 넓어서 그 안에서 값이 흘러도 안
+    잡힌다 — 공속을 20 → 13틱으로 올릴 때 체력을 같은 배율로 곱해 두었더니
+    중앙에서 ±5% 어긋난 채 통과하고 있었다.
+
+    **중앙을 점 목표로 쓰는 것은 새 규약이 아니다** — `elite_pressure()`가
+    이미 `kill_sec = 밴드 평균`으로 쓰고 있다. 두 곳이 같은 점을 봐야
+    압박 예산과 체력이 따로 놀지 않는다.
+
+    보정(COMBAT_EFFICIENCY)을 걸지 않는 이유: 목표 7이 쓰는 `elite_damage_share`가
+    이미 "타겟 우선순위 때문에 엘리트가 받는 피해 비중"이라 같은 희석을 담고 있다.
+    둘을 겹쳐 걸면 두 번 깎인다.
+    """
+    dps, _b, _a = hero_dps()
+    share = elite_damage_share()
+    out = []
+    for e in _MN["elites"]:
+        mid = (e["target_sec_min"] + e["target_sec_max"]) / 2
+        out.append(round(mid * dps * share * ARMOR_K / (ARMOR_K + e["armor"])))
+    return out
+
+
 def derive_full_boss_hp():
     """풀 게임 최종 보스 체력 ← 맵 3 보스의 투영.
 
     맵 2·3의 구성은 미정이므로 `verify_exp_curve`가 구간 목표 시간에서 몹 수를
     역산해 이어 붙인 투영을 쓴다. **투영이지만 도출은 있다** — 저장값 50769는
     도출 없이 33000을 공속 배율만큼 곱한 값이었고, 그 33000도 근거가 없었다.
+
+    엘리트 체력이 바뀌면 여기도 움직인다 — 엘리트 실효 체력이 곧 경험치이고,
+    경험치가 레벨업을, 레벨업이 성장 배율을, 성장 배율이 보스 체력을 정한다.
+    체력을 밴드 중앙으로 다시 맞췄을 때 이 값이 29002 → 27061로 따라왔다.
     """
     import verify_exp_curve as ec
     rows, _per_map, _lv, _total = ec.run_sim(_PR["maps"])
@@ -159,6 +193,8 @@ def checks():
          f"화면 {SCREEN_TILES[0]}×{SCREEN_TILES[1]} 대각 절반 × 여유 {SPAWN_MARGIN}"),
         ("slice_boss_hp", _MN["slice_boss_hp"], derive_slice_boss_hp(), 1,
          f"목표 {_MN['slice_boss_target_sec']}초 × DPS × 성장 × 보정 {COMBAT_EFFICIENCY}"),
+        ("elites[].hp", [e["hp"] for e in _MN["elites"]], derive_elite_hp(), 1,
+         "target_sec 밴드 중앙 × DPS × 엘리트 피해 비중 / Armor"),
         ("boss.hp (풀 게임)", _MN["boss"]["hp"], derive_full_boss_hp(), 1,
          f"맵 {_PR['maps']} 보스 투영 (verify_exp_curve)"),
     ]
@@ -238,7 +274,9 @@ _POKES = [
      '"radius_millitile": 19000,', "radius_millitile"),
     ("data/monsters.json", '"slice_boss_target_sec": 70,',
      '"slice_boss_target_sec": 80,', "slice_boss_hp"),
-    ("data/monsters.json", '"hp": 29002,', '"hp": 29100,', "boss.hp"),
+    ("data/monsters.json", '"target_sec_max": 12,\n      "windup_ticks": 60,',
+     '"target_sec_max": 13,\n      "windup_ticks": 60,', "elites[].hp"),
+    ("data/monsters.json", '"hp": 27061,', '"hp": 27200,', "boss.hp"),
 ]
 
 

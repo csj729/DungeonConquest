@@ -171,6 +171,38 @@ def report():
           f"{'PASS' if good else 'FAIL'}")
     print(f"  모달 점유율 {modal_sec / (total_sec + boss_sec + modal_sec):.0%}\n")
 
+    print("=== 목표 7: 구간 목표 시간이 엘리트 처치 시간을 담을 수 있는가 ===")
+    print("  **설계 세 조각이 서로 맞물리는지 본다** — 구간 target_ticks · 엘리트 처치")
+    print("  시간 밴드(balance_baseline 목표 7) · 구간별 엘리트 구성. 셋 중 하나만")
+    print("  움직여도 나머지가 따라와야 하는데 지금까지 이걸 보는 검사가 없었다.")
+    kill_sec = {e["name"]: (e["target_sec_min"] + e["target_sec_max"]) / 2
+                for e in _MON["elites"]}
+    print(f"  {'구간':>4} {'목표(초)':>9} {'엘리트만':>9} {'잡몹':>6} {'남는 시간':>11}")
+    tot_t = tot_e = 0.0
+    bad = []
+    for seg in _SEG["segments"]:
+        t = seg["target_ticks"] / TICK_HZ
+        e = sum(kill_sec[n] for n in seg["elites"])
+        tot_t += t
+        tot_e += e
+        if e > t:
+            bad.append(seg["index"])
+        print(f"  {seg['index']:>4} {t:>9.0f} {e:>9.1f} {seg['melee']:>6} "
+              f"{t - e:>9.1f}초{'  ← 초과' if e > t else ''}")
+
+    left = tot_t - tot_e
+    trash = sum(s["melee"] for s in _SEG["segments"])
+    good = left > 0 and not bad
+    ok &= good
+    print(f"  합계 목표 {tot_t:.0f}초 · 엘리트 처치만 {tot_e:.0f}초 ({tot_e / tot_t:.0%}) "
+          f"→ 잡몹 몫 {left:.0f}초  {'PASS' if good else 'FAIL'}")
+    if left > 0:
+        print(f"  → 잡몹 {trash}마리에 필요한 처치율 {trash / left:.2f}마리/초")
+    else:
+        print("  → **잡몹을 잡을 시간이 남지 않는다.** 엘리트만 처치해도 목표 시간을 넘는다")
+    print("  ※ 방패병(실효 300 · 처치 24.6초)이 구간 6~8에 3마리씩 들어가는 것이 대부분이다.")
+    print("     엘리트 체력·구성·구간 시간 중 하나를 움직여야 셋이 맞물린다\n")
+
     print("=== 참고: 구간별 의도 ===")
     for i, (_m, _r, _e, note) in enumerate(SEGMENTS, start=1):
         print(f"  S{i}: {note}")

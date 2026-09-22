@@ -185,6 +185,16 @@ POWER_PER_LEVELUP = (1 + CARD_POWER_PER_LEVELUP) ** (1 / CARD_POWER_SHARE) - 1
 SPEED_GROWTH_SHARE = pm(_PROG["speed_growth_share_permille"])
 TRASH_HITS_BAND = (1.8, 5.0)   # 판 내내 유지되어야 할 잡몹 타수
 
+# **닫힌 식이 실측보다 낙관적인 몫.** 이 모델은 영웅 DPS가 전부 잡몹에 들어간다고
+# 보지만, 실제로는 엘리트가 출력의 70~80%를 먹고(타겟 우선순위) 전장이 상한까지
+# 포화된다. 그래서 모델이 구간 1을 25.7초로 볼 때 하네스는 33.3초를 잰다.
+#
+# 이 계수 없이 두면 처치율 손잡이를 돌릴 때마다 **모델과 하네스가 반대 방향을
+# 가리킨다** — 모델은 "너무 빠르다"고 하고 하네스는 "여전히 느리다"고 한다.
+# 실측으로 보정해 두 도구가 같은 게임을 검산하게 만든다.
+# 출처: core/tools/dc_montecarlo (12시드 × 맵 완주)
+COMBAT_EFFICIENCY = 0.77
+
 CARD_PICK_SEC = 2.5            # 카드 1회 선택에 쓰는 시간 가정 (UI 요구사항)
 MODAL_BUDGET = 0.15            # 런 전체에서 선택 모달이 차지해도 되는 비율 상한
 
@@ -375,7 +385,7 @@ def report():
     print("=== 목표 4: 1구간 통과 20~35초 ===")
     # 연속 스폰이라 전장이 항상 채워져 있다 → 광역 효율이 동시 생존 상한에서 나온다
     et = effective_targets(1)
-    clear = TRASH["hp"] * SEGMENT_TRASH_COUNT / (dps * et)
+    clear = TRASH["hp"] * SEGMENT_TRASH_COUNT / (dps * et) / COMBAT_EFFICIENCY
     good = 20 <= clear <= 35
     ok &= good
     print(f"  몹 {SEGMENT_TRASH_COUNT}마리 × HP {TRASH['hp']} / (DPS {dps:.1f} × 동시타격 {et:.2f})")

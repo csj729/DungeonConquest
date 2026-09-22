@@ -24,6 +24,7 @@ from balance_baseline import (
     level_need, power_mult, EXP_PER_EHP, LEVEL_NEED_BASE, LEVEL_NEED_RATIO,
     POWER_PER_LEVELUP, CARD_PICK_SEC, MODAL_BUDGET, HP_SCALE_PER_WAVE,
     TOTAL_WAVES, TOTAL_LEVELUPS, ARMOR_K, effective_targets, elite_scale,
+    COMBAT_EFFICIENCY,
 )
 from verify_segments import (
     SEGMENTS as WAVES, SLICE_BOSS_HP, SLICE_BOSS_ARMOR, SEGMENT_TARGET_SEC,
@@ -70,7 +71,11 @@ def run_sim(maps):
             sec = SEGMENT_TARGET_SEC[j]
             growth = power_mult(lv)
             # 목표 시간을 채우는 잡몹 수를 역산한다
-            n = round(sec * dps * growth * et / (TRASH["hp"] * hp_scale(w)))
+            # **실측 보정을 건다.** 보정 없이 역산하면 목표 시간을 채우는 몹 수가
+            # 1/0.56 = 1.8배로 부풀고, 그 몹이 전부 경험치가 되어 레벨업이 새어 나간다.
+            # 맵 1은 실제 구성(segments.json)이 21마리인데 보정 없는 역산은 31마리를
+            # 요구했다 — 있지도 않은 몹에서 경험치를 받고 있었다.
+            n = round(sec * dps * growth * et * COMBAT_EFFICIENCY / (TRASH["hp"] * hp_scale(w)))
             total_sec += sec
 
             carry += n * monster_exp(TRASH["hp"], w)

@@ -22,6 +22,7 @@ from balance_baseline import (
     hero_dps, TRASH, hp_scale, PROC_RATE, SKILLS, ELITES,
     effective_hp, TICK_HZ, level_need, power_mult, monster_exp,
     EXP_PER_EHP, CARD_PICK_SEC, concurrent_cap, elite_scale, aoe_targets, effective_targets,
+    COMBAT_EFFICIENCY,
 )
 
 from gamedata import SEGMENTS_DATA as _SEG, MONSTERS as _MON
@@ -74,7 +75,12 @@ def simulate():
         # 게이지는 **잡몹 처치**로 찬다. 엘리트는 클리어 조건이 아니므로
         # 통과 시간에 넣지 않는다 (엘리트를 잡으면 10점이라 오히려 앞당겨진다).
         eff_targets = effective_targets(i)
-        sec = trash_ehp / (dps * growth * eff_targets)
+        # **balance_baseline과 같은 보정을 건다.** 닫힌 식은 영웅 DPS가 전부 잡몹에
+        # 들어간다고 보지만 실제로는 엘리트가 출력을 먹고 전장이 상한까지 포화된다.
+        # 이 도구만 보정을 빼고 있어서 balance_baseline 목표 4(21.7초)와 여기(16.7초)가
+        # **같은 구간 1을 다르게 보고 있었다** — 손잡이를 돌리면 두 도구가 반대 방향을
+        # 가리킨다. 보스는 단일 대상이라 포화도 표적 분산도 없어 보정하지 않는다.
+        sec = trash_ehp / (dps * growth * eff_targets) / COMBAT_EFFICIENCY
 
         carry += n * monster_exp(TRASH["hp"], i) + elite_exp(elites, i)
         gained = 0

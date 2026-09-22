@@ -23,7 +23,7 @@ constexpr int32_t BATCH_BY_SEGMENT[8] = {2, 3, 4, 5, 5, 6, 7, 8};
 
 // data/hero.json
 constexpr int32_t  HERO_ATTACK_POWER          = 10;
-constexpr int32_t  HERO_ATTACK_INTERVAL_TICKS = 20;
+constexpr int32_t  HERO_ATTACK_INTERVAL_TICKS = 13;
 constexpr int32_t  HERO_CRIT_CHANCE_PERMILLE  = 100;
 constexpr int32_t  HERO_CRIT_MULT_PERMILLE    = 1500;
 constexpr int32_t  HERO_CORRUPTION_MAX        = 1250;
@@ -52,7 +52,7 @@ constexpr int32_t CARD_GRADE_RATE[5]   = {420, 300, 190, 75, 15};
 constexpr int32_t CARD_GRADE_BUDGET[5] = { 9, 15, 30, 60, 150 };
 constexpr int32_t CARD_GRADE_STEP[5]   = {600, 1000, 2000, 4000, 10000};   // 증가량 비 0.6 : 1 : 2 : 4 : 10
 constexpr int32_t ENGRAVE_BASE[8] = { 75, 135, 90, 150, 27, 65, 75, 60 };
-constexpr int32_t RELIC_BASE[6]   = { 3, 120, 30, 45, 1, 113 };
+constexpr int32_t RELIC_BASE[6]   = { 3, 180, 30, 45, 1, 113 };
 constexpr int32_t  DECAY_TICKS            = 80;     // 4초 (20Hz)
 constexpr int32_t  RAGE_DURATION_TICKS    = 100;    // 5초
 constexpr int32_t  RAGE_MAX_STACKS        = 10;     // 등급 무관 고정
@@ -219,10 +219,10 @@ inline SimConfig devConfig() {
     // 4.2배 다른 상태로 몬테카를로를 돌리고 있었다. verify_core_constants.py가
     // 이제 이 표 전체를 대조한다.
     constexpr E kElites[4] = {
-        {120, 0,  167, 35, 60, 1},   // GE_ARCHER  궁병대장 — QTE 소스
-        {100, 200, 33, 20,  0, 2},   // GE_SHIELD  방패병   — QTE 없음
-        { 90, 0,   21, 40,  0, 3},   // GE_SHAMAN  주술사   — 소환, 방치 비용 최대
-        {150, 0,   13, 30, 30, 4},   // GE_MAD     미친 고블린 — QTE 소스
+        {185, 0,  167, 35, 60, 1},   // GE_ARCHER  궁병대장 — QTE 소스
+        { 62, 200, 83, 20,  0, 2},   // GE_SHIELD  방패병   — QTE 없음 (실효 300 → 186, 압박 보전분 damage 33 → 83)
+        {138, 0,   21, 40,  0, 3},   // GE_SHAMAN  주술사   — 소환, 방치 비용 최대
+        {231, 0,   13, 30, 30, 4},   // GE_MAD     미친 고블린 — QTE 소스
     };
     c.eliteCount = 4;
     for (uint32_t i = 0; i < 4; ++i) {
@@ -241,7 +241,7 @@ inline SimConfig devConfig() {
     }
 
     // data/monsters.json — 보스
-    c.boss.hp             = Fixed(2100);      // slice_boss_hp
+    c.boss.hp             = Fixed(3231);      // slice_boss_hp
     c.boss.armor          = Fixed(50);        // slice_boss_armor
     c.boss.damage         = Fixed(SLICE_BOSS_DAMAGE);
     c.boss.targetPriority = 10;
@@ -251,17 +251,19 @@ inline SimConfig devConfig() {
     c.boss.attackRange    = Fixed::fromPermille(SLICE_BOSS_ATTACK_RANGE_MILLITILE);
     c.boss.typeId         = 100;
 
-    // data/segments.json — 구간별 엘리트를 클리어 게이지 임계로 옮긴 것.
+    // data/segments.json:elite_spawn_points — 파이썬이 구성에서 풀어 놓은 표를 옮긴 것.
     // 원거리 잡몹 폐지로 빠진 압박을 엘리트 증량(10 → 19마리)이 대신한다.
     // 인덱스: 0 궁병대장 · 1 방패병 · 2 주술사 · 3 미친 고블린
+    // **손으로 적지 말 것.** 임계가 균등 분할(50점 간격) 시절 값으로 남아 있어
+    // 19마리 전부 구간 8 시작(368점) 이전에 몰렸고, 구간 8 혼자 설계의 1.9배였다.
     const EliteSpawnPoint sp[19] = {
-        { 25, 0},
-        { 50, 0}, { 55, 2},
-        { 80, 3}, { 85, 1},
-        {115, 0}, {120, 1},
-        {160, 0}, {165, 1}, {170, 1},
-        {215, 3}, {220, 1}, {225, 1}, {230, 1},
-        {285, 0}, {290, 1}, {295, 1}, {300, 1}, {305, 2},
+        { 37, 0},
+        { 69, 0}, { 84, 2},
+        {115, 3}, {132, 1},
+        {166, 0}, {184, 1},
+        {220, 0}, {238, 1}, {257, 1},
+        {294, 3}, {312, 1}, {331, 1}, {349, 1},
+        {387, 0}, {407, 1}, {426, 1}, {445, 1}, {465, 2},
     };
     c.eliteSpawnCount = 19;
     for (uint32_t i = 0; i < 19; ++i) c.eliteSpawns[i] = sp[i];

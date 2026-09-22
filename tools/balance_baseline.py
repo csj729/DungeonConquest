@@ -193,7 +193,7 @@ TRASH_HITS_BAND = (1.8, 5.0)   # 판 내내 유지되어야 할 잡몹 타수
 # 가리킨다** — 모델은 "너무 빠르다"고 하고 하네스는 "여전히 느리다"고 한다.
 # 실측으로 보정해 두 도구가 같은 게임을 검산하게 만든다.
 # 출처: core/tools/dc_montecarlo (12시드 × 맵 완주)
-COMBAT_EFFICIENCY = 0.77
+COMBAT_EFFICIENCY = 0.56
 
 CARD_PICK_SEC = 2.5            # 카드 1회 선택에 쓰는 시간 가정 (UI 요구사항)
 MODAL_BUDGET = 0.15            # 런 전체에서 선택 모달이 차지해도 되는 비율 상한

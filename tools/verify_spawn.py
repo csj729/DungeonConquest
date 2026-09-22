@@ -55,6 +55,33 @@ def sector_arc_tiles():
     return 2 * math.pi * spawn_radius() / SPAWN_DIRECTIONS
 
 
+def spawn_rate(segment):
+    """초당 스폰 수. 배치 크기 / 스폰 간격."""
+    return spawn_batch(segment) / (SPAWN_INTERVAL_TICKS / TICK_HZ)
+
+
+def avg_alive(segment, n, sec):
+    """구간 평균 동시 생존 수.
+
+    **상한을 그대로 쓰면 안 된다.** 전장이 항상 상한까지 차 있다고 보면 초반
+    구간이 실제의 4배가 되고(구간 1 실측 7.5 대 상한 30), 그 값으로 나눈
+    평균 생존이 밴드를 벗어난다. 초반은 **구간에 배정된 몹 수 자체가 적어**
+    스폰이 끝나면 전장이 비기 때문이다 — 고이는 것은 후반 구간의 현상이다.
+
+    스폰 램프에서 직접 푼다. 구간 몹 n마리를 초당 a마리로 뿌리므로 스폰이
+    T_a = n/a초에 끝나고, 그동안 밀린 양이 (a-k)·T_a, 접근 중인 양이 a·접근시간이다.
+    스폰이 끝나면 남은 물량이 (T - T_a)에 걸쳐 0으로 빠진다. 그 사다리꼴의
+    시간 평균이 평균 생존 수이고, 상한에서 잘린다.
+    (하네스 대조: 구간 1 모델 9.9 대 실측 7.5 · 구간 8 모델 37 대 실측 36.1)
+    """
+    a = spawn_rate(segment)
+    t_a = min(sec, n / a)
+    backlog = max(0.0, (a - n / sec) * t_a)
+    inflight = a * APPROACH_SEC
+    area = (backlog / 2 + inflight) * t_a + (backlog + inflight) / 2 * (sec - t_a)
+    return min(concurrent_cap(segment), area / sec)
+
+
 def report():
     ok = True
     base, _b, _a = hero_dps()
@@ -87,9 +114,10 @@ def report():
     lifetimes = []
     for i, _m, _r, n, _e, _g, sec, _gn, _c, _et in rows:
         k = n / sec
-        moving = k * APPROACH_SEC
-        engaged = concurrent_cap(i) - moving
-        life = concurrent_cap(i) / k
+        alive = avg_alive(i, n, sec)
+        moving = min(alive, spawn_rate(i) * APPROACH_SEC)
+        engaged = alive - moving
+        life = alive / k
         lifetimes.append(life)
         print(f"  {i:>2} {concurrent_cap(i):>5} {k:>6.2f}/초 {moving:>7.1f} "
               f"{engaged:>7.1f} {life:>8.0f}초")
@@ -99,11 +127,11 @@ def report():
     print(f"  평균 생존 {min(lifetimes):.0f}~{max(lifetimes):.0f}초 "
           f"(목표 {lo:g}~{hi:g})  {'PASS' if good else 'FAIL'}")
     if not good:
-        need = CONCURRENT_CAP[8] / hi
+        need = concurrent_cap(8) / hi
         thr = need * TRASH["hp"]
         cur = base * effective_targets(1)
         print(f"  ※ **전장이 고인다.** 상한만큼 쌓이는데 처치율이 못 따라간다.")
-        print(f"     상한 {CONCURRENT_CAP[8]}에서 평균 생존 {hi:g}초가 되려면 처치율 "
+        print(f"     상한 {concurrent_cap(8)}에서 평균 생존 {hi:g}초가 되려면 처치율 "
               f"{need:.1f}/초 = 처리량 {thr:.0f} EHP/초가 필요한데 현재 {cur:.0f}이다")
         print(f"     → 공격 간격 {HERO['attack_interval_ticks']}틱 → "
               f"**{HERO['attack_interval_ticks'] * cur / thr:.0f}틱**")

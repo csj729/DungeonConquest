@@ -1,7 +1,7 @@
 {
   "_": "영웅 기준선. 모든 소수는 정수 + 단위 접미사로 담는다 (permille = 1/1000).",
   "attack_power": 10,
-  "attack_interval_ticks": 20,
+  "attack_interval_ticks": 13,
   "crit_chance_permille": 100,
   "crit_mult_permille": 1500,
   "corruption_max": 1250,
@@ -19,5 +19,6 @@
   "qte_perfect_window_ticks": 1,
   "qte_perfect_cc_gain_permille": 1000,
   "groggy_ticks": 40,
-  "qte_cooldown_ticks": 120
+  "qte_cooldown_ticks": 120,
+  "_attack_interval": "20 → 13틱 (초당 1.0 → 1.54회). **런 길이를 설계값으로 끌어올리는 손잡이다.**\\n설계는 잡몹 294 + 엘리트 19를 294초에 잡는 것을 전제하는데(segments.json) 실측이 537초였다. 하네스 스윕에서 이 값이 유일하게 작동했다 — 동시 생존 상한을 낮추거나 엘리트를 줄이면 클리어 포인트가 천천히 쌓여 **오히려 길어진다**.\\n**12틱이 아니라 13인 이유**: 12면 구간 1 통과가 19.9초로 설계 목표 25초(밴드 20~35)보다 빨라진다. 구간 1은 엘리트가 없어 원래 빠른 구간이라, 후반 구간을 위해 영웅을 더 올리면 초반이 설계에서 벗어난다. 후반은 방패병 감량으로 푼다.\\n**proc 인상 대신 공속을 고른 이유**: proc 40%면 같은 효과가 나지만 QTE 쿨다운 6초가 캡이라 발동의 23%만 QTE 창을 받아 **QTE 기능이 희석된다**."
 }

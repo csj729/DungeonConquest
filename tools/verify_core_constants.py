@@ -117,6 +117,14 @@ def _check_dev_data():
         # typeId(마지막 열)는 JSON에 없으므로 앞 5개만 본다
         return [[int(x) for x in re.findall(r"-?\d+", r)][:5] for r in rows]
 
+    def elite_spawns():
+        """EliteSpawnPoint sp[] 초기화 블록을 [포인트, 엘리트 인덱스] 행으로 뜯는다."""
+        m = re.search(r"EliteSpawnPoint sp\[\d*\]\s*=\s*\{(.*?)\n\s*\};", src, re.S)
+        if not m:
+            return None
+        return [[int(x) for x in re.findall(r"-?\d+", r)]
+                for r in re.findall(r"\{([^}]*)\}", m.group(1))]
+
     def slice_boss_hp():
         m = re.search(r"c\.boss\.hp\s*=\s*Fixed\((\d+)\)", src)
         return int(m.group(1)) if m else None
@@ -151,6 +159,10 @@ def _check_dev_data():
         ("kElites", elite_rows(),
          [[e["hp"], e["armor"], e["damage"], e["target_priority"], e["windup_ticks"]]
           for e in gd.MONSTERS["elites"]]),
+        # **엘리트 등장 임계는 구간 구성에서 파생되는 값이다.** 손으로 적은 표가
+        # 균등 분할 시절 값으로 남아 19마리 전부 구간 8 이전에 몰려 있었다.
+        ("eliteSpawns", elite_spawns(),
+         [list(r) for r in gd.SEGMENTS_DATA["elite_spawn_points"]]),
         ("ELITE_COOLDOWN_TICKS", scalar("ELITE_COOLDOWN_TICKS"),
          gd.MONSTERS["elites"][0]["cooldown_ticks"]),
         ("ELITE_ATTACK_RANGE_MILLITILE", scalar("ELITE_ATTACK_RANGE_MILLITILE"),

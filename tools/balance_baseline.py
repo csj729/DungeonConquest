@@ -466,7 +466,11 @@ def report():
     print("=== 목표 9: 보스 처치 시간 ===")
     bhp = effective_hp(BOSS["hp"], BOSS["armor"])
     grown_dps = dps * BOSS_GROWTH_MULT
-    bsec = bhp / grown_dps
+    # **보스도 같은 보정을 받는다.** 이 자리가 세 번째였다 — verify_segments ·
+    # verify_exp_curve에 보정을 걸 때 여기를 같이 고치지 않아, 보정 없는 식에서만
+    # 밴드에 맞는 보스 HP(50769)가 도출값(29002)의 1.75배로 남아 있었다.
+    # 실측은 보정 쪽이다: 보정 없는 모델이 61초로 볼 때 하네스는 111초였다.
+    bsec = bhp / grown_dps / COMBAT_EFFICIENCY
     lo, hi = BOSS_TARGET_SEC
     ok &= (lo <= bsec <= hi)
     print(f"  HP {BOSS['hp']}, Armor {BOSS['armor']} → 실효 {bhp:.0f}")

@@ -22,6 +22,7 @@
     767,
     1918
   ],
+  "_stats_derivation": "**아이템 스탯은 전부 파생이다** — stat = tier_power_permille[등급] × axis_stats_permille[축][stat] / 1000, 반올림은 half-up으로 고정한다(CLAUDE.md: 반올림 방향을 명시적으로 남긴다). tools/verify_derivations.py가 51종 전부를 이 식으로 다시 만들어 대조한다.\n**한때 진실 원천이 둘이었다.** 생성기가 저장된 정수 표가 아니라 반올림 전 사다리 값(767.1875 등)을 써서 5건이 ±1 어긋나 있었다 — Cc1·Cc2의 armor 269와 Ef1~3의 attack_speed 479다. 저장된 정수 표로 통일했다. 값 차이는 0.2~0.4%로 밸런스에는 영향이 없지만, 두 원천을 남겨 두면 다음에 등급 위력을 바꿀 때 어느 쪽을 고쳐야 하는지가 사라진다.",
   "_axis_stats": "축 → 스탯 배분. **메인 축 둘(화력·생존) · 보너스 축 둘(광역·CC).**\\n보너스 축은 예산의 절반 이상이 메인 스탯으로 간다 — 그래야 '그 축만으로는 빌드가 서지 않는다'가 수치로 성립한다. 광역 반경은 40%, CC의 둔화는 20%뿐이다.\\nCC를 새 스탯으로 두지 않은 이유: 둔화는 적을 늦출 뿐 더 빨리 죽이지 않아 수익이 체감한다 — 섞으면 클리어가 편해지지만 몰아도 이기지 못한다. R_FROST가 쓰는 둔화 경로를 그대로 재사용한다(hero.slowAura).\\n한 축을 스탯 하나에 몰지 않는 것도 유지한다 — 몰면 그 축 아이템끼리 완전 대체재가 되어 조합 경로 선택이 사라진다 (§5 다경로의 전제).",
   "axis_stats_permille": {
     "화력": {
@@ -474,7 +475,7 @@
       ],
       "stats_permille": {
         "attack_speed": 345,
-        "armor": 269,
+        "armor": 268,
         "slow_aura": 153
       }
     },
@@ -489,7 +490,7 @@
       ],
       "stats_permille": {
         "attack_speed": 345,
-        "armor": 269,
+        "armor": 268,
         "slow_aura": 153
       }
     },
@@ -591,7 +592,7 @@
       ],
       "stats_permille": {
         "attack_power": 1151,
-        "attack_speed": 479,
+        "attack_speed": 480,
         "crit_chance": 288
       }
     },
@@ -606,7 +607,7 @@
       ],
       "stats_permille": {
         "attack_power": 1151,
-        "attack_speed": 479,
+        "attack_speed": 480,
         "crit_chance": 288
       }
     },
@@ -621,7 +622,7 @@
       ],
       "stats_permille": {
         "attack_power": 1151,
-        "attack_speed": 479,
+        "attack_speed": 480,
         "crit_chance": 288
       }
     },

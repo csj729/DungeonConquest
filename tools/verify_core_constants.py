@@ -13,6 +13,7 @@ CORE_INC = Path(__file__).resolve().parent.parent / "core" / "include" / "dc"
 CONFIG_H = CORE_INC / "config.h"
 STAT_ID_H = CORE_INC / "stat_id.h"
 DEV_DATA_H = Path(__file__).resolve().parent.parent / "core" / "tools" / "dev_data.h"
+DEV_ITEMS_H = Path(__file__).resolve().parent.parent / "core" / "tools" / "dev_items.h"
 
 
 def read_constants():
@@ -58,8 +59,67 @@ def report():
 
     # 스탯 enum 순서와 stats.json 키 순서가 같아야 한다.
     # **enum 값이 바뀌면 기존 리플레이가 전부 깨진다** — 순서까지 대조한다.
+    # **아이템 51종은 그동안 어느 도구도 보지 않았다.** dev_items.h가 대조 범위
+    # 밖이라 51종 × 10스탯 + 둔화 + 축 + 등급이 통째로 무검사였다.
+    ok &= _check_dev_items()
+
     ok &= _check_stats()
     return bool(ok)
+
+
+def _check_dev_items():
+    """`core/tools/dev_items.h`가 data/items.json과 어긋나지 않는지.
+
+    dev_data.h와 같은 이유로 자동 대조를 건다 — 두 곳에 사는 값이기 때문이다.
+    **그동안 이 파일만 대조 범위 밖이었다.** 아이템은 한 판 성장의 70%를
+    담당하는 주력 축인데(design.md §4) 51종 × 10스탯이 통째로 무검사였다.
+
+    값이 올바르게 **도출**됐는지는 tools/verify_derivations.py가 본다.
+    여기서는 C++와 JSON이 같은지만 본다.
+    """
+    src = DEV_ITEMS_H.read_text(encoding="utf-8")
+    items = gd.load("items")
+    rows = items["commons"] + items["recipes"]
+    stat_names = list(gd.load("stats")["stats"].keys())
+
+    def flat(name, dims=""):
+        m = re.search(rf"{name}\[[^\]]*\]{dims}\s*=\s*\{{(.*?)\}};", src, re.S)
+        return [int(x) for x in re.findall(r"-?\d+", m.group(1))] if m else None
+
+    def stat_rows():
+        m = re.search(r"DEV_ITEM_STATS\[DEV_ITEM_COUNT\]\[10\] = \{(.*?)\n\};", src, re.S)
+        if not m:
+            return None
+        return [[int(x) for x in re.findall(r"-?\d+", r)]
+                for r in re.findall(r"\{([^}]*)\}", m.group(1))]
+
+    checks = [
+        ("DEV_ITEM_STATS", stat_rows(),
+         [[it["stats_permille"].get(k, 0) for k in stat_names] for it in rows]),
+        # slow_aura는 Stat enum에 없다 — CC 축의 둔화는 R_FROST가 쓰는
+        # hero.slowAura 경로를 재사용하므로 별도 배열로 나간다.
+        ("DEV_ITEM_SLOW", flat("DEV_ITEM_SLOW"),
+         [it["stats_permille"].get("slow_aura", 0) for it in rows]),
+        ("DEV_ITEM_AXIS", flat("DEV_ITEM_AXIS"),
+         [items["axes"].index(it["axis"]) for it in rows]),
+        ("DEV_ITEM_TIER", flat("DEV_ITEM_TIER"),
+         [items["grades"].index(it["grade"]) for it in rows]),
+        ("DEV_TIER_POWER", flat("DEV_TIER_POWER"), items["tier_power_permille"]),
+        ("DEV_ITEM_COUNT", [int(re.search(r"DEV_ITEM_COUNT = (\d+)", src).group(1))],
+         [len(rows)]),
+    ]
+
+    bad = [(n, g, w) for n, g, w in checks if g != w]
+    for name, got, want in bad:
+        if isinstance(got, list) and isinstance(want, list) and len(got) == len(want):
+            idx = [i for i, (a, b) in enumerate(zip(got, want)) if a != b]
+            print(f"  X   dev_items.h {name}: {len(idx)}칸 어긋남 — "
+                  f"첫 자리 #{idx[0]} {got[idx[0]]} != {want[idx[0]]}")
+        else:
+            print(f"  X   dev_items.h {name}: 형태가 다르다")
+    print(f"  {'OK ' if not bad else 'X  '} {'dev_items.h 대조':<18} "
+          f"{len(checks) - len(bad)}/{len(checks)} 항목 일치 (아이템 {len(rows)}종)")
+    return not bad
 
 
 def _check_stats():

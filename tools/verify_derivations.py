@@ -41,6 +41,8 @@
 
 - `proc_prd_c_q16` → `verify_prd.py` (PRD 상수 C를 목표 발동률에서 푼다)
 - `tier_power_permille` → `verify_item_values.py` (조합 사다리)
+- `dev_items.h` ↔ `items.json` 대조 → `verify_core_constants.py`
+  (여기는 **도출**만 본다. C++와 JSON이 같은지는 저쪽이다)
 - 카드 등급 예산 → `verify_card_values.py` (레벨업 위력에서 역산)
 - `trash.hp` → `balance_baseline.py` 목표 1 (공격력 × 타수를 등식으로 본다)
 
@@ -151,6 +153,39 @@ def derive_elite_hp():
     return out
 
 
+def derive_item_stats():
+    """아이템 51종의 스탯 ← 등급 위력 × 축 배분.
+
+    stat = tier_power_permille[등급] × axis_stats_permille[축][stat] / 1000.
+
+    **반올림은 half-up으로 고정한다** (CLAUDE.md: 반올림 방향을 명시적으로
+    남긴다). 51종 어디에서도 half-up과 은행가 반올림이 갈리지 않으므로 이
+    선택이 값을 바꾸지는 않지만, 적어 두지 않으면 다음에 축 배분을 바꿀 때
+    어느 쪽인지 다시 추측해야 한다.
+
+    **한때 진실 원천이 둘이었다.** 생성기가 저장된 정수 표가 아니라 반올림 전
+    사다리 값(767.1875 등)을 써서 5건이 ±1 어긋나 있었다 — 값 차이는 0.2~0.4%로
+    밸런스에는 영향이 없지만, 두 원천을 남겨 두면 등급 위력을 바꿀 때 어느 쪽을
+    고쳐야 하는지가 사라진다.
+
+    반환은 `{아이템 id: {스탯: permille}}`이라 어느 아이템이 어긋났는지 바로 보인다.
+    """
+    items = gd.load("items")
+    grades, tier, axis = items["grades"], items["tier_power_permille"], items["axis_stats_permille"]
+    out = {}
+    for it in items["commons"] + items["recipes"]:
+        power = tier[grades.index(it["grade"])]
+        out[it["id"]] = {k: int(power * v / 1000 + 0.5)
+                         for k, v in axis[it["axis"]].items()}
+    return out
+
+
+def stored_item_stats():
+    items = gd.load("items")
+    return {it["id"]: dict(it["stats_permille"])
+            for it in items["commons"] + items["recipes"]}
+
+
 def derive_full_boss_hp():
     """풀 게임 최종 보스 체력 ← 맵 3 보스의 투영.
 
@@ -195,12 +230,17 @@ def checks():
          f"목표 {_MN['slice_boss_target_sec']}초 × DPS × 성장 × 보정 {COMBAT_EFFICIENCY}"),
         ("elites[].hp", [e["hp"] for e in _MN["elites"]], derive_elite_hp(), 1,
          "target_sec 밴드 중앙 × DPS × 엘리트 피해 비중 / Armor"),
+        ("items[].stats_permille", stored_item_stats(), derive_item_stats(), 0,
+         "등급 위력 × 축 배분 / 1000 (half-up)"),
         ("boss.hp (풀 게임)", _MN["boss"]["hp"], derive_full_boss_hp(), 1,
          f"맵 {_PR['maps']} 보스 투영 (verify_exp_curve)"),
     ]
 
 
 def _fmt(v):
+    if isinstance(v, dict):
+        body = ", ".join(f"{k}={_fmt(x)}" for k, x in list(v.items())[:4])
+        return f"{{{body}{', …' if len(v) > 4 else ''}}}"
     if isinstance(v, list):
         body = ", ".join(_fmt(x) for x in v[:6])
         return f"[{body}{', …' if len(v) > 6 else ''}]"
@@ -210,7 +250,24 @@ def _fmt(v):
 
 
 def _diff(stored, derived, tol):
-    """저장값과 도출값이 허용 오차 안인가. 리스트는 원소별로 본다."""
+    """저장값과 도출값이 허용 오차 안인가. 리스트·딕셔너리는 원소별로 본다.
+
+    **어긋난 자리를 이름으로 찍는다** — 아이템 51종처럼 항목이 많으면
+    "어딘가 다르다"로는 고칠 수가 없다.
+    """
+    if isinstance(stored, dict) != isinstance(derived, dict):
+        return False, "형태가 다르다"
+    if isinstance(stored, dict):
+        keys = set(stored) | set(derived)
+        missing = sorted(k for k in keys if k not in stored or k not in derived)
+        if missing:
+            return False, f"한쪽에만 있는 항목: {missing[:4]}"
+        bad = [k for k in sorted(keys) if not _diff(stored[k], derived[k], tol)[0]]
+        if not bad:
+            return True, ""
+        first = bad[0]
+        return False, (f"{len(bad)}개 어긋남 (첫 항목 {first}: "
+                       f"{_fmt(stored[first])} != {_fmt(derived[first])})")
     if isinstance(stored, list) != isinstance(derived, list):
         return False, "형태가 다르다"
     if isinstance(stored, list):
@@ -276,6 +333,9 @@ _POKES = [
      '"slice_boss_target_sec": 80,', "slice_boss_hp"),
     ("data/monsters.json", '"target_sec_max": 12,\n      "windup_ticks": 60,',
      '"target_sec_max": 13,\n      "windup_ticks": 60,', "elites[].hp"),
+    # 생존 축의 armor 배분 — items.json에서 유일한 문자열이라 앵커로 쓴다
+    ("data/items.json", '"armor": 600,', '"armor": 610,',
+     "items[].stats_permille"),
     ("data/monsters.json", '"hp": 27061,', '"hp": 27200,', "boss.hp"),
 ]
 

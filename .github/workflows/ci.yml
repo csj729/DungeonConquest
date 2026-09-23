@@ -1,0 +1,138 @@
+# CI — CLAUDE.md가 요구하는 세 가지를 자동으로 확인한다.
+#
+#   1) 시뮬 코어는 UBSan / ASan 빌드에서 테스트를 통과해야 한다
+#   2) Debug 빌드와 Release 빌드의 체크섬이 일치해야 한다
+#   3) 시뮬 결과는 **컴파일러·최적화 레벨·OS에 무관**해야 한다
+#
+# 1·2는 `tools/build_and_test.sh`가 이미 하던 것을 자동화한 것이고,
+# 3의 "컴파일러 무관"은 **CI에서만 할 수 있는 검증이다** — 로컬 스크립트는
+# 한 컴파일러 안에서 Debug/Release만 비교하므로 gcc와 clang이 갈라져도 모른다.
+#
+# 잡을 셋으로 나눈 이유는 **실패의 원인을 이름으로 부르기 위해서다.** 한 잡에
+# 몰면 빨간불 하나가 "데이터가 틀렸다"인지 "빌드가 깨졌다"인지 "결정론이
+# 깨졌다"인지 구분되지 않는다. data는 3초라 먼저 끝나 빠른 피드백도 준다.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# 같은 브랜치에 연달아 푸시하면 앞의 실행을 취소한다 — 러너를 아끼고,
+# 어차피 최신 커밋의 결과만 의미가 있다.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 데이터 검증 — 16개 도구 + 도구 자신의 자기 검사 ──────────────
+  # 서드파티 의존성이 없다 (표준 라이브러리만 쓴다). 그래서 설치 단계가 없다.
+  data:
+    name: 데이터 검증
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 검증 도구 16개
+        run: python3 tools/run_all.py
+
+      # **검사가 조용히 무뎌지는 것이 도출식 검사의 고장 방식이다.**
+      # 도출식이 저장값을 읽게 되거나 허용 오차가 커지면 전부 PASS인 채로
+      # 아무것도 안 잡는다. 값을 하나씩 흔들어 해당 검사가 물리는지 본다.
+      - name: 도출식 검사 자기 검사
+        run: python3 tools/verify_derivations.py --selftest
+
+      # 자기 검사는 data/*.json을 잠시 고쳤다 되돌린다. try/finally로 복구하지만
+      # **복구가 실제로 됐는지는 별개 문제다** — 여기서 못 박는다.
+      - name: 자기 검사가 데이터를 되돌렸는가
+        run: git diff --exit-code
+
+  # ── C++ 코어 — 4개 빌드 · 13개 테스트 · 체크섬 일치 ───────────────
+  core:
+    name: C++ 코어 (gcc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Debug / Release / UBSan / ASan 네 벌을 짓고, 13개 테스트를 각각 돌리고,
+      # dc_checksum 출력과 테스트 출력이 빌드 간에 같은지 비교한다.
+      - name: 빌드 · 테스트 · 체크섬 일치
+        run: ./tools/build_and_test.sh
+
+  # ── 결정론 — 컴파일러가 달라도 같은 결과가 나오는가 ───────────────
+  # **로컬 스크립트가 덮지 못하는 축이다.** CLAUDE.md는 컴파일러·OS 무관을
+  # 요구하는데, build_and_test.sh는 한 컴파일러 안에서만 비교한다.
+  #
+  # 체크섬을 아티팩트로 올리고 뒤의 잡이 모아서 비교한다 — 잡 사이에 값을
+  # 넘기는 방법이 이것뿐이고, 불일치가 났을 때 **어느 쪽이 튀었는지 파일로
+  # 남아** 바로 확인할 수 있다.
+  determinism-matrix:
+    name: 체크섬 (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false      # 한쪽이 깨져도 나머지 결과를 봐야 원인이 좁혀진다
+      matrix:
+        include:
+          - { name: ubuntu-gcc,   os: ubuntu-latest, cxx: g++ }
+          - { name: ubuntu-clang, os: ubuntu-latest, cxx: clang++ }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 빌드
+        run: |
+          cmake -S . -B build/ci -DCMAKE_BUILD_TYPE=Release \
+                -DDC_SANITIZE=none -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          cmake --build build/ci -j
+
+      # 시드 셋은 build_and_test.sh와 같은 것을 쓴다 — 0 근처 · 실제 사용값 ·
+      # uint64 최대값. 마지막은 시드 파생이 최상위 비트에서 갈라지는지를 본다.
+      - name: 체크섬 생성
+        run: |
+          for seed in 1 20250918 18446744073709551615; do
+            echo "== seed=$seed"
+            ./build/ci/core/dc_checksum "$seed" 4000 500
+          done > checksum-${{ matrix.name }}.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksum-${{ matrix.name }}
+          path: checksum-${{ matrix.name }}.txt
+
+  determinism:
+    name: 결정론 — 컴파일러 간 일치
+    runs-on: ubuntu-latest
+    needs: determinism-matrix
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: sums
+          merge-multiple: true
+
+      - name: 전부 같은가
+        run: |
+          ls -1 sums/
+          # 파일이 하나뿐이면 비교가 성립하지 않는다 — 매트릭스가 조용히
+          # 줄어든 채로 초록불이 뜨는 것을 막는다.
+          count=$(ls -1 sums/checksum-*.txt | wc -l)
+          if [ "$count" -lt 2 ]; then
+            echo "비교할 체크섬이 $count개뿐이다 — 매트릭스가 줄었는지 확인할 것"
+            exit 1
+          fi
+          # **명시적 루프로 비교한다.** `diff --from-file=...*.txt`를 쓰면
+          # 글로브가 단어 전체에 걸려 매칭되는 파일이 없고, 리터럴 문자열이
+          # 그대로 넘어가 피연산자 없이 0을 반환한다 — 불일치를 못 잡는 채로
+          # 초록불이 뜬다. 실제로 그렇게 짰다가 음성 테스트에서 걸렸다.
+          first=$(ls -1 sums/checksum-*.txt | head -1)
+          bad=0
+          for f in sums/checksum-*.txt; do
+            [ "$f" = "$first" ] && continue
+            if ! diff -u "$first" "$f"; then bad=1; fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "**컴파일러에 따라 시뮬 결과가 갈린다.** 위 diff의 첫 줄이"
+            echo "갈라진 틱이다 (CLAUDE.md: 최초로 갈라진 틱 번호를 보고할 것)."
+            exit 1
+          fi
+          echo "체크섬 $count개 전부 일치"

@@ -16,6 +16,7 @@
   "elites": [
     {
       "id": "GE_ARCHER",
+      "type_id": 1,
       "target_priority": 35,
       "name": "고블린 궁병대장",
       "hp": 178,
@@ -28,6 +29,7 @@
     },
     {
       "id": "GE_SHIELD",
+      "type_id": 2,
       "target_priority": 20,
       "name": "고블린 방패병",
       "hp": 59,
@@ -41,6 +43,7 @@
     },
     {
       "id": "GE_SHAMAN",
+      "type_id": 3,
       "target_priority": 40,
       "name": "고블린 주술사",
       "hp": 141,
@@ -53,6 +56,7 @@
     },
     {
       "id": "GE_MAD",
+      "type_id": 4,
       "target_priority": 30,
       "name": "미친 고블린",
       "hp": 235,
@@ -113,6 +117,8 @@
   "_slice_boss_target_sec": "슬라이스 보스 목표 처치 시간. slice_boss_hp가 여기서 역산된다 (tools/verify_derivations.py). boss.target_sec 밴드 60~90 안이고, 설계 목표 75초(map_boss_target_ticks 1500)보다 낮게 잡은 이유는 맵 통과가 설계 294초 대비 344초라 75초면 한 판이 7.95분으로 5~8분 밴드에 3초만 남기 때문이다. 맵이 설계값에 닿으면 75로 되돌린다.",
   "slice_boss_target_sec": 70,
   "slice_boss_armor": 50,
+  "_slice_boss_type_id": "엔티티 종류 식별자. 잡몹 0 · 엘리트 1~4와 겹치지 않게 100부터 쓴다.",
+  "slice_boss_type_id": 100,
   "_slice_boss_hp": "**3231 → 2086.** 목표 처치 시간에서 역산하는 값인데, 그 역산이 실측 보정(balance_baseline.COMBAT_EFFICIENCY)을 빼고 있었다 — 모델이 61초로 볼 때 실측은 111초였다(하네스 11판, 잠식 고정). 설계 밴드는 60~90초다.\n**70초로 잡는다.** 설계 목표는 75초지만 맵 통과가 설계 294초 대비 344초라 75초면 한 판이 7.95분으로 5~8분 밴드에 3초만 남는다. 70초면 7.87분이고 보스 밴드 안이다. 맵이 설계값에 닿으면 75초로 되돌릴 자리다.",
   "slice_boss_hp": 2086,
   "_slice_boss": "수직 슬라이스용 보스. 전체 게임 보스(hp 27061)와 달리 맵 1개 분량으로 축소한 값이다. **damage와 cooldown_ticks는 사라졌다** — 한때 patterns[0]의 한 대 값(63)과 고정 주기(60틱)를 임시로 쓰고 있었는데, 패턴 시스템이 붙으면서 boss.patterns에서 직접 읽는다.",

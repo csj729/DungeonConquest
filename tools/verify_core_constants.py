@@ -175,6 +175,14 @@ def _check_stats():
 
 
 
+# `Stat` enum 순서. C++ 이름과 JSON 키를 같은 순서로 둔다 — 아래 "Stat enum 순서"
+# 검사가 이 순서와 stats.json의 키 순서가 같은지 이미 대조한다.
+_STAT_CPP = ["AttackPower", "AttackSpeed", "Armor", "Range", "CorruptionMax",
+             "CritChance", "CritMult", "ProcRate", "MoveSpeed", "AoeRadius"]
+_STAT_JSON = ["attack_power", "attack_speed", "armor", "range", "corruption_max",
+              "crit_chance", "crit_mult", "proc_rate", "move_speed", "aoe_radius"]
+
+
 def _check_dev_data():
     """`core/tools/dev_data.h`는 진짜 로더가 붙기 전까지의 임시 수치다.
 
@@ -197,13 +205,26 @@ def _check_dev_data():
         if not m:
             return None
         rows = re.findall(r"\{([^}]*)\}", m.group(1))
-        # typeId(마지막 열)는 JSON에 없으므로 앞 5개만 본다
-        return [[int(x) for x in re.findall(r"-?\d+", r)][:5] for r in rows]
+        # **type_id까지 본다.** 한때 JSON에 없어서 앞 5개만 봤는데, 설정 로더가
+        # 붙으면서 monsters.json으로 옮겨 왔다 — 대조 밖에 남을 이유가 사라졌다.
+        return [[int(x) for x in re.findall(r"-?\d+", r)][:6] for r in rows]
 
     def from_pattern0():
         """c.boss의 damage·cooldown·windup이 표에서 파생되는가 (숫자 하드코딩이 아니라)."""
         return [bool(re.search(rf"c\.boss\.{f}\s*=[^;]*BOSS_PATTERNS\[0\]", src))
                 for f in ("damage", "cooldownTicks", "windupTicks")]
+
+    def hero_range():
+        """영웅 사거리 — applyHeroBaseline의 Range 기준값."""
+        m = re.search(r"bases\[statIndex\(Stat::Range\)\]\s*=\s*Fixed\((\d+)\)", src)
+        return int(m.group(1)) if m else None
+
+    def stat_card_pool():
+        """STAT_CARD_POOL을 Stat enum 인덱스 목록으로 뜯는다."""
+        m = re.search(r"STAT_CARD_POOL\[\d*\]\s*=\s*\{(.*?)\};", src, re.S)
+        if not m:
+            return None
+        return [_STAT_CPP.index(n) for n in re.findall(r"Stat::(\w+)", m.group(1))]
 
     def boss_pattern_rows():
         """BOSS_PATTERNS 초기화 블록을 행 단위로 뜯는다 — {damage, windup, cooldown}.
@@ -272,8 +293,15 @@ def _check_dev_data():
         # 167/33/21/13) 파이썬 검증과 C++ 시뮬이 서로 다른 게임을 재고 있었다.
         # 한 필드만 보면 또 놓치므로 kElites 행을 통째로 본다.
         ("kElites", elite_rows(),
-         [[e["hp"], e["armor"], e["damage"], e["target_priority"], e["windup_ticks"]]
+         [[e["hp"], e["armor"], e["damage"], e["target_priority"], e["windup_ticks"],
+           e["type_id"]]
           for e in gd.MONSTERS["elites"]]),
+        # 설정 로더가 붙으면서 C++에만 살던 값 셋이 JSON으로 옮겨 왔다.
+        # dev_data.h가 사라질 때까지 두 곳에 사는 동안은 대조가 필요하다.
+        ("HERO_RANGE", hero_range(), gd.HERO["range"]),
+        ("c.boss.typeId", scalar("c.boss.typeId"), gd.MONSTERS["slice_boss_type_id"]),
+        ("STAT_CARD_POOL", stat_card_pool(),
+         [_STAT_JSON.index(n) for n in gd.CARDS["stat_card_pool"]]),
         # **엘리트 등장 임계는 구간 구성에서 파생되는 값이다.** 손으로 적은 표가
         # 균등 분할 시절 값으로 남아 19마리 전부 구간 8 이전에 몰려 있었다.
         ("eliteSpawns", elite_spawns(),

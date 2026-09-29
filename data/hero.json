@@ -6,6 +6,8 @@
   "crit_mult_permille": 1500,
   "corruption_max": 1250,
   "armor": 0,
+  "_range": "영웅 공격 사거리(타일). 지금까지 C++에만 있던 값이라 데이터가 단일 진실 원천이라는 규약 밖에 있었다 — 로더가 붙으면서 여기로 옮겼다.",
+  "range": 3,
   "proc_rate_permille": 150,
   "_proc_prd_c_q16": "PRD 상수 C (q16, 65536 = 100%). proc_rate_permille에서 파생되는 값이라 tools/verify_prd.py가 둘의 정합을 검사한다. permille로는 해상도가 모자라 q16을 쓴다 (실측 근거는 core/include/dc/prd.h).",
   "proc_prd_c_q16": 2112,

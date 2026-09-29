@@ -254,7 +254,8 @@ int main(int argc, char** argv) {
     printf("  ※ 차가 남는 것은 정화가 0에서 잘리기 때문이다 — 잠식이 0인 구간의\n");
     printf("     회복은 버려지므로 분해가 완전 가법이 아니다\n");
 
-    printf("\n== 갈래별 도달 후 생존 (%d판 도달) ==\n", reached);
+    printf("\n== 갈래별 도달 후 생존 (%d판 도달 · 도달까지 평균 %.0f초) ==\n",
+           reached, arriveSecSum / reached);
     printf("  A 기준         %5.1f%%\n", clearedV[A_BASE]     * 100.0 / reached);
     printf("  B 흡혈 없음    %5.1f%%   <- 회복 카드가 보스전에서 실제로 일하는가\n",
            clearedV[B_NO_LEECH] * 100.0 / reached);

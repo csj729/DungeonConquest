@@ -129,7 +129,8 @@ extern "C" uint64_t dc_config_data_hash(const DcConfig* c) noexcept {
 
 extern "C" DcWorld* dc_world_create_with(const DcConfig* cfg, uint64_t seed) noexcept {
     if (cfg == nullptr || !cself(cfg)->loaded) return nullptr;
-    // World가 123 KB라 스택에 두지 않는다. nothrow로 받아 예외 경로를 아예 없앤다.
+    // World가 131 KB라 스택에 두지 않는다 (보간 버퍼 8 KB 포함).
+    // nothrow로 받아 예외 경로를 아예 없앤다.
     Handle* h = new (std::nothrow) Handle();
     if (h == nullptr) return nullptr;
     try {
@@ -204,6 +205,18 @@ extern "C" const uint8_t* dc_entity_archetype(const DcWorld* w) noexcept {
     // Archetype은 uint8_t 기반 enum class다. 평면 바이트 배열로 그대로 나간다.
     return w ? reinterpret_cast<const uint8_t*>(&self(w)->world.entities.archetype[0])
              : nullptr;
+}
+
+extern "C" const int32_t* dc_entity_prev_x(const DcWorld* w) noexcept {
+    return w ? &self(w)->world.entities.renderPrevX[0].raw : nullptr;
+}
+extern "C" const int32_t* dc_entity_prev_y(const DcWorld* w) noexcept {
+    return w ? &self(w)->world.entities.renderPrevY[0].raw : nullptr;
+}
+
+// EntityId는 uint32_t 하나를 담은 표준 레이아웃이라 평면 배열로 그대로 나간다.
+extern "C" const uint32_t* dc_entity_id(const DcWorld* w) noexcept {
+    return w ? self(w)->world.entities.idData() : nullptr;
 }
 
 extern "C" int32_t dc_hero_pos_x(const DcWorld* w) noexcept {

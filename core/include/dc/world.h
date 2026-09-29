@@ -304,6 +304,9 @@ public:
     // 헤더가 서로를 include해야 하고, 순서가 두 군데로 갈린다.
     void beginTick() {
         ++tick_;
+        // **렌더 보간 기준점을 여기서 찍는다** — 이번 틱이 움직이기 전 위치다.
+        // [파생]이므로 체크섬에 영향이 없다 (test_checksum의 고정값이 그걸 지킨다).
+        entities.captureRenderPrev();
         tickTimeConditions();   // §10 틱 루프의 drainConditionQueue 자리
     }
     void endTick() { applyDeaths(); }

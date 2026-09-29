@@ -115,6 +115,8 @@ int main(void) {
     check(dc_input(NULL, DC_INPUT_CRAFT, 0) == DC_ERR_NULL, "dc_input(NULL)");
     check(dc_entity_count(NULL) == DC_ERR_NULL, "dc_entity_count(NULL)");
     check(dc_entity_pos_x(NULL) == NULL, "dc_entity_pos_x(NULL)");
+    check(dc_entity_prev_x(NULL) == NULL, "dc_entity_prev_x(NULL)");
+    check(dc_entity_id(NULL) == NULL, "dc_entity_id(NULL)");
     check(dc_checksums(NULL, NULL) == DC_ERR_NULL, "dc_checksums(NULL)");
     /* 해제는 NULL에도 안전해야 한다 — C# 쪽 Dispose가 두 번 불릴 수 있다 */
     dc_world_destroy(NULL);
@@ -152,6 +154,54 @@ int main(void) {
         if (px[i] != 0 || py[i] != 0) { nonzero = 1; break; }
     }
     check(nonzero, "좌표 배열이 실제 값을 담고 있다");
+
+    section("렌더 보간 — prev가 현재 행에 맞춰져 있다");
+    /* **이게 없으면 보간이 성립하지 않는다.** 틱 끝 압축이 행을 옮기므로
+       클라이언트는 지난 프레임 좌표가 어느 엔티티였는지 알 수 없다.
+       코어가 맞춰 주므로 lerp(prev[i], pos[i], alpha) 한 줄이면 된다. */
+    {
+        const int32_t*  qx = dc_entity_prev_x(w);
+        const int32_t*  qy = dc_entity_prev_y(w);
+        const uint32_t* eid = dc_entity_id(w);
+        int32_t moved = 0, idsOk = 1;
+        int32_t i;
+        check(qx != NULL && qy != NULL && eid != NULL, "보간 포인터가 살아 있다");
+        for (i = 0; i < n; ++i) {
+            if (qx[i] != px[i] || qy[i] != py[i]) moved = 1;   /* 움직인 것이 있다 */
+            if (eid[i] == 0u) idsOk = 0;                        /* 0은 유효 id가 아니다 */
+        }
+        check(moved, "직전 위치가 현재와 다른 엔티티가 있다 (보간할 거리가 있다)");
+        check(idsOk, "모든 행이 유효한 id를 갖는다");
+
+        /* 한 틱 더 전진하면 직전 위치는 그 전 틱의 현재 위치여야 한다.
+           **별도 월드로 본다** — w를 한 틱 더 밀면 아래 헤드리스 비교가
+           201틱 대 200틱을 재게 된다 (실제로 그렇게 짰다가 걸렸다). */
+        {
+            DcWorld* wp = dc_world_create_with(cfg, 20250918ull);
+            check(wp != NULL && dc_step(wp, 200) == DC_OK, "보간 관찰용 월드");
+            if (wp != NULL) {
+                const int32_t*  ppx = dc_entity_pos_x(wp);
+                const uint32_t* pid = dc_entity_id(wp);
+                const int32_t   pn  = dc_entity_count(wp);
+                int32_t  before[8];
+                uint32_t beforeId[8];
+                int32_t  k, cnt = pn < 8 ? pn : 8;
+                for (k = 0; k < cnt; ++k) { before[k] = ppx[k]; beforeId[k] = pid[k]; }
+                check(dc_step(wp, 1) == DC_OK, "한 틱 더");
+                {
+                    const int32_t*  qx2 = dc_entity_prev_x(wp);
+                    const uint32_t* id2 = dc_entity_id(wp);
+                    int32_t matched = 0;
+                    for (k = 0; k < cnt; ++k) {
+                        /* 같은 id가 같은 행에 남아 있으면 prev가 그 전 pos와 같아야 한다 */
+                        if (id2[k] == beforeId[k] && qx2[k] == before[k]) ++matched;
+                    }
+                    check(matched > 0, "행이 유지된 엔티티의 prev가 직전 pos와 같다");
+                }
+                dc_world_destroy(wp);
+            }
+        }
+    }
 
     section("체크섬 결정론 — 같은 시드 두 번");
     DcChecksums a, b;

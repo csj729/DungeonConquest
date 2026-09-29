@@ -66,8 +66,9 @@ extern "C" {
  * 엉뚱한 오프셋을 읽고 체크섬만 갈라지는 것보다 낫다.
  * 표면이 바뀌면(함수 추가·시그니처 변경·의미 변경) 올린다. */
 /* 2: 설정이 data 디렉터리의 JSON에서 온다. dc_world_create(seed)가 사라지고
- *    dc_config_* + dc_world_create_with가 그 자리를 대신한다. */
-#define DC_ABI_VERSION 2
+ *    dc_config_* + dc_world_create_with가 그 자리를 대신한다.
+ * 3: 렌더 보간용 직전 위치와 엔티티 id가 추가됐다. */
+#define DC_ABI_VERSION 3
 
 /* ── 오류 코드 ───────────────────────────────────────────────────────────
  * 예외를 경계 밖으로 내보낼 수 없으므로 모든 실패는 여기로 온다.
@@ -182,6 +183,24 @@ DC_API int32_t dc_entity_count(const DcWorld* w) DC_NOEXCEPT;   /* 죽음 표시
 DC_API const int32_t* dc_entity_pos_x(const DcWorld* w) DC_NOEXCEPT;
 DC_API const int32_t* dc_entity_pos_y(const DcWorld* w) DC_NOEXCEPT;
 DC_API const uint8_t* dc_entity_archetype(const DcWorld* w) DC_NOEXCEPT;
+
+/* 직전 틱의 위치. **현재 행에 맞춰져 있다** — 틱 끝 압축이 행을 당겨 와도
+ * 코어가 함께 옮기므로, 프레젠테이션은 짝짓기 없이 그대로 보간하면 된다:
+ *
+ *     x = lerp(prev_x[i], pos_x[i], alpha)      alpha = 틱 사이 진행도 0..1
+ *
+ * 이 배열이 없으면 보간이 성립하지 않는다. 행 인덱스가 틱 간에 안 맞으므로
+ * 클라이언트가 지난 프레임 좌표를 들고 있어도 **어느 행이 누구였는지 모르고**,
+ * 하나가 죽으면 그 뒤 엔티티가 전부 순간이동한다.
+ *
+ * 새로 스폰한 엔티티는 prev == pos라 제자리에서 나타난다. */
+DC_API const int32_t* dc_entity_prev_x(const DcWorld* w) DC_NOEXCEPT;
+DC_API const int32_t* dc_entity_prev_y(const DcWorld* w) DC_NOEXCEPT;
+
+/* 엔티티 식별자. **행 인덱스는 정체성이 아니다** — 압축이 옮기므로 프레임마다
+ * 다른 것을 가리킨다. 스프라이트·오브젝트 풀을 엔티티에 묶어 두려면 이 값으로
+ * 짝지어야 한다. 0은 유효한 id가 아니다. */
+DC_API const uint32_t* dc_entity_id(const DcWorld* w) DC_NOEXCEPT;
 /* **살아있음 플래그는 내보내지 않는다.** 죽음은 틱 중간에 표시만 되고 stepWorld가
  * 끝에서 일괄 압축하므로, dc_step이 반환한 시점에 [0, count) 행은 전부 살아 있다.
  * 호출자가 걸러야 할 죽은 행이 애초에 없다. */

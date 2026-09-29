@@ -221,5 +221,52 @@ int main() {
         printf("    400틱 후 생존 %u기, 슬롯 잔여 %u\n", a.count(), a.freeSlots());
     }
 
+    dctest::section("렌더 보간 — 압축이 행을 옮겨도 prev가 따라간다");
+    {
+        // **이 절이 없으면 보간이 조용히 틀린다.** 틱 끝 압축이 행을 당겨 오므로
+        // 프레젠테이션이 지난 프레임 좌표를 행 인덱스로 들고 있으면, 중간의
+        // 하나가 죽는 순간 그 뒤 엔티티가 전부 순간이동한다.
+        EntityStore es;
+        es.init();
+
+        // 셋을 x = 10 · 20 · 30에 놓는다
+        EntityId id[3];
+        for (int32_t k = 0; k < 3; ++k) {
+            SpawnDesc d;
+            d.posX = Fixed(10 * (k + 1));
+            d.archetype = Archetype::Trash;
+            d.maxHp = Fixed(10);
+            id[k] = es.spawn(d, 0, 1);
+            CHECK(id[k].valid());
+        }
+        // 스폰 직후엔 prev == pos여야 한다 — 0이면 원점에서 미끄러져 들어온다
+        for (uint32_t i = 0; i < es.count(); ++i) {
+            CHECK_EQ(es.renderPrevX[i].raw, es.posX[i].raw);
+        }
+
+        // 틱 시작: 지금 위치를 직전으로 넘기고, 전부 +5 이동시킨다
+        es.captureRenderPrev();
+        for (uint32_t i = 0; i < es.count(); ++i) es.posX[i] += Fixed(5);
+
+        // 가운데(20 → 25)가 죽는다. **압축이 세 번째 행을 두 번째로 당겨 온다.**
+        es.markDead(id[1]);
+        CHECK_EQ(es.compact(), 1u);
+        CHECK_EQ(es.count(), 2u);
+
+        // 남은 둘은 10→15, 30→35다. prev가 따라왔으면 쌍이 맞는다.
+        CHECK_EQ(es.renderPrevX[0].raw, Fixed(10).raw);
+        CHECK_EQ(es.posX[0].raw,        Fixed(15).raw);
+        CHECK_EQ(es.renderPrevX[1].raw, Fixed(30).raw);   // ← 따라오지 않으면 20이다
+        CHECK_EQ(es.posX[1].raw,        Fixed(35).raw);
+        // id도 함께 옮겨졌는가 — 프레젠테이션이 스프라이트를 묶는 키다
+        CHECK_EQU(es.idData()[1], id[2].bits);
+
+        // 이동 폭이 전부 같아야 한다. **어긋나면 그 엔티티만 순간이동한다.**
+        for (uint32_t i = 0; i < es.count(); ++i) {
+            CHECK_EQ((es.posX[i] - es.renderPrevX[i]).raw, Fixed(5).raw);
+        }
+        printf("    사망 1기 압축 후에도 prev↔pos 쌍 유지 (이동 폭 전부 5)\n");
+    }
+
     return dctest::summary("test_entity_store");
 }

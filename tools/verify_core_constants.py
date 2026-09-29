@@ -200,6 +200,23 @@ def _check_dev_data():
         # typeId(마지막 열)는 JSON에 없으므로 앞 5개만 본다
         return [[int(x) for x in re.findall(r"-?\d+", r)][:5] for r in rows]
 
+    def from_pattern0():
+        """c.boss의 damage·cooldown·windup이 표에서 파생되는가 (숫자 하드코딩이 아니라)."""
+        return [bool(re.search(rf"c\.boss\.{f}\s*=[^;]*BOSS_PATTERNS\[0\]", src))
+                for f in ("damage", "cooldownTicks", "windupTicks")]
+
+    def boss_pattern_rows():
+        """BOSS_PATTERNS 초기화 블록을 행 단위로 뜯는다 — {damage, windup, cooldown}.
+
+        **엘리트 표와 같은 이유로 행을 통째로 본다.** 패턴은 세 수치가 한 묶음이라
+        한 열만 대조하면 쿨다운만 바뀐 경우를 놓친다.
+        """
+        m = re.search(r"BP BOSS_PATTERNS\[\d*\]\s*=\s*\{(.*?)\n\s*\};", src, re.S)
+        if not m:
+            return None
+        return [[int(x) for x in re.findall(r"-?\d+", r)]
+                for r in re.findall(r"\{([^}]*)\}", m.group(1))]
+
     def elite_spawns():
         """EliteSpawnPoint sp[] 초기화 블록을 [포인트, 엘리트 인덱스] 행으로 뜯는다."""
         m = re.search(r"EliteSpawnPoint sp\[\d*\]\s*=\s*\{(.*?)\n\s*\};", src, re.S)
@@ -281,9 +298,14 @@ def _check_dev_data():
         ("bossPhase2AtPermille", scalar("c.bossPhase2AtPermille"),
          gd.MONSTERS["boss"]["phase2_at_permille"]),
         ("bossPhase2Purge", scalar("c.bossPhase2Purge"), gd.PROGRESSION["boss_phase2_purge"]),
-        ("SLICE_BOSS_DAMAGE", scalar("SLICE_BOSS_DAMAGE"), gd.MONSTERS["slice_boss_damage"]),
-        ("SLICE_BOSS_COOLDOWN_TICKS", scalar("SLICE_BOSS_COOLDOWN_TICKS"),
-         gd.MONSTERS["slice_boss_cooldown_ticks"]),
+        # 보스 패턴 표. **damage는 타수를 합친 값이다** — mitigate가 피해에 선형이라
+        # 3×63과 189가 같은 결과이고, 시뮬은 캐스팅당 한 번만 적용한다.
+        ("BOSS_PATTERNS", boss_pattern_rows(),
+         [[p["hits"] * p["damage"], p["windup_ticks"], p["cooldown_ticks"]]
+          for p in gd.MONSTERS["boss"]["patterns"]]),
+        # 보스 기본값은 패턴 0에서 **파생돼야** 한다. 숫자로 베껴 적으면 표를
+        # 고쳤을 때 첫 캐스팅 전 한 대만 조용히 옛 값으로 남는다.
+        ("c.boss 기본값이 BOSS_PATTERNS[0] 파생", from_pattern0(), [True, True, True]),
         ("SLICE_BOSS_ATTACK_RANGE_MILLITILE", scalar("SLICE_BOSS_ATTACK_RANGE_MILLITILE"),
          gd.MONSTERS["slice_boss_attack_range_millitile"]),
         ("BOSS_TARGET_PRIORITY", scalar("c.boss.targetPriority"),

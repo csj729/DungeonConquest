@@ -49,15 +49,22 @@ ELITE_MEASURED = 5.8
 # 사거리가 2.0타일이던 때 1.3%까지 떨어져 엘리트 축이 통째로 죽어 있었다.
 ELITE_IN_RANGE = 0.511
 ELITE_IN_RANGE_MIN = 0.40
-# ── 보스전 (실측 · 하네스 24시드 중 도달 19판, 화력) ──────────────
+# ── 보스전 (실측 · `core/tools/dc_boss` 100시드 × 정책 4종) ──────────
 # **맵 8구간만 보던 도구에 빠져 있던 자리다.** 게이지를 채운 런의 절반 이상이
 # 여기서 죽는데 어느 도구도 보지 않았다. 보스전에는 구간 경계가 없어 숨 돌릴
 # 자리가 하나도 없었고, 그게 boss_phase2_purge가 생긴 이유다.
-BOSS_SEC        = 81.0    # 실측. 설계 밴드는 monsters.json:boss.target_sec 60~90
-BOSS_INFLOW     = 40.1    # /초. 맵 구간(22.8)보다 높다 — 보스 피해가 얹힌다
-BOSS_ORB        = 13.9    # /초. 보스전에도 잡몹 스폰이 상한을 유지해 구슬은 계속 나온다
-BOSS_LEECH      = 6.1     # /초. 회복 카드 몫 (화력 정책 기준)
-BOSS_ARRIVE     = 420.0   # 도달 시 잠식 (최대치 1250)
+#
+# **아래 값은 손으로 잰 것이 아니라 도구가 낸다.** 전에는 한 번 재서 박아 둔
+# 상수였고, 보스 패턴 순환이 붙어 보스 화력이 2배가 됐는데도 run_all은 전부
+# 초록불이었다 — 검사가 낡은 상수를 검사하고 있었기 때문이다.
+#   `cmake --build build/release --target dc_boss && ./build/release/core/dc_boss 100 1`
+# 두 번째 인자가 QTE 플레이다 (0 무입력 · 1 항상 완벽). 아래는 1의 출력이다.
+BOSS_SEC        = 57.0    # 실측. 처치와 사망이 섞인 평균이라 설계 밴드(60~90,
+                          # monsters.json:boss.target_sec)보다 낮게 나온다
+BOSS_INFLOW     = 34.8    # /초. 맵 구간(22.8)보다 높다 — 보스 피해가 얹힌다
+BOSS_ORB        = 14.1    # /초. 보스전에도 잡몹 스폰이 상한을 유지해 구슬은 계속 나온다
+BOSS_LEECH      = 2.8     # /초. 회복 카드 몫
+BOSS_ARRIVE     = 341.7   # 도달 시 잠식 (최대치 1250)
 BOSS_PHASE2_PURGE = _PROG["boss_phase2_purge"]
 
 # **게이트는 평균 수지가 아니라 도달 후 생존율이다.**
@@ -69,9 +76,27 @@ BOSS_PHASE2_PURGE = _PROG["boss_phase2_purge"]
 # 생존율은 확률이라 그 이동에 훨씬 둔하고, 무엇보다 목표가 묻는 것 그 자체다 —
 # "보스전이 빌드로 갈리는가". 밴드 위쪽을 넘으면 보스가 요식행위가 되고,
 # 아래쪽을 밑돌면 맵 구간이 무의미해진다(어차피 보스에서 죽는다).
-# 페이즈 2 정화가 없을 때 17.5%까지 떨어지므로 이 밴드는 그 장치의 유무도 가른다.
-BOSS_SURVIVE_MEASURED = 0.351   # 실측 (하네스 100시드 × 정책 4종)
+#
+# **보스 패턴 순환이 붙으면서 이 자리에 축이 하나 늘었다.** 대곤봉 강타(사이클
+# 피해의 45%)가 유일한 텔레그래프이고 QTE로 통째로 회피된다. 그래서 같은 데이터가
+# 두 개의 생존율을 낸다 — 무입력 18.9% · 항상 완벽 45.3%. 밴드는 **숙련 쪽**에
+# 걸고, 무입력 쪽은 밴드 아래에 있을 것을 따로 요구한다. 둘을 한 숫자로 뭉개면
+# "QTE를 쳐도 안 쳐도 비슷하다"는 상태가 초록불로 통과한다 — 패턴 시스템이
+# 존재할 이유가 사라지는데도 검사는 조용하다.
+BOSS_SURVIVE_SKILLED = 0.453   # QTE 항상 완벽 (dc_boss 100 1)
+BOSS_SURVIVE_NOINPUT = 0.189   # QTE 무입력    (dc_boss 100 0)
 BOSS_SURVIVE_BAND = (0.25, 0.60)
+
+# **"기저만으로는 못 버티는가"도 이제 모델이 아니라 실측이다.**
+# 전에는 닫힌 식(유입 − 구슬 − 페이즈2)으로 적자를 계산해 남은 게이지와 비교했다.
+# 그 식은 BOSS_SEC를 분모로 쓰는데 BOSS_SEC는 **사망까지의 시간이기도 해서**,
+# 보스가 세지면 분모가 줄어 적자도 같이 줄어드는 순환이 있었다 — 보스를 강화했는데
+# "기저만으로 완주"가 뜨는 자리다. dc_boss가 보스 등장 틱에 월드를 복제해
+# 회복을 끈 판을 실제로 끝까지 돌리므로, 이제 그냥 세면 된다.
+BOSS_SURVIVE_BARE    = 0.013   # 구슬·흡혈·페이즈2 전부 없음 (dc_boss D 갈래)
+BOSS_SURVIVE_BARE_MAX = 0.10
+BOSS_SURVIVE_NOLEECH = 0.341   # 흡혈만 없음 (B 갈래) — 회복 카드의 실제 몫
+BOSS_SURVIVE_NOORB   = 0.177   # 구슬만 없음 (C 갈래)
 
 SEGMENT_PURGE = _PROG["segment_clear_purge"]
 SEGMENTS = _SEG["segment_start_points"]
@@ -219,8 +244,9 @@ def report():
     print("  **8구간만 보던 도구에 빠져 있던 자리다.** 게이지를 채운 런의 절반 이상이")
     print("  여기서 죽는데 어느 도구도 보지 않았다. 보스전에는 구간 경계가 없어")
     print("  숨 돌릴 자리가 하나도 없었고, 그게 boss_phase2_purge가 생긴 이유다.")
-    print("  두 가지를 본다 — **기저만으로는 못 버티는가**(맵 구간의 목표 2와 같은")
-    print("  규약), 그리고 **실제로 빌드에 따라 갈리는가**(도달 후 생존율).")
+    print("  세 가지를 본다 — **기저만으로는 못 버티는가**(맵 구간의 목표 2와 같은")
+    print("  규약), **빌드에 따라 갈리는가**(숙련 플레이의 도달 후 생존율), 그리고")
+    print("  **QTE를 치는 것이 실제로 의미가 있는가**(무입력은 밴드 아래여야 한다).")
     ph2 = BOSS_PHASE2_PURGE / BOSS_SEC
     base_net  = BOSS_INFLOW - (BOSS_ORB + ph2)
     total_net = base_net - BOSS_LEECH
@@ -233,25 +259,37 @@ def report():
           f"{base_net * BOSS_SEC / room:>13.0%}")
     print(f"  {'회복 카드 포함':>11} {-total_net:>8.1f} {total_net * BOSS_SEC:>7.0f} "
           f"{total_net * BOSS_SEC / room:>13.0%}")
+    print("  ※ 위 표는 분해를 보여줄 뿐 판정하지 않는다 — 판정은 아래 실측 생존율이다")
+
     lo, hi = BOSS_SURVIVE_BAND
-    good = (base_net * BOSS_SEC > room
-            and lo <= BOSS_SURVIVE_MEASURED <= hi)
+    bare_dies   = BOSS_SURVIVE_BARE <= BOSS_SURVIVE_BARE_MAX
+    in_band     = lo <= BOSS_SURVIVE_SKILLED <= hi
+    qte_matters = BOSS_SURVIVE_NOINPUT < lo
+    good = bare_dies and in_band and qte_matters
     ok &= good
-    print(f"  기저만으로 {'실패' if base_net * BOSS_SEC > room else '완주'} · "
-          f"실측 도달 후 생존 {BOSS_SURVIVE_MEASURED:.1%} "
-          f"(목표 {lo:.0%}~{hi:.0%})  {'PASS' if good else 'FAIL'}")
+    print(f"  도달 후 생존 — 숙련(QTE 완벽)     {BOSS_SURVIVE_SKILLED:>6.1%} "
+          f"(목표 {lo:.0%}~{hi:.0%})       {'PASS' if in_band else 'FAIL'}")
+    print(f"               무입력            {BOSS_SURVIVE_NOINPUT:>6.1%} "
+          f"(밴드 아래여야)      {'PASS' if qte_matters else 'FAIL'}")
+    print(f"               회복 장치 전무    {BOSS_SURVIVE_BARE:>6.1%} "
+          f"({BOSS_SURVIVE_BARE_MAX:.0%} 이하여야)     {'PASS' if bare_dies else 'FAIL'}")
+    print(f"  {'':>15}(참고) 흡혈만 없음 {BOSS_SURVIVE_NOLEECH:>6.1%} · "
+          f"구슬만 없음 {BOSS_SURVIVE_NOORB:.1%}")
     print("  ※ **게이트가 평균 수지가 아니라 생존율인 이유**: 평균 수지는 약한 빌드가")
     print("     섞이는 정도에 끌려다닌다. 맵이 쉬워져 보스 도달률이 오르자 같은")
     print("     설정에서 98% → 139%로 튀었다 — 게임이 아니라 모집단이 바뀐 것이다.")
     print("     생존율은 확률이라 둔하고, 목표가 묻는 것 그 자체다")
     print("  ※ 페이즈 2 정화가 없으면 17.5%까지 떨어진다 — 이 밴드는 그 장치의")
-    print("     유무도 가른다 (실측: 0 → 17.5% · 400 → 35.1%)")
+    print("     유무도 가른다 (패턴 이전 실측: 0 → 17.5% · 400 → 35.1%)")
     print("  ※ 페이즈 2 정화를 더 키워도 여기는 거의 안 움직인다 — 도달 시 잠식이")
     print(f"     {BOSS_ARRIVE:.0f}이라 {BOSS_PHASE2_PURGE}을 넘는 몫은 잘려 버려진다")
-    print("     (스윕 실측: 300 → 650으로 올려도 도달 후 생존 29.8% → 32.6%)")
-    print("  ※ 보스 damage로 이 자리를 풀 수 없다 — slice_boss_damage는 patterns[0]")
-    print("     삼연격의 **한 대** 값(63)을 임시로 쓰는 자리표시자이고, 설계된 패턴은")
-    print("     캐스팅당 평균 217이다. 패턴 시스템이 붙으면 보스는 더 세진다\n")
+    print("     (패턴 이전 스윕: 300 → 650으로 올려도 도달 후 생존 29.8% → 32.6%)")
+    print("  ※ **보스 패턴 순환이 이 자리를 다시 열었다.** 자리표시자 시절 보스는")
+    print("     경감 전 15.6/초였고, 설계된 패턴 3종은 사이클 403틱에 650 = 32.3/초다.")
+    print("     같은 데이터에서 무입력 18.9% · 숙련 45.3%로 갈린다 — 그 간격이 곧")
+    print("     대곤봉 강타(사이클 피해의 45%)를 회피했는가의 값이다")
+    print("  ※ **숫자를 손으로 고치지 말 것.** core/tools/dc_boss가 낸 출력을 옮긴다 —")
+    print("     보스 등장 틱에 월드를 네 벌로 복제해 유입·구슬·흡혈을 갈라 잰다\n")
 
     print("전체: " + ("PASS" if ok else "FAIL"))
     return ok

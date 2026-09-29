@@ -15,6 +15,13 @@
 //
 // 지표 2는 일반 등급 스탯 카드 축(화력 vs 생존)에서 **지금도 실제로 갈린다.**
 // 지표 3은 지금도 완전히 의미가 있다 — 측정 대상이 초반 운이기 때문이다.
+//
+// ## QTE 플레이가 인자인 이유 (세 번째 인자, 기본 0)
+//
+// 보스 패턴 순환이 붙으면서 **대곤봉 강타가 회피 가능한 피해**가 됐다 —
+// 사이클 피해의 45%다. 그래서 "QTE를 아예 안 치는 하네스"의 클리어율은 이제
+// 게임의 난이도가 아니라 **하한**이다(실측 12% 대 35%). 둘 다 볼 수 있게 열어 둔다.
+// 자세한 분해는 `core/tools/dc_boss`가 한다.
 #include <cstdio>
 #include <cstdlib>
 #include <initializer_list>
@@ -26,6 +33,9 @@
 using namespace dc;
 
 constexpr int32_t MAX_RUN_TICKS = 30000;   // 25분. 넘으면 미완으로 센다
+
+// QTE를 치는가. 세 번째 인자로 켠다 — 파일 머리의 설명 참조.
+static bool g_qtePerfect = false;
 
 struct RunResult {
     RunOutcome outcome     = RunOutcome::Running;
@@ -49,6 +59,17 @@ static RunResult runOnce(const SimConfig& cfg, uint64_t seed, dev::Policy policy
 
     RunResult r;
     for (int32_t t = 0; t < MAX_RUN_TICKS && !w.run.over(); ++t) {
+        // **완벽 구간에 들어온 첫 틱에 누른다.** 창이 열리자마자 누르면 판정이
+        // Success로 강등된다 (QteWindow::judge).
+        if (g_qtePerfect && w.hero.qte.open() && !w.hero.qte.hasInput
+            && w.tickCount() >= w.hero.qte.perfectFrom
+            && w.tickCount() <= w.hero.qte.perfectTo) {
+            InputEvent qe;
+            qe.tick  = w.tickCount();
+            qe.kind  = InputKind::QteGrade;
+            qe.value = static_cast<uint32_t>(QteGrade::Perfect);
+            (void)applyInput(w, cfg, dev::devRecipeTable(), qe);
+        }
         if (w.cards.offer.open()) {
             InputEvent e;
             e.tick  = w.tickCount();
@@ -95,11 +116,13 @@ static double clearRate(const RunResult* r, int32_t n) {
 int main(int argc, char** argv) {
     const int32_t runs = argc > 1 ? std::atoi(argv[1]) : 400;
     const int32_t checkpointTick = argc > 2 ? std::atoi(argv[2]) : 3000;   // 150초
+    g_qtePerfect = argc > 3 && std::atoi(argv[3]) != 0;
     const SimConfig cfg = dev::devConfig();
 
     printf("몬테카를로 밸런싱 하네스 — 정책 %d종 × %d판, 체크포인트 %d틱(%.0f초)\n",
            static_cast<int32_t>(dev::Policy::Count), runs,
            checkpointTick, static_cast<double>(checkpointTick) / cfg.tickHz);
+    printf("QTE %s\n", g_qtePerfect ? "항상 완벽 (숙련 상한)" : "무입력 (빗나감 하한)");
     printf("클리어 목표 %d점 · 런 상한 %d틱\n\n", cfg.clearTargetPoints, MAX_RUN_TICKS);
 
     static RunResult all[static_cast<int32_t>(dev::Policy::Count)][4096];

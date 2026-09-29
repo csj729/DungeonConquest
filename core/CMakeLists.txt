@@ -123,8 +123,14 @@ target_link_libraries(dc_field PRIVATE dc_core)
 add_executable(dc_montecarlo tools/dc_montecarlo.cpp)
 target_link_libraries(dc_montecarlo PRIVATE dc_core)
 
+# 보스전 실측 하네스. verify_recovery.py 목표 6의 상수를 만든다 —
+# 보스 등장 틱에 월드를 복제해 유입·구슬·흡혈을 갈라 잰다.
+add_executable(dc_boss tools/dc_boss.cpp)
+target_link_libraries(dc_boss PRIVATE dc_core)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(dc_checksum PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(dc_boss PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_prd PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_recipe_bench PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_field PRIVATE -Wall -Wextra -Wpedantic -Werror)

@@ -85,8 +85,15 @@ constexpr int32_t  TARGET_PRIORITY_FALLOFF_PER_TILE = 10;
 constexpr int32_t  ELITE_COOLDOWN_TICKS           = 60;
 constexpr int32_t  ELITE_ATTACK_RANGE_MILLITILE   = 3500;
 constexpr int32_t  ELITE_CC_GAUGE_MAX             = 100;
-constexpr int32_t  SLICE_BOSS_DAMAGE              = 63;
-constexpr int32_t  SLICE_BOSS_COOLDOWN_TICKS      = 60;
+// data/monsters.json — boss.patterns. **고정 순환 0 → 1 → 2 → 0.**
+// damage는 타수를 합친 값이다 (3×63 · 1×293 · 2×84).
+// 리듬은 QTE 예산에서 역산했다 — 보스전 81초 ÷ 밴드 중앙 4회 = 사이클 400틱.
+struct BP { int32_t damage, windup, cooldown; };
+constexpr BP BOSS_PATTERNS[3] = {
+    {189,  0,  80},   // 삼연격      빠름 · QTE 없음
+    {293, 80, 120},   // 대곤봉 강타  느림 · **QTE 있음** (윈드업 80 > 궁병대장 60)
+    {168,  0, 120},   // 돌진 찌르기  중간 · QTE 없음
+};
 constexpr int32_t  SLICE_BOSS_ATTACK_RANGE_MILLITILE = 3500;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
@@ -245,13 +252,24 @@ inline SimConfig devConfig() {
     // data/monsters.json — 보스
     c.boss.hp             = Fixed(2086);      // slice_boss_hp
     c.boss.armor          = Fixed(50);        // slice_boss_armor
-    c.boss.damage         = Fixed(SLICE_BOSS_DAMAGE);
+    // **damage·cooldownTicks는 패턴이 싣는다.** 스폰 시 값은 첫 loadBossPattern이
+    // 덮어쓰므로 여기서는 0번 패턴으로 초기화만 해 둔다 — 혹시 패턴 표가 비어도
+    // 보스가 무해한 허수아비가 되지는 않게.
+    c.boss.damage         = Fixed(BOSS_PATTERNS[0].damage);
     c.boss.targetPriority = 10;
     c.boss.archetype      = Archetype::Boss;
-    c.boss.cooldownTicks  = SLICE_BOSS_COOLDOWN_TICKS;
+    c.boss.cooldownTicks  = BOSS_PATTERNS[0].cooldown;
+    c.boss.windupTicks    = BOSS_PATTERNS[0].windup;
     c.boss.approachSpeed  = c.trash.approachSpeed;
     c.boss.attackRange    = Fixed::fromPermille(SLICE_BOSS_ATTACK_RANGE_MILLITILE);
     c.boss.typeId         = 100;
+
+    c.bossPatternCount = sizeof(BOSS_PATTERNS) / sizeof(BOSS_PATTERNS[0]);
+    for (uint32_t i = 0; i < c.bossPatternCount; ++i) {
+        c.bossPatterns[i].damage        = Fixed(BOSS_PATTERNS[i].damage);
+        c.bossPatterns[i].windupTicks   = BOSS_PATTERNS[i].windup;
+        c.bossPatterns[i].cooldownTicks = BOSS_PATTERNS[i].cooldown;
+    }
 
     // data/segments.json:elite_spawn_points — 파이썬이 구성에서 풀어 놓은 표를 옮긴 것.
     // 원거리 잡몹 폐지로 빠진 압박을 엘리트 증량(10 → 19마리)이 대신한다.

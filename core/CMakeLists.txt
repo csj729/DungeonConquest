@@ -19,6 +19,13 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # 오버플로는 플래그가 아니라 코드로 막고(넓은 타입 승격), UBSan이 검사한다.
 endif()
 
+# `data/*.json`의 위치. **도구와 테스트가 진짜 데이터를 읽는다** — 축소판
+# 픽스처로 돌면 실제 파일이 로더를 통과하는지는 영영 모른다.
+#
+# 코어(`dc_core`)에는 걸지 않는다. 코어는 버퍼만 받고 파일을 모른다 —
+# 경로를 아는 것은 호스트(도구·테스트) 쪽뿐이라는 레이어 분리가 여기서도 성립한다.
+add_compile_definitions(DC_DATA_DIR="${CMAKE_SOURCE_DIR}/data")
+
 # 새니타이저 플래그. **dc_add_test 밖에서도 걸 수 있어야 한다** — 한때 dc_abi와
 # test_abi가 이 함수를 쓰지 않는다는 이유로 -DDC_SANITIZE=address를 줘도 플래그가
 # 안 붙은 채 "통과"했다. CLAUDE.md는 시뮬 코어가 UBSan/ASan에서 통과할 것을
@@ -51,10 +58,6 @@ function(dc_add_test name src)
     endif()
 
     dc_apply_sanitizer(${name})
-
-    # 데이터 파일 경로. **로더 테스트가 진짜 data/*.json을 읽는다** — 축소판
-    # 픽스처로 테스트하면 실제 파일이 로더를 통과하는지는 영영 모른다.
-    target_compile_definitions(${name} PRIVATE DC_DATA_DIR="${CMAKE_SOURCE_DIR}/data")
 
     add_test(NAME ${name} COMMAND ${name})
 endfunction()

@@ -34,6 +34,7 @@
 #include "json.h"
 #include "sim_config.h"
 #include "stat_id.h"
+#include "world.h"
 
 namespace dc {
 
@@ -72,6 +73,19 @@ inline const char* statJsonName(uint32_t i) {
     return i < STAT_COUNT ? kNames[i] : "?";
 }
 
+// 아이템 메타 — **시뮬은 읽지 않는다.** 몬테카를로 하네스의 카드 정책이 "어느
+// 축으로 빌드할지"를 고르는 데만 쓴다. `SimConfig`에 섞어 넣으면 시뮬 설정과
+// 하네스 설정의 경계가 흐려지므로 따로 받는다 — 필요한 쪽만 요청한다.
+//
+// 축·등급 어휘는 데이터가 정한다 (`items.json`의 `axes` · `grades` 목록 순서).
+// C++가 "화력"을 알고 있으면 그것도 하드코딩이다.
+struct ItemMeta {
+    uint8_t  axis[DC_MAX_ITEM_TYPES_CFG]{};   // axes 목록의 인덱스
+    uint8_t  tier[DC_MAX_ITEM_TYPES_CFG]{};   // grades 목록의 인덱스
+    int32_t  tierPower[8]{};                  // 등급별 총 위력 permille
+    uint32_t tierCount = 0;
+};
+
 // 영웅 기준선. `World::init()` 뒤에 `StatBlock::init`으로 심는다.
 struct HeroBaseline {
     Fixed      bases[STAT_COUNT]{};
@@ -88,7 +102,9 @@ class ConfigLoader {
         len_[i]  = len;
     }
 
-    bool load(SimConfig* cfg, RecipeTable* recipes, HeroBaseline* hero);
+    // `meta`는 선택이다 — 하네스만 쓴다.
+    bool load(SimConfig* cfg, RecipeTable* recipes, HeroBaseline* hero,
+              ItemMeta* meta = nullptr);
 
     const char* error()     const { return err_; }
     const char* errorKey()  const { return errKey_; }
@@ -128,7 +144,8 @@ class ConfigLoader {
     bool loadMonsters(const json::Doc& d, SimConfig* cfg);
     bool loadCards(const json::Doc& d, SimConfig* cfg);
     bool loadSkills(const json::Doc& d, SimConfig* cfg);
-    bool loadItems(const json::Doc& d, SimConfig* cfg, RecipeTable* recipes);
+    bool loadItems(const json::Doc& d, SimConfig* cfg, RecipeTable* recipes,
+                   ItemMeta* meta);
 
     const char* text_[DATA_FILE_COUNT] = {};
     size_t      len_[DATA_FILE_COUNT]  = {};
@@ -143,12 +160,14 @@ class ConfigLoader {
 
 // ── 구현 ──────────────────────────────────────────────────────────────────
 
-inline bool ConfigLoader::load(SimConfig* cfg, RecipeTable* recipes, HeroBaseline* hero) {
+inline bool ConfigLoader::load(SimConfig* cfg, RecipeTable* recipes, HeroBaseline* hero,
+                               ItemMeta* meta) {
     if (cfg == nullptr || recipes == nullptr || hero == nullptr) {
         return fail(DataFile::Count, "출력 포인터가 널이다");
     }
     *cfg  = SimConfig{};
     *hero = HeroBaseline{};
+    if (meta != nullptr) *meta = ItemMeta{};
     hash_ = 1469598103934665603ull;
 
     Docs docs;
@@ -170,7 +189,7 @@ inline bool ConfigLoader::load(SimConfig* cfg, RecipeTable* recipes, HeroBaselin
     if (!loadMonsters(docs.d[static_cast<uint32_t>(DataFile::Monsters)], cfg)) return false;
     if (!loadCards(docs.d[static_cast<uint32_t>(DataFile::Cards)], cfg)) return false;
     if (!loadSkills(docs.d[static_cast<uint32_t>(DataFile::Skills)], cfg)) return false;
-    if (!loadItems(docs.d[static_cast<uint32_t>(DataFile::Items)], cfg, recipes)) return false;
+    if (!loadItems(docs.d[static_cast<uint32_t>(DataFile::Items)], cfg, recipes, meta)) return false;
 
     cfg->dataHash = hash_;
     return true;
@@ -465,7 +484,8 @@ inline bool ConfigLoader::loadSkills(const json::Doc& d, SimConfig* cfg) {
     return sweep(DataFile::Skills, d);
 }
 
-inline bool ConfigLoader::loadItems(const json::Doc& d, SimConfig* cfg, RecipeTable* recipes) {
+inline bool ConfigLoader::loadItems(const json::Doc& d, SimConfig* cfg, RecipeTable* recipes,
+                                   ItemMeta* meta) {
     const json::Value root = d.root();
     const json::Value commons = root["commons"];
     const json::Value rs      = root["recipes"];
@@ -497,6 +517,36 @@ inline bool ConfigLoader::loadItems(const json::Doc& d, SimConfig* cfg, RecipeTa
     };
     for (uint32_t i = 0; i < commons.size(); ++i) readStats(commons.at(i), i);
     for (uint32_t i = 0; i < rs.size(); ++i)      readStats(rs.at(i), commons.size() + i);
+
+    // ── 하네스용 메타 (축 · 등급) ──
+    if (meta != nullptr) {
+        const json::Value axes   = root["axes"];
+        const json::Value grades = root["grades"];
+        const json::Value power  = root["tier_power_permille"];
+        if (power.size() > 8) return fail(DataFile::Items, "등급이 8을 넘는다",
+                                          "tier_power_permille");
+        meta->tierCount = power.size();
+        for (uint32_t i = 0; i < power.size(); ++i) meta->tierPower[i] = power.at(i).asI32();
+
+        // **어휘를 C++가 알고 있으면 그것도 하드코딩이다** — 목록에서 인덱스를 찾는다.
+        auto indexIn = [&](const json::Value& list, const json::Value& name) -> uint32_t {
+            for (uint32_t i = 0; i < list.size(); ++i) {
+                if (name.strSame(list.at(i))) return i;
+            }
+            return list.size();   // 못 찾음
+        };
+        for (uint32_t i = 0; i < itemCount; ++i) {
+            const json::Value item = i < commons.size()
+                ? commons.at(i) : rs.at(i - commons.size());
+            const uint32_t a = indexIn(axes, item["axis"]);
+            const uint32_t g = indexIn(grades, item["grade"]);
+            if (a >= axes.size() || g >= grades.size()) {
+                return fail(DataFile::Items, "모르는 축 또는 등급 이름");
+            }
+            meta->axis[i] = static_cast<uint8_t>(a);
+            meta->tier[i] = static_cast<uint8_t>(g);
+        }
+    }
 
     // 뽑기 풀 — **흔함만 나온다** (§5). 조합으로만 올라간다는 규칙이 여기 있다.
     cfg->commonPoolSize = commons.size();
@@ -539,6 +589,24 @@ inline bool ConfigLoader::loadItems(const json::Doc& d, SimConfig* cfg, RecipeTa
         return fail(DataFile::Items, "조합 테이블 빌드 실패", "recipes");
     }
     return true;
+}
+
+// 로드한 설정으로 World를 쓸 수 있는 상태로 만든다.
+//
+// **`World::init()`만으로는 부족하다.** 인벤토리는 `RecipeTable`이 있어야 초기화할
+// 수 있어서 `init()`이 완전 초기화만 하고 남겨 두고, 스탯 기준값은 데이터에서
+// 온다. 이 둘을 빠뜨리면 아이템 뽑기가 **조용히 거부되고**(`Inventory::matches`가
+// 테이블 해시로 걸러낸다) 영웅이 맨몸으로 싸운다 — 증상이 크래시가 아니라
+// "약하다"라서 찾기 어렵다. 한 함수로 묶어 빠뜨릴 자리를 없앤다.
+// **설정을 통째로 받는다.** 지문만 옵션 인자로 두면 대부분의 호출부가 기본값 0을
+// 넘겨 "데이터가 다른지 보는 검사"가 조용히 꺼진 채 초록불이 된다.
+inline void initWorld(World& w, uint64_t seed, const SimConfig& cfg,
+                      const RecipeTable& table, const HeroBaseline& hero) {
+    w.init(seed);
+    w.bindDataHash(cfg.dataHash);
+    w.inventory.init(table);
+    w.hero.stats.init(hero.bases, hero.bounds);
+    w.refreshAllConditions();
 }
 
 }  // namespace dc

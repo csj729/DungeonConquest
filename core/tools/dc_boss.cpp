@@ -28,8 +28,8 @@
 #include <cstdlib>
 
 #include "../include/dc/sim.h"
-#include "dev_data.h"
 #include "card_policy.h"
+#include "data_files.h"
 
 using namespace dc;
 
@@ -58,23 +58,23 @@ void stepOnce(World& w, const SimConfig& cfg, dev::Policy policy, Rng& choiceRng
         qe.tick  = w.tickCount();
         qe.kind  = InputKind::QteGrade;
         qe.value = static_cast<uint32_t>(QteGrade::Perfect);
-        (void)applyInput(w, cfg, dev::devRecipeTable(), qe);
+        (void)applyInput(w, cfg, dev::data().table, qe);
     }
     if (w.cards.offer.open()) {
         InputEvent e;
         e.tick  = w.tickCount();
         e.kind  = InputKind::CardChoice;
-        e.value = dev::choose(policy, cfg, w.cards.offer, choiceRng);
-        (void)applyInput(w, cfg, dev::devRecipeTable(), e);
+        e.value = dev::choose(policy, cfg, dev::data().meta, w.cards.offer, choiceRng);
+        (void)applyInput(w, cfg, dev::data().table, e);
     }
     for (;;) {
-        const int32_t r = dev::chooseCraft(policy, w.inventory, dev::devRecipeTable(), choiceRng);
+        const int32_t r = dev::chooseCraft(policy, dev::data().meta, w.inventory, dev::data().table, choiceRng);
         if (r < 0) break;
         InputEvent ce;
         ce.tick  = w.tickCount();
         ce.kind  = InputKind::Craft;
         ce.value = static_cast<uint32_t>(r);
-        if (!applyInput(w, cfg, dev::devRecipeTable(), ce)) break;
+        if (!applyInput(w, cfg, dev::data().table, ce)) break;
     }
     stepWorld(w, cfg, scratch);
 }
@@ -99,8 +99,7 @@ Sample measureOne(const SimConfig& cfg, uint64_t seed, dev::Policy policy) {
     static SimScratch scratch;
 
     World w;
-    w.init(seed);
-    dev::applyHeroBaseline(w);
+    initWorld(w, seed, dev::data().cfg, dev::data().table, dev::data().hero);
     Rng choiceRng = Rng::derive(seed, RngStream::Cards);
 
     // ── 1단계: 보스가 나올 때까지 평범하게 돌린다 ──
@@ -188,7 +187,7 @@ Sample measureOne(const SimConfig& cfg, uint64_t seed, dev::Policy policy) {
 int main(int argc, char** argv) {
     const int32_t seeds = argc > 1 ? std::atoi(argv[1]) : 100;
     g_qtePerfect = argc > 2 && std::atoi(argv[2]) != 0;
-    const SimConfig cfg = dev::devConfig();
+    const SimConfig& cfg = dev::data().cfg;
 
     printf("보스전 실측 하네스 — 시드 %d × 정책 %d종 · QTE %s\n",
            seeds, static_cast<int32_t>(dev::Policy::Count),

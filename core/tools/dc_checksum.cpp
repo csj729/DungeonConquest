@@ -9,6 +9,7 @@
 
 #include "../include/dc/replay.h"
 #include "../include/dc/world.h"
+#include "data_files.h"
 #include "dev_script.h"
 
 using namespace dc;
@@ -18,16 +19,20 @@ int main(int argc, char** argv) {
     const int32_t  ticks = argc > 2 ? std::atoi(argv[2]) : 2400;
     const int32_t  every = argc > 3 ? std::atoi(argv[3]) : 400;
 
+    SimConfig cfg; RecipeTable table; HeroBaseline hero;
+    dev::DataFiles files;
+    if (!files.load(DC_DATA_DIR, &cfg, &table, &hero)) { files.report(); return 2; }
+
     World w;
     w.init(seed);
-    dev::setup(w);
+    dev::setup(w, cfg, table, hero);
 
     printf("seed=%llu ticks=%d\n", static_cast<unsigned long long>(seed), ticks);
     printf("%8s %18s %18s %18s %18s %18s %18s\n",
            "tick", "total", "entities", "hero", "run", "spawn", "rng");
 
     for (int32_t t = 0; t <= ticks; ++t) {
-        if (t > 0) dev::scriptTick(w);
+        if (t > 0) dev::scriptTick(w, cfg, table);
         if (t % every == 0 || t == ticks) {
             const Checksums c = w.checksums();
             printf("%8d %18llu %18llu %18llu %18llu %18llu %18llu\n", t,

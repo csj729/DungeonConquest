@@ -268,6 +268,7 @@ public:
     void init(uint64_t masterSeed) {
         masterSeed_ = masterSeed;
         tick_       = 0;
+        dataHash_   = 0;   // 설정 바인딩은 init 뒤에 온다
 
         entities.init();
         hero  = HeroState{};
@@ -356,6 +357,15 @@ public:
             h.feed(rngItems);
             h.feed(rngEvents);
             c.rng = h.value();
+        }
+        {
+            // **데이터 지문은 run 도메인에 넣는다** — 갈렸을 때 "런 설정이
+            // 다르다"로 읽히는 자리가 거기다. 엔티티나 영웅에 섞으면 원인이
+            // 상태 불일치로 오독된다.
+            Hasher h;
+            h.feed(c.run);
+            h.feed(dataHash_);
+            c.run = h.value();
         }
         c.seal(static_cast<uint64_t>(static_cast<uint32_t>(tick_)), masterSeed_);
         return c;
@@ -467,6 +477,10 @@ public:
     uint32_t allocSourceId() { return nextSourceId_++; }
     uint32_t peekSourceId() const { return nextSourceId_; }
 
+    // 설정 지문을 심는다. `initWorld`가 부르므로 보통 직접 부를 일이 없다.
+    void     bindDataHash(uint64_t h) { dataHash_ = h; }
+    uint64_t dataHash()   const { return dataHash_; }
+
     int32_t  tickCount()  const { return tick_; }
     uint64_t masterSeed() const { return masterSeed_; }
 
@@ -497,6 +511,11 @@ public:
 private:
     int32_t  tick_       = 0;
     uint64_t masterSeed_ = 0;
+    // 이 판이 어떤 `data/*.json`으로 돌고 있는가. **체크섬에 들어간다** —
+    // 서버와 클라가 다른 데이터를 로드했으면 틱 0에서 갈린다 (§5 tableHash_와
+    // 같은 장치를 설정 전체로 넓힌 것이다). 설정을 바인딩하지 않으면 0이고,
+    // 그 상태로도 시뮬은 돌지만 **두 쪽이 같은 데이터인지 보증되지 않는다.**
+    uint64_t dataHash_   = 0;
     // [상태] — 다음 모디파이어가 받을 적용 순서를 정한다.
     // 지금은 영웅 스탯만 쓰므로 hero 영역에서 해시한다. 몬스터 모디파이어가
     // 생기면 별도 영역으로 옮긴다.

@@ -19,11 +19,23 @@
 
 #include "../include/dc/sim.h"
 #include "../include/dc/world.h"
-#include "../tools/dev_data.h"
+#include "../include/dc/config_loader.h"
 
 namespace {
 
 using namespace dc;
+
+// 설정 핸들. 로더와 결과를 함께 들고 있다 — C#는 안을 모르고 IntPtr만 넘긴다.
+//
+// **월드가 이걸 참조하지 않는다.** 만들 때 값으로 복사하므로 설정을 먼저
+// 해제해도 월드는 멀쩡하다 (수명 규칙이 하나 줄어든다).
+struct ConfigHandle {
+    ConfigLoader loader;
+    SimConfig    cfg{};
+    RecipeTable  table{};
+    HeroBaseline hero{};
+    bool         loaded = false;
+};
 
 // 핸들이 들고 다니는 것. **World만으로는 부족하다** — stepWorld가 SimScratch를
 // 받고, applyInput이 SimConfig와 RecipeTable을 받는다. 호출자에게 그 수명을
@@ -32,20 +44,23 @@ using namespace dc;
 // SimScratch를 여기 두는 것이 결정론에도 맞다 — 전역 정적으로 두면 월드 여러 개를
 // 동시에 돌릴 때(몬테카를로 병렬화) 서로의 스크래치를 밟는다.
 struct Handle {
-    World      world{};
-    SimConfig  cfg{};
-    SimScratch scratch{};
+    World       world{};
+    SimConfig   cfg{};
+    RecipeTable table{};
+    SimScratch  scratch{};
 };
 
 inline Handle*       self(DcWorld* h)       { return reinterpret_cast<Handle*>(h); }
 inline const Handle* self(const DcWorld* h) { return reinterpret_cast<const Handle*>(h); }
+inline ConfigHandle* cself(DcConfig* h)             { return reinterpret_cast<ConfigHandle*>(h); }
+inline const ConfigHandle* cself(const DcConfig* h) { return reinterpret_cast<const ConfigHandle*>(h); }
 
-// **설정은 아직 임시 로더에서 온다** (core/tools/dev_data.h). 진짜 데이터 로더가
-// 붙으면 여기만 바뀐다 — 표면은 그대로다.
-void setup(Handle& h, uint64_t seed) {
-    h.world.init(seed);
-    h.cfg = dev::devConfig();
-    dev::applyHeroBaseline(h.world);
+// 설정은 호스트가 넘긴 `data/*.json`에서 온다. **복사해 들고 간다** —
+// 설정 핸들의 수명과 월드의 수명을 묶지 않기 위해서다.
+void setup(Handle& h, const ConfigHandle& c, uint64_t seed) {
+    h.cfg   = c.cfg;
+    h.table = c.table;
+    initWorld(h.world, seed, h.cfg, h.table, c.hero);
 }
 
 }  // namespace
@@ -58,12 +73,67 @@ extern "C" int32_t dc_fixed_one(void) noexcept { return Fixed::ONE_RAW; }
 
 // ── 수명 ──────────────────────────────────────────────────────────────────
 
-extern "C" DcWorld* dc_world_create(uint64_t seed) noexcept {
+// ── 설정 ──────────────────────────────────────────────────────────────────
+
+extern "C" int32_t dc_config_file_count(void) noexcept {
+    return static_cast<int32_t>(DATA_FILE_COUNT);
+}
+
+extern "C" const char* dc_config_file_name(int32_t index) noexcept {
+    if (index < 0 || index >= static_cast<int32_t>(DATA_FILE_COUNT)) return nullptr;
+    return dataFileName(static_cast<DataFile>(index));
+}
+
+extern "C" DcConfig* dc_config_create(void) noexcept {
+    ConfigHandle* c = new (std::nothrow) ConfigHandle();
+    return reinterpret_cast<DcConfig*>(c);
+}
+
+extern "C" void dc_config_destroy(DcConfig* c) noexcept {
+    delete cself(c);
+}
+
+extern "C" int32_t dc_config_set(DcConfig* c, int32_t index,
+                                 const char* text, int32_t len) noexcept {
+    if (c == nullptr || text == nullptr) return DC_ERR_NULL;
+    if (index < 0 || index >= static_cast<int32_t>(DATA_FILE_COUNT) || len < 0) {
+        return DC_ERR_ARG;
+    }
+    cself(c)->loader.set(static_cast<DataFile>(index), text, static_cast<size_t>(len));
+    return DC_OK;
+}
+
+extern "C" int32_t dc_config_load(DcConfig* c) noexcept {
+    if (c == nullptr) return DC_ERR_NULL;
+    try {
+        ConfigHandle& h = *cself(c);
+        h.loaded = h.loader.load(&h.cfg, &h.table, &h.hero);
+        return h.loaded ? DC_OK : DC_ERR_INPUT;
+    } catch (...) {
+        return DC_ERR_INTERNAL;
+    }
+}
+
+extern "C" const char* dc_config_error(const DcConfig* c) noexcept {
+    return c != nullptr ? cself(c)->loader.error() : nullptr;
+}
+extern "C" const char* dc_config_error_key(const DcConfig* c) noexcept {
+    return c != nullptr ? cself(c)->loader.errorKey() : nullptr;
+}
+extern "C" int32_t dc_config_error_file(const DcConfig* c) noexcept {
+    return c != nullptr ? static_cast<int32_t>(cself(c)->loader.errorFile()) : DC_ERR_NULL;
+}
+extern "C" uint64_t dc_config_data_hash(const DcConfig* c) noexcept {
+    return c != nullptr ? cself(c)->cfg.dataHash : 0u;
+}
+
+extern "C" DcWorld* dc_world_create_with(const DcConfig* cfg, uint64_t seed) noexcept {
+    if (cfg == nullptr || !cself(cfg)->loaded) return nullptr;
     // World가 123 KB라 스택에 두지 않는다. nothrow로 받아 예외 경로를 아예 없앤다.
     Handle* h = new (std::nothrow) Handle();
     if (h == nullptr) return nullptr;
     try {
-        setup(*h, seed);
+        setup(*h, *cself(cfg), seed);
     } catch (...) {
         delete h;
         return nullptr;
@@ -106,7 +176,7 @@ extern "C" int32_t dc_input(DcWorld* w, int32_t kind, uint32_t value) noexcept {
         e.tick  = h.world.tickCount();
         e.kind  = static_cast<InputKind>(kind);
         e.value = value;
-        return applyInput(h.world, h.cfg, dev::devRecipeTable(), e) ? DC_OK : DC_ERR_INPUT;
+        return applyInput(h.world, h.cfg, h.table, e) ? DC_OK : DC_ERR_INPUT;
     } catch (...) {
         return DC_ERR_INTERNAL;
     }
@@ -183,18 +253,18 @@ extern "C" int32_t dc_checksums(const DcWorld* w, DcChecksums* out) noexcept {
     }
 }
 
-extern "C" int32_t dc_headless_checksum(uint64_t seed, int32_t ticks,
+extern "C" int32_t dc_headless_checksum(const DcConfig* cfg, uint64_t seed, int32_t ticks,
                                         const int32_t* log, int32_t len,
                                         DcChecksums* out) noexcept {
-    if (out == nullptr) return DC_ERR_NULL;
+    if (out == nullptr || cfg == nullptr) return DC_ERR_NULL;
     if (ticks < 0 || len < 0) return DC_ERR_ARG;
     if (log == nullptr && len != 0) return DC_ERR_NULL;
     if (len % 3 != 0) return DC_ERR_ARG;   // (tick, kind, value) 3튜플이어야 한다
 
     // **클라이언트 표면과 같은 코어를 쓴다.** 여기서 World를 따로 만들지 않고
-    // dc_world_create를 부르는 것이 그 사실을 코드로 남기는 방법이다 —
+    // dc_world_create_with를 부르는 것이 그 사실을 코드로 남기는 방법이다 —
     // 두 경로가 갈라지는 순간 리플레이 검증의 전제가 무너진다.
-    DcWorld* w = dc_world_create(seed);
+    DcWorld* w = dc_world_create_with(cfg, seed);
     if (w == nullptr) return DC_ERR_ALLOC;
 
     int32_t rc = DC_OK;

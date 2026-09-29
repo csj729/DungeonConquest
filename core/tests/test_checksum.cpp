@@ -256,7 +256,7 @@ int main() {
         static Checksums scratch[TICKS + 1];
         const DivergenceReport rep = verifyReproducible(
             0xA5A5A5A5, TICKS, 5, scratch, TICKS + 1,
-            [](World& w) { dev::scriptTick(w); });
+            [](World& w) { dev::scriptTick(w, dev::data().cfg, dev::data().table); });
 
         CHECK(rep.ok);
         if (!rep.ok) {
@@ -280,7 +280,7 @@ int main() {
         const DivergenceReport rep = verifyReproducible(
             777, TICKS, 2, scratch, TICKS + 1,
             [](World& w) {
-                dev::scriptTick(w);
+                dev::scriptTick(w, dev::data().cfg, dev::data().table);
                 // 2회차의 143틱에서만 hero를 한 번 건드린다.
                 ++callCount;
                 if (callCount == TICKS + 143) w.hero.level += 1;
@@ -356,6 +356,44 @@ int main() {
 
         // **실패했으면 대상 World를 건드리지 않았어야 한다.**
         CHECK_EQU(r.checksum(), untouched);
+    }
+
+    dctest::section("**고정 체크섬** — 시뮬 결과를 말없이 바꾸지 못하게 못 박는다");
+    {
+        // 설정 원천을 손으로 옮겨 적은 표(`dev_data.h`)에서 실제 JSON 로더로
+        // 바꿀 때 이 절이 **실제로 차이를 잡았다.**
+        //
+        // dev_data.h의 영웅 스탯 하한이 `stats.json`과 달랐다 — 전 스탯에
+        // `min_pct_add = -900`을 일괄로 적어 두었는데 데이터는 6개 스탯에
+        // -1000을 말하고, `range`·`crit_mult`의 `min_value`(500 · 1000)는
+        // 아예 빠져 있었다. 그 값만 되돌리면 전환 전 체크섬이 정확히
+        // 복원되므로, **전환이 바꾼 것은 그 하한 하나뿐임이 증명된다.**
+        //
+        // 하한은 밸런스 다이얼이 아니라 불변식이다 (design.md §9) — 데이터가
+        // 원천이고 C++가 그걸 다르게 들고 있었던 것이므로, 아래 값은 고친 뒤의
+        // 것이다.
+        //
+        // 값에는 설정 지문(`World::dataHash_`)도 접혀 있다. 그래서 이 절은
+        // **서버-클라 데이터 불일치 검사가 실제로 켜져 있는지**도 함께 지킨다 —
+        // 지문을 체크섬에서 빼면 여기가 바로 빨간불이 된다.
+        //
+        // 이 값이 깨지면 시뮬이 바뀐 것이다. **갱신하기 전에 왜 움직였는지
+        // 답할 수 있어야 한다.**
+        struct Golden { uint64_t seed; int32_t ticks; uint64_t total; };
+        constexpr Golden kGolden[] = {
+            {1u,        1200, 7828624481488076003ull},
+            {20250918u, 1200, 4504038242511919536ull},
+        };
+        for (const Golden& g : kGolden) {
+            World w;
+            w.init(g.seed);
+            dev::setup(w, dev::data().cfg, dev::data().table, dev::data().hero);
+            for (int32_t t = 0; t < g.ticks; ++t) {
+                dev::scriptTick(w, dev::data().cfg, dev::data().table);
+            }
+            CHECK_EQU(w.checksum(), g.total);
+        }
+        printf("    시드 %zu개 고정값 일치\n", sizeof(kGolden) / sizeof(kGolden[0]));
     }
 
     return dctest::summary("test_checksum");

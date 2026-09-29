@@ -65,7 +65,9 @@ extern "C" {
  * 만들기 전에 dc_abi_version()을 확인해 맞지 않으면 즉시 실패하는 편이,
  * 엉뚱한 오프셋을 읽고 체크섬만 갈라지는 것보다 낫다.
  * 표면이 바뀌면(함수 추가·시그니처 변경·의미 변경) 올린다. */
-#define DC_ABI_VERSION 1
+/* 2: 설정이 data 디렉터리의 JSON에서 온다. dc_world_create(seed)가 사라지고
+ *    dc_config_* + dc_world_create_with가 그 자리를 대신한다. */
+#define DC_ABI_VERSION 2
 
 /* ── 오류 코드 ───────────────────────────────────────────────────────────
  * 예외를 경계 밖으로 내보낼 수 없으므로 모든 실패는 여기로 온다.
@@ -116,9 +118,40 @@ typedef struct DcWorld DcWorld;
 /* 이 라이브러리가 노출하는 ABI 버전. 핸들을 만들기 전에 확인한다. */
 DC_API int32_t dc_abi_version(void) DC_NOEXCEPT;
 
+/* ── 설정 ───────────────────────────────────────────────────────────────
+ *
+ * **코어는 파일을 읽지 않는다.** 호스트가 데이터 JSON을 읽어 버퍼로 넘긴다 —
+ * Unity는 TextAsset, 서버는 File.ReadAllBytes다. 그래야 코어가 플랫폼별 파일
+ * 시스템을 모르는 채로 양쪽에서 같은 바이너리로 돈다.
+ *
+ * 쓰는 순서: create → set(전부) → load → (월드 만들기) → destroy.
+ * **버퍼는 dc_config_load가 돌아올 때까지 살아 있어야 한다** (파서가 문자열을
+ * 복사하지 않는다). 그 뒤에는 설정이 정수만 들고 있으므로 놓아줘도 된다. */
+typedef struct DcConfig DcConfig;
+
+/* 호스트가 읽어 와야 하는 파일 수. dc_config_file_name으로 이름을 얻는다. */
+DC_API int32_t     dc_config_file_count(void) DC_NOEXCEPT;
+DC_API const char* dc_config_file_name(int32_t index) DC_NOEXCEPT;
+
+DC_API DcConfig* dc_config_create(void) DC_NOEXCEPT;
+DC_API void      dc_config_destroy(DcConfig* c) DC_NOEXCEPT;
+DC_API int32_t   dc_config_set(DcConfig* c, int32_t index,
+                               const char* text, int32_t len) DC_NOEXCEPT;
+DC_API int32_t   dc_config_load(DcConfig* c) DC_NOEXCEPT;
+
+/* 실패 원인. **조용히 기본값으로 때우지 않는다** — 어느 파일 어느 키인지 말한다.
+ * 반환 문자열은 설정 핸들이 살아 있는 동안 유효하다. */
+DC_API const char* dc_config_error(const DcConfig* c) DC_NOEXCEPT;
+DC_API const char* dc_config_error_key(const DcConfig* c) DC_NOEXCEPT;
+DC_API int32_t     dc_config_error_file(const DcConfig* c) DC_NOEXCEPT;
+/* 로드한 데이터의 지문. **서버와 클라가 이 값이 다르면 같은 판이 아니다.** */
+DC_API uint64_t    dc_config_data_hash(const DcConfig* c) DC_NOEXCEPT;
+
 /* 실패하면 NULL. 해제는 dc_world_destroy로만 한다 (할당자가 다를 수 있으므로
- * C# 쪽에서 free하면 안 된다). */
-DC_API DcWorld* dc_world_create(uint64_t seed) DC_NOEXCEPT;
+ * C# 쪽에서 free하면 안 된다).
+ *
+ * 설정은 **복사된다** — 월드를 만든 뒤 설정 핸들을 해제해도 된다. */
+DC_API DcWorld* dc_world_create_with(const DcConfig* cfg, uint64_t seed) DC_NOEXCEPT;
 DC_API void     dc_world_destroy(DcWorld* w) DC_NOEXCEPT;
 
 /* ── 진행 ───────────────────────────────────────────────────────────────── */
@@ -179,7 +212,7 @@ DC_API int32_t dc_checksums(const DcWorld* w, DcChecksums* out) DC_NOEXCEPT;
  *     [t0, k0, v0, t1, k1, v1, ...]   len = 이벤트 수 × 3
  *
  * log가 NULL이면 입력 없이 ticks만큼 돌린다. */
-DC_API int32_t dc_headless_checksum(uint64_t seed, int32_t ticks,
+DC_API int32_t dc_headless_checksum(const DcConfig* cfg, uint64_t seed, int32_t ticks,
                                     const int32_t* log, int32_t len,
                                     DcChecksums* out) DC_NOEXCEPT;
 

@@ -11,7 +11,7 @@
 #include <cstdlib>
 
 #include "../include/dc/sim.h"
-#include "dev_data.h"
+#include "data_files.h"
 
 using namespace dc;
 
@@ -30,8 +30,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
     SimConfig c = cfg;
 
     World w;
-    w.init(seed);
-    dev::applyHeroBaseline(w);
+    initWorld(w, seed, dev::data().cfg, dev::data().table, dev::data().hero);
     w.hero.stats.setBase(Stat::MoveSpeed, moveSpeed);
 
     const Fixed aoeRadius = Fixed(3);        // §9 광역기 기준 반경
@@ -95,7 +94,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
 
 int main(int argc, char** argv) {
     const int32_t ticks = argc > 1 ? std::atoi(argv[1]) : 4000;
-    const SimConfig cfg = dev::devConfig();
+    const SimConfig& cfg = dev::data().cfg;
     const double mobSpeed = static_cast<double>(cfg.trash.approachSpeed.raw) / Fixed::ONE_RAW;
 
     printf("전장 구성 실측 — %d틱, 몹 접근속도 %.3f타일/초\n", ticks, mobSpeed);
@@ -135,8 +134,7 @@ int main(int argc, char** argv) {
     printf("\n== 광역 반경별 타격 수 (AOE_TARGET_SHARE 가정 0.13 → 상한 30에서 3.9마리) ==\n");
     {
         World w;
-        w.init(20250921);
-        dev::applyHeroBaseline(w);
+                initWorld(w, 20250921, dev::data().cfg, dev::data().table, dev::data().hero);
         static SimScratch sc;
         for (int32_t t = 0; t < ticks; ++t) stepWorld(w, cfg, sc);
         printf("%10s %10s %10s\n", "반경", "타격 수", "비율");

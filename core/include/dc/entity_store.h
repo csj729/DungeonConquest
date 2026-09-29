@@ -74,6 +74,20 @@ public:
     // 뜨거움 — 매 틱 전수 순회
     Fixed     posX[CAPACITY]{};
     Fixed     posY[CAPACITY]{};
+
+    // **렌더 보간용 직전 위치. [파생]이므로 체크섬에 들어가지 않는다.**
+    //
+    // 시뮬은 20Hz인데 렌더는 가변 프레임이라 그 사이를 보간해야 한다 (§11).
+    // 그런데 틱 끝 압축(`compact`)이 행을 당겨 오므로 **행 인덱스가 틱 간에
+    // 안 맞는다** — 프레젠테이션이 지난 프레임 좌표를 들고 있어도 어느 행이
+    // 누구였는지 알 수 없고, 하나가 죽으면 그 뒤 엔티티가 전부 순간이동한다.
+    //
+    // 그래서 **코어가 현재 행에 맞춰 직전 위치를 들고 있는다.** `moveRow`가
+    // 함께 옮기므로 정렬이 저절로 유지되고, 프레젠테이션은 짝짓기 없이
+    // `lerp(prev[i], curr[i], alpha)` 한 줄이면 된다. 매칭 로직을 클라이언트마다
+    // 다시 짜면 그게 틀릴 자리다.
+    Fixed     renderPrevX[CAPACITY]{};
+    Fixed     renderPrevY[CAPACITY]{};
     Archetype archetype[CAPACITY]{};
     uint8_t   flags[CAPACITY]{};
 
@@ -147,6 +161,10 @@ public:
 
         posX[dense]            = d.posX;
         posY[dense]            = d.posY;
+        // **새로 스폰한 것은 직전 위치가 곧 지금 위치다.** 0으로 두면 원점에서
+        // 미끄러져 들어오는 것처럼 그려진다.
+        renderPrevX[dense]     = d.posX;
+        renderPrevY[dense]     = d.posY;
         archetype[dense]       = d.archetype;
         flags[dense]           = d.flags;
         maxHp[dense]           = d.maxHp;
@@ -190,6 +208,21 @@ public:
     }
 
     EntityId idAt(uint32_t dense) const { return denseId_[dense]; }
+
+    // 평면 id 배열. **프레젠테이션이 스프라이트를 엔티티에 묶는 데 쓴다** —
+    // 행 인덱스는 압축이 옮기므로 정체성이 아니다. EntityId가 uint32 하나를
+    // 담은 표준 레이아웃이라 복사 없이 그대로 나간다.
+    const uint32_t* idData() const { return &denseId_[0].bits; }
+
+    // 틱 시작에 현재 위치를 직전 위치로 넘긴다. **[파생]이라 체크섬과 무관하다.**
+    // 살아 있는 행만 훑으면 되는데 죽음 표시된 행도 이 틱에 아직 그려지므로
+    // 전부 옮긴다 — 어차피 압축 전이라 count_가 그 행들을 포함한다.
+    void captureRenderPrev() {
+        for (uint32_t i = 0; i < count_; ++i) {
+            renderPrevX[i] = posX[i];
+            renderPrevY[i] = posY[i];
+        }
+    }
     bool     deadAt(uint32_t dense) const { return denseDead_[dense] != 0; }
 
     // **틱 중간에는 표시만 한다** (CLAUDE.md). 실제 제거는 compact()가 한다.
@@ -294,6 +327,8 @@ private:
     void moveRow(uint32_t dst, uint32_t src) {
         posX[dst]            = posX[src];
         posY[dst]            = posY[src];
+        renderPrevX[dst]     = renderPrevX[src];   // 정렬은 여기서 유지된다
+        renderPrevY[dst]     = renderPrevY[src];
         archetype[dst]       = archetype[src];
         flags[dst]           = flags[src];
         maxHp[dst]           = maxHp[src];

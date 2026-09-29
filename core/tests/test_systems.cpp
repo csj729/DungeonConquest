@@ -866,7 +866,7 @@ int main() {
                ticks, cycle, static_cast<double>(cycle) / config::TICK_HZ);
     }
 
-    dctest::section("보스 페이즈 2 — 임계에서 한 번만 정화한다");
+    dctest::section("보스 페이즈 2 — 정화는 한 번, 장판은 계속");
     {
         World w = makeWorld(77);
         SpawnDesc d = makeDesc(cfg.boss, Fixed(1000));
@@ -880,22 +880,41 @@ int main() {
 
         w.hero.corruption = Fixed(900);
 
-        // 임계(500permille) 위에서는 아무 일도 없다
+        // 광역 지속딜 한 틱분. **하드코딩하지 않는다** — 수치가 바뀌어도 이 절이
+        // 재는 것(정화는 1회, 장판은 매 틱)은 그대로여야 한다.
+        const Fixed auraTick = mitigate(Fixed(cfg.bossPhase2AuraDps),
+                                        w.hero.stats.value(Stat::Armor), cfg.armorK)
+                             / cfg.tickHz;
+        CHECK(auraTick.raw > 0);   // 0이면 아래 검사가 통째로 공회전한다
+
+        // 임계(500permille) 위에서는 아무 일도 없다 — 장판도 아직 없다
         w.entities.damageTaken[dense] = Fixed(400);   // 잔여 60%
         bossPhaseRun(w, cfg);
         CHECK(!w.run.bossPhase2);
         CHECK_EQ(w.hero.corruption.raw, Fixed(900).raw);
 
-        // 임계 아래로 내려간 첫 틱에 정화한다
+        // 임계 아래로 내려간 첫 틱에 정화한다. **장판은 그 틱부터 깔린다** —
+        // 다음 틱으로 미루면 진입 연출과 어긋난다.
         w.entities.damageTaken[dense] = Fixed(500);   // 잔여 정확히 50% — 경계 포함
         bossPhaseRun(w, cfg);
         CHECK(w.run.bossPhase2);
-        CHECK_EQ(w.hero.corruption.raw, Fixed(900 - 400).raw);
+        CHECK_EQ(w.hero.corruption.raw, (Fixed(900 - 400) + auraTick).raw);
 
-        // **두 번 주지 않는다.** 체력이 더 떨어져도 한 번뿐이다.
+        // 첫 소환은 한 주기 뒤로 예약된다 — 정화와 같은 틱에 겹치지 않게
+        CHECK_EQ(w.run.bossSummonNextTick, w.tickCount() + cfg.bossPhase2SummonPeriodTicks);
+
+        // **정화는 두 번 주지 않는다.** 체력이 더 떨어져도 한 번뿐이다.
+        // 반면 장판은 틱마다 다시 들어온다 — 둘이 같은 함수에 살아도 성질이 다르다.
         w.entities.damageTaken[dense] = Fixed(900);
         bossPhaseRun(w, cfg);
-        CHECK_EQ(w.hero.corruption.raw, Fixed(500).raw);
+        CHECK_EQ(w.hero.corruption.raw, (Fixed(500) + auraTick * 2).raw);
+        bossPhaseRun(w, cfg);
+        CHECK_EQ(w.hero.corruption.raw, (Fixed(500) + auraTick * 3).raw);
+
+        // 보스를 잡으면 장판도 걷힌다
+        w.run.bossAlive = false;
+        bossPhaseRun(w, cfg);
+        CHECK_EQ(w.hero.corruption.raw, (Fixed(500) + auraTick * 3).raw);
 
         // 보스가 없으면 아무 일도 하지 않는다
         World w2 = makeWorld(78);
@@ -903,7 +922,124 @@ int main() {
         bossPhaseRun(w2, cfg);
         CHECK(!w2.run.bossPhase2);
         CHECK_EQ(w2.hero.corruption.raw, Fixed(900).raw);
-        printf("    임계 위 무반응 · 경계 포함 발동 · 재발동 없음\n");
+        printf("    임계 위 무반응 · 경계 포함 발동 · 정화 1회 · 장판 매 틱 %.2f\n",
+               static_cast<double>(auraTick.raw) / Fixed::ONE_RAW);
+    }
+
+    dctest::section("보스 CC 저항 — 발동할수록 임계치가 오른다");
+    {
+        // **보스만 오른다.** 엘리트는 고정이라 CC 빌드로 계속 묶어둘 수 있고,
+        // 그게 둘을 가르는 설계 축이다 (design.md §9).
+        CHECK(cfg.bossCcResistStepPermille > 0);
+        CHECK(cfg.boss.ccGaugeMax.raw > 0);   // 0이면 QTE 완벽이 그로기를 못 만든다
+
+        World w = makeWorld(88);
+        SpawnDesc d = makeDesc(cfg.boss, Fixed(100000));
+        d.posX = Fixed(100); d.posY = Fixed(100);
+        const EntityId id = w.entities.spawn(d, 0, 88);
+        CHECK(id.valid());
+        const uint32_t b = static_cast<uint32_t>(w.entities.denseOf(id));
+
+        const Fixed base = w.entities.ccGaugeMax[b];
+        const Fixed step = Fixed::fromPermille(cfg.bossCcResistStepPermille);
+
+        // 발동 0회 — 임계치는 기준값 그대로
+        CHECK_EQ(ccThreshold(w.entities, cfg, b).raw, base.raw);
+        // n회 발동 후 — base × (1 + step×n)
+        for (int32_t n = 1; n <= 4; ++n) {
+            w.entities.ccTriggerCount[b] = n;
+            CHECK_EQ(ccThreshold(w.entities, cfg, b).raw, (base * (Fixed(1) + step * n)).raw);
+        }
+        // **기준값은 덮이지 않는다** — 저장된 ccGaugeMax가 곧 기준이어야
+        // "몇 배까지 올랐나"를 되물을 수 있다.
+        CHECK_EQ(w.entities.ccGaugeMax[b].raw, base.raw);
+
+        // 엘리트는 같은 자리에서 움직이지 않는다
+        SpawnDesc e = makeDesc(cfg.elites[0], Fixed(1000));
+        e.posX = Fixed(200); e.posY = Fixed(200);
+        const uint32_t k = static_cast<uint32_t>(w.entities.denseOf(w.entities.spawn(e, 0, 88)));
+        w.entities.ccTriggerCount[k] = 4;
+        CHECK_EQ(ccThreshold(w.entities, cfg, k).raw, w.entities.ccGaugeMax[k].raw);
+
+        // QTE 완벽이 기준치의 100%를 채우므로, n번째 발동에 완벽 n회가 필요하다 —
+        // 누적 1 · 3 · 6회째에 그로기. 이게 step 1000permille을 고른 근거다.
+        const Fixed gain = base * Fixed::fromPermille(cfg.qtePerfectCcGainPermille);
+        w.entities.ccTriggerCount[b] = 0;
+        w.entities.ccGauge[b] = Fixed{};
+        int32_t perfects = 0, triggers = 0, firstAt = 0, secondAt = 0;
+        while (perfects < 8) {
+            ++perfects;
+            w.entities.ccGauge[b] += gain;
+            if (w.entities.ccGauge[b].raw >= ccThreshold(w.entities, cfg, b).raw) {
+                w.entities.ccGauge[b] = Fixed{};
+                ++w.entities.ccTriggerCount[b];
+                ++triggers;
+                if (triggers == 1) firstAt = perfects;
+                if (triggers == 2) secondAt = perfects;
+            }
+        }
+        CHECK_EQ(firstAt, 1);
+        CHECK_EQ(secondAt, 3);
+        printf("    완벽 %d회에 그로기 %d번 (1번째 %d회 · 2번째 %d회)\n",
+               perfects, triggers, firstAt, secondAt);
+    }
+
+    dctest::section("보스 페이즈 2 졸개 소환 — 일부러 상한을 넘긴다");
+    {
+        // 상한 안에서 부르면 상한 유지 스폰이 그만큼 덜 넣어 **아무 일도 안 난다.**
+        // 넘겨야 초과분에 잠식 가속(×3)이 걸린다 (§2).
+        CHECK(cfg.bossPhase2SummonCount > 0);
+        CHECK(cfg.bossPhase2SummonPeriodTicks > 0);
+
+        World w = makeWorld(91);
+        w.run.bossSpawned = true;
+        w.run.bossAlive   = true;
+        w.run.bossPhase2  = true;
+        w.run.bossSummonNextTick = 0;
+
+        // 전장을 상한까지 채운 뒤 소환이 그 위로 얹히는지 본다
+        const int32_t cap = cfg.capFor(w.run.globalSegment(cfg.segmentsPerMap) + 1);
+        static SimScratch scratch;
+        while (static_cast<int32_t>(aliveCount(w.entities)) < cap
+               && w.tickCount() < 4000) {
+            w.beginTick();
+            spawnRun(w, cfg);
+            w.endTick();
+        }
+        const int32_t before = static_cast<int32_t>(aliveCount(w.entities));
+        CHECK_EQ(before, cap);
+
+        // 예약 시각을 지금으로 당기면 다음 spawnRun이 소환한다
+        w.run.bossSummonNextTick = w.tickCount();
+        w.beginTick();
+        spawnRun(w, cfg);
+        w.endTick();
+        const int32_t after = static_cast<int32_t>(aliveCount(w.entities));
+        CHECK_EQ(after, before + cfg.bossPhase2SummonCount);
+        CHECK(after > cap);                      // **상한을 넘었다** — 이게 핵심이다
+        CHECK_EQ(w.run.bossSummonNextTick, w.tickCount() + cfg.bossPhase2SummonPeriodTicks);
+
+        // 주기 전에는 다시 부르지 않는다
+        w.beginTick();
+        spawnRun(w, cfg);
+        w.endTick();
+        CHECK_EQ(static_cast<int32_t>(aliveCount(w.entities)), after);
+
+        // 페이즈 1이면 소환하지 않는다
+        World w2 = makeWorld(92);
+        w2.run.bossSpawned = true;
+        w2.run.bossAlive   = true;
+        w2.run.bossSummonNextTick = 0;
+        w2.beginTick();
+        spawnRun(w2, cfg);
+        w2.endTick();
+        const int32_t plain = static_cast<int32_t>(aliveCount(w2.entities));
+        CHECK(plain <= cfg.batchFor(1));         // 상한 유지 배치뿐이다
+
+        printf("    상한 %d에서 소환 %d마리 → %d (초과 %d마리에 ×%.1f 가속)\n",
+               cap, cfg.bossPhase2SummonCount, after, after - cap,
+               static_cast<double>(cfg.corruptionOverflowMultPermille) / 1000.0);
+        (void)scratch;
     }
 
     dctest::section("틱 루프 — 죽음은 틱 끝에만 반영된다");

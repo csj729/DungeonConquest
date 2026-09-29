@@ -75,6 +75,18 @@ import gamedata as gd
 _SP, _SG, _PR, _MN = gd.SPAWN, gd.SEGMENTS_DATA, gd.PROGRESSION, gd.MONSTERS
 
 
+# 페이즈 2 길이 (실측 · core/tools/dc_boss 100시드 × 정책 4종, QTE 완벽).
+# **모델 가정이 아니라 실측이므로 데이터가 아니라 도구에 남는다** (CLAUDE.md) —
+# C++ 코어가 읽지 않는 값이다.
+#
+# **장판이 붙기 전 값으로 고정한다. 다시 재서 갱신하면 안 된다.**
+# 장판 세기를 이 길이로 나눠 정하는데, 장판이 세지면 페이즈 2가 짧아지고
+# 짧아지면 다시 세져야 한다 — 발산하는 되먹임이다(실측으로 28.9 → 23.2초로
+# 줄었다). 같은 함정을 verify_recovery의 "기저만으로 못 버티는가"에서 한 번
+# 밟았다: BOSS_SEC가 사망까지의 시간이기도 해서, 보스를 세게 만들수록 적자가
+# 줄어드는 식이었다. 분모는 **장치를 넣기 전의 길이**여야 한다.
+PHASE2_SEC_MEASURED = 28.9
+
 # ── 도출식 ──────────────────────────────────────────────────────
 # 각 함수는 **저장값을 읽지 않고** 입력에서 값을 다시 만든다.
 # 저장값을 참조하면 검사가 자기 자신을 통과시킨다.
@@ -134,6 +146,48 @@ def derive_slice_boss_hp():
     dps, _b, _a = hero_dps()
     ehp = _MN["slice_boss_target_sec"] * dps * growth * COMBAT_EFFICIENCY
     return ehp * ARMOR_K / (ARMOR_K + _MN["slice_boss_armor"])
+
+
+def boss_cycle_ticks():
+    """보스 패턴 한 사이클의 틱 수 — Σ(쿨다운 + 윈드업 + 캐스팅 1틱)."""
+    return sum(p["cooldown_ticks"] + p["windup_ticks"] + 1
+               for p in _MN["boss"]["patterns"])
+
+
+def derive_phase2_aura_dps():
+    """광역 지속딜 ← 페이즈 2 정화를 페이즈 2 길이로 나눈다.
+
+    **설계 진술이 그대로 식이다**: 정화가 한 번에 틔워준 숨통을 장판이 페이즈 2
+    내내 도로 조인다. 방어력 감쇠를 타므로 실제 회수분은 정화량보다 작고,
+    그래서 정화는 순이득으로 남는다 — 상쇄가 아니라 회수다.
+
+    페이즈 2 길이는 실측이다 (`core/tools/dc_boss` 100시드 × 정책 4종).
+    모델로는 알 수 없다 — 보스 체력 50%까지 걸리는 시간은 빌드마다 다르고,
+    도중에 죽은 판까지 섞인 분포이기 때문이다.
+
+    **분모는 장판이 붙기 전 길이로 고정한다** (PHASE2_SEC_MEASURED 주석 참조).
+    """
+    return _PR["boss_phase2_purge"] / PHASE2_SEC_MEASURED
+
+
+def derive_phase2_summon_period():
+    """졸개 소환 주기 ← 패턴 사이클의 절반.
+
+    **절반인 이유**는 로테이션과 어긋나게 두기 위해서다. 사이클과 같은 주기면
+    매번 같은 패턴과 겹쳐 리듬이 하나로 뭉치고, 절반이면 번갈아 다른 패턴에
+    얹힌다. 페이즈 2(장판이 붙은 뒤 실측 23.2초 = 464틱)에 2.3회 들어온다.
+    """
+    return boss_cycle_ticks() // 2
+
+
+def derive_phase2_summon_count():
+    """졸개 소환 수 ← 맵 마지막 구간의 배치 크기.
+
+    **한 배치만큼 더 들어온다**는 것이 이 수치의 뜻이다. 동시 생존 상한을
+    일부러 넘기므로 초과분에 잠식 가속이 걸린다 — 상한 안에서 부르면 상한 유지
+    스폰이 그만큼 덜 넣어 아무 일도 일어나지 않는다.
+    """
+    return spawn_batch(_PR["segments_per_map"])
 
 
 def derive_elite_hp():
@@ -313,6 +367,15 @@ def checks():
          f"화면 {SCREEN_TILES[0]}×{SCREEN_TILES[1]} 대각 절반 × 여유 {SPAWN_MARGIN}"),
         ("slice_boss_hp", _MN["slice_boss_hp"], derive_slice_boss_hp(), 1,
          f"목표 {_MN['slice_boss_target_sec']}초 × DPS × 성장 × 보정 {COMBAT_EFFICIENCY}"),
+        ("boss.phase2_aura_dps", _MN["boss"]["phase2_aura_dps"],
+         derive_phase2_aura_dps(), 1,
+         f"정화 {_PR['boss_phase2_purge']} ÷ 페이즈2 실측 {PHASE2_SEC_MEASURED}초"),
+        ("boss.phase2_summon_period_ticks", _MN["boss"]["phase2_summon_period_ticks"],
+         derive_phase2_summon_period(), 0,
+         f"사이클 {boss_cycle_ticks()}틱의 절반"),
+        ("boss.phase2_summon_count", _MN["boss"]["phase2_summon_count"],
+         derive_phase2_summon_count(), 0,
+         f"구간 {_PR['segments_per_map']}의 배치 크기"),
         ("elites[].hp", [e["hp"] for e in _MN["elites"]], derive_elite_hp(), 1,
          "target_sec 밴드 중앙 × DPS × 엘리트 피해 비중 / Armor"),
         ("items[].stats_permille", stored_item_stats(), derive_item_stats(), 0,
@@ -433,6 +496,15 @@ _POKES = [
      '"slice_boss_target_sec": 80,', "slice_boss_hp"),
     ("data/monsters.json", '"target_sec_max": 12,\n      "windup_ticks": 60,',
      '"target_sec_max": 13,\n      "windup_ticks": 60,', "elites[].hp"),
+    # 페이즈 2 — 정화를 흔들면 장판이, 패턴 쿨다운을 흔들면 소환 주기가 따라와야 한다
+    ("data/progression.json", '"boss_phase2_purge": 400,',
+     '"boss_phase2_purge": 500,', "boss.phase2_aura_dps"),
+    ("data/monsters.json", '"cooldown_ticks": 80\n      },',
+     '"cooldown_ticks": 100\n      },', "boss.phase2_summon_period_ticks"),
+    # batch_by_segment와 같은 앵커를 쓴다 — 소환 수는 램프의 **끝 칸**이라
+    # batch_start를 흔들어도 안 움직인다(실제로 그렇게 짰다가 못 잡았다)
+    ("data/spawn.json", '"batch_end": 8,', '"batch_end": 9,',
+     "boss.phase2_summon_count"),
     # 생존 축의 armor 배분 — items.json에서 유일한 문자열이라 앵커로 쓴다
     ("data/items.json", '"armor": 600,', '"armor": 610,',
      "items[].stats_permille"),

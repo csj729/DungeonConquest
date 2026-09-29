@@ -298,6 +298,17 @@ def _check_dev_data():
         ("bossPhase2AtPermille", scalar("c.bossPhase2AtPermille"),
          gd.MONSTERS["boss"]["phase2_at_permille"]),
         ("bossPhase2Purge", scalar("c.bossPhase2Purge"), gd.PROGRESSION["boss_phase2_purge"]),
+        # 페이즈 2 가산 — 로테이션 밖의 세 장치
+        ("bossPhase2AuraDps", scalar("c.bossPhase2AuraDps"),
+         gd.MONSTERS["boss"]["phase2_aura_dps"]),
+        ("bossPhase2SummonCount", scalar("c.bossPhase2SummonCount"),
+         gd.MONSTERS["boss"]["phase2_summon_count"]),
+        ("bossPhase2SummonPeriodTicks", scalar("c.bossPhase2SummonPeriodTicks"),
+         gd.MONSTERS["boss"]["phase2_summon_period_ticks"]),
+        ("bossCcResistStepPermille", scalar("c.bossCcResistStepPermille"),
+         gd.MONSTERS["boss"]["cc_resist_step_permille"]),
+        ("BOSS_CC_GAUGE_MAX", scalar("BOSS_CC_GAUGE_MAX"),
+         gd.MONSTERS["boss"]["cc_gauge_max"]),
         # 보스 패턴 표. **damage는 타수를 합친 값이다** — mitigate가 피해에 선형이라
         # 3×63과 189가 같은 결과이고, 시뮬은 캐스팅당 한 번만 적용한다.
         ("BOSS_PATTERNS", boss_pattern_rows(),

@@ -84,6 +84,8 @@ enum Variant { A_BASE = 0, B_NO_LEECH, C_NO_ORB, D_INFLOW, VARIANTS };
 struct Sample {
     bool    reached   = false;
     bool    cleared   = false;      // A 기준이 보스를 잡았는가
+    bool    phase2    = false;      // A 기준이 페이즈 2에 들어갔는가
+    double  phase2Sec = 0;          // 페이즈 2 진입 → 런 종료
     bool    clearedV[4]{};          // 갈래별 — "이 회복이 없었어도 잡았는가"
     double  arriveSec = 0;   // 보스 등장까지 걸린 초
     double  bossSec   = 0;   // 보스 등장 → 런 종료
@@ -132,8 +134,9 @@ Sample measureOne(const SimConfig& cfg, uint64_t seed, dev::Policy policy) {
     // 같은 구간을 두 번 시뮬해야 한다 — 나란히 돌리면 첫 갈래가 끝나는 틱이 곧
     // 공통 창이고, 그 자리에서 네 값을 한 번에 집을 수 있다.
     const uint32_t leechIdx = engraveIndex(EngraveId::Leech);
-    int32_t endTickA = MAX_RUN_TICKS;
-    int32_t window   = -1;
+    int32_t endTickA    = MAX_RUN_TICKS;
+    int32_t phase2Tick  = -1;       // A 기준이 HP 50%를 넘긴 틱
+    int32_t window      = -1;
     double  corrAt[VARIANTS]{};
 
     for (int32_t t = wv[0].tickCount(); t < MAX_RUN_TICKS; ++t) {
@@ -144,6 +147,9 @@ Sample measureOne(const SimConfig& cfg, uint64_t seed, dev::Policy policy) {
             stepOnce(wv[v], vcfg[v], policy, rv[v], scratch);
             if (!wv[v].run.over()) ++alive;
             else if (v == A_BASE) endTickA = wv[v].tickCount();
+            if (v == A_BASE && phase2Tick < 0 && wv[v].run.bossPhase2) {
+                phase2Tick = wv[v].tickCount();
+            }
         }
         if (window < 0 && alive < VARIANTS) {
             window = wv[0].tickCount();
@@ -157,6 +163,10 @@ Sample measureOne(const SimConfig& cfg, uint64_t seed, dev::Policy policy) {
     }
 
     s.bossSec = static_cast<double>(endTickA - arriveTick) / config::TICK_HZ;
+    if (phase2Tick >= 0) {
+        s.phase2    = true;
+        s.phase2Sec = static_cast<double>(endTickA - phase2Tick) / config::TICK_HZ;
+    }
     s.cleared = wv[A_BASE].run.outcome == RunOutcome::Cleared;
     for (int32_t v = 0; v < VARIANTS; ++v) {
         s.clearedV[v] = wv[v].run.outcome == RunOutcome::Cleared;
@@ -196,6 +206,8 @@ int main(int argc, char** argv) {
 
     int32_t runs = 0, reached = 0, cleared = 0, netRuns = 0;
     int32_t clearedV[VARIANTS] = {0, 0, 0, 0};
+    int32_t phase2Runs = 0;
+    double  phase2SecSum = 0;
     double arriveSum = 0, bossSecSum = 0, arriveSecSum = 0;
     double netSum[VARIANTS] = {0, 0, 0, 0};
 
@@ -216,6 +228,7 @@ int main(int argc, char** argv) {
             arriveSecSum += s.arriveSec;
             if (s.cleared) { ++cleared; ++pc; }
             for (int32_t v = 0; v < VARIANTS; ++v) if (s.clearedV[v]) ++clearedV[v];
+            if (s.phase2) { ++phase2Runs; phase2SecSum += s.phase2Sec; }
             if (s.netValid) {
                 ++netRuns; ++pn;
                 for (int32_t v = 0; v < VARIANTS; ++v) netSum[v] += s.net[v];
@@ -262,6 +275,13 @@ int main(int argc, char** argv) {
     printf("  C 구슬 없음    %5.1f%%\n", clearedV[C_NO_ORB]   * 100.0 / reached);
     printf("  D 회복 전무    %5.1f%%   <- 기저만으로는 못 버티는가\n",
            clearedV[D_INFLOW]   * 100.0 / reached);
+
+    printf("\n== 페이즈 2 ==\n");
+    printf("  진입 %5.1f%% (도달 판 기준) · 진입 후 평균 %.1f초\n",
+           phase2Runs * 100.0 / reached,
+           phase2Runs ? phase2SecSum / phase2Runs : 0.0);
+    printf("  ※ 보스전 전체 %.1f초 중 뒷부분이다 — 페이즈 2 가산 수치는 이 길이로 역산한다\n",
+           bossSec);
 
     printf("\n== tools/verify_recovery.py 에 넣을 값 ==\n");
     printf("BOSS_SEC        = %.1f\n", bossSec);

@@ -157,6 +157,8 @@ struct RunState {
     bool       bossSpawned  = false;
     // 페이즈 2 정화를 이미 줬는가. **[상태]다** — 한 번만 주므로 해시에 들어간다.
     bool       bossPhase2   = false;
+    // 다음 졸개 소환 틱. 페이즈 2 진입 틱에 설정된다 — 진입 전에는 의미가 없다.
+    int32_t    bossSummonNextTick = 0;
     RunOutcome outcome      = RunOutcome::Running;
     int32_t    endTick      = 0;
 
@@ -178,6 +180,7 @@ struct RunState {
         h.feed(killedElite);
         h.feed(bossAlive);
         h.feed(bossPhase2);
+        h.feed(bossSummonNextTick);
         h.feed(bossSpawned);
         h.feed(static_cast<uint8_t>(outcome));
         h.feed(endTick);

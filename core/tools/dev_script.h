@@ -12,7 +12,7 @@
 #include "../include/dc/item.h"
 #include "../include/dc/sim.h"
 #include "../include/dc/world.h"
-#include "dev_data.h"
+#include "data_files.h"
 
 namespace dc::dev {
 
@@ -49,19 +49,23 @@ inline const RecipeTable& devRecipes() {
     return table;
 }
 
-// 런 시작 설정. 진짜 데이터 로더가 붙으면 dev_data.h와 함께 사라진다.
-inline void setup(World& w) {
-    applyHeroBaseline(w);
+// 런 시작 설정. 설정은 이제 `data/*.json`에서 온다 — 호출자가 로드해서 넘긴다.
+//
+// **인벤토리는 아래 축소 테이블로 다시 초기화한다.** 이 드라이버는 조합을
+// 돌리는 자리가 아니라 체크섬을 흔드는 자리이고, 축소 테이블과 실제 테이블의
+// 해시가 달라 `Inventory::matches`가 조합 입력을 거른다 — 로더 전환 전부터
+// 그랬고, 바꾸면 체크섬이 통째로 달라지므로 여기서 건드리지 않는다.
+inline void setup(World& w, const SimConfig& cfg, const RecipeTable& table,
+                  const HeroBaseline& hero) {
+    w.bindDataHash(cfg.dataHash);
+    w.inventory.init(table);
+    w.hero.stats.init(hero.bases, hero.bounds);
+    w.refreshAllConditions();
     w.inventory.init(devRecipes());
 }
 
-inline const SimConfig& devSimConfig() {
-    static const SimConfig cfg = devConfig();
-    return cfg;
-}
-
 // 한 틱 — 실제 시스템 + 아직 없는 시스템의 자리만 흔든다.
-inline void scriptTick(World& w) {
+inline void scriptTick(World& w, const SimConfig& cfg, const RecipeTable& table) {
     // 레벨업 카드 선택 — 실제 시스템. 프레젠테이션이 붙기 전까지 무작위로 고른다.
     // **선택 자체가 빌드를 만드는 지점**이므로 몬테카를로 하네스는 여기에 정책을 꽂는다.
     if (w.cards.offer.open()) {
@@ -69,7 +73,7 @@ inline void scriptTick(World& w) {
         e.tick  = w.tickCount();
         e.kind  = InputKind::CardChoice;
         e.value = w.rngEvents.range(w.cards.offer.count);
-        (void)applyInput(w, devSimConfig(), devRecipeTable(), e);
+        (void)applyInput(w, cfg, table, e);
     }
 
     // 아직 시스템이 없는 자리 — 카드 밖의 모디파이어 획득 경로를 흔든다
@@ -133,12 +137,12 @@ inline void scriptTick(World& w) {
     }
 
     static SimScratch scratch;      // [파생] — 매 틱 재구축되므로 World 밖에 둔다
-    stepWorld(w, devSimConfig(), scratch);   // ← 실제 틱 루프
+    stepWorld(w, cfg, scratch);              // ← 실제 틱 루프
 }
 
 inline void runScript(World& w, int32_t ticks) {
-    if (w.tickCount() == 0) setup(w);
-    for (int32_t t = 0; t < ticks; ++t) scriptTick(w);
+    if (w.tickCount() == 0) setup(w, data().cfg, data().table, data().hero);
+    for (int32_t t = 0; t < ticks; ++t) scriptTick(w, data().cfg, data().table);
 }
 
 }  // namespace dc::dev

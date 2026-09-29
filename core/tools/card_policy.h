@@ -20,7 +20,7 @@
 #include "../include/dc/card.h"
 #include "../include/dc/sim_config.h"
 #include "../include/dc/inventory.h"
-#include "dev_items.h"
+#include "../include/dc/config_loader.h"
 #include "../include/dc/stat_id.h"
 
 namespace dc::dev {
@@ -66,13 +66,14 @@ inline bool isSurvivalStat(uint16_t stat) {
 //     일반 9 · 고급 15 · 희귀 30 · **흔함 아이템 52** · 영웅 60 · 전설 150
 //
 // 즉 3장 중 영웅 이상이 없으면 아이템을 고른다. 그게 위력 배분 70:30을 만든다.
-inline int32_t cardPower(const SimConfig& cfg, const CardOffer& c) {
-    if (c.kind == CardKind::ItemDraw) return DEV_TIER_POWER[0];   // 흔함
+inline int32_t cardPower(const SimConfig& cfg, const ItemMeta& meta, const CardOffer& c) {
+    if (c.kind == CardKind::ItemDraw) return meta.tierPower[0];   // 흔함
     return c.grade < MAX_CARD_GRADES ? cfg.cardGradeBudget[c.grade] : 0;
 }
 
-inline int32_t score(Policy p, const SimConfig& cfg, const CardOffer& c) {
-    const int32_t base = cardPower(cfg, c);
+inline int32_t score(Policy p, const SimConfig& cfg, const ItemMeta& meta,
+                     const CardOffer& c) {
+    const int32_t base = cardPower(cfg, meta, c);
     switch (p) {
         case Policy::Greedy:
             return base;                  // 위력만 본다 — 역할을 가리지 않는다
@@ -144,21 +145,21 @@ inline bool acceptsAxis(Policy p, uint8_t axis) {
     return true;
 }
 
-inline int32_t chooseCraft(Policy p, const Inventory& inv, const RecipeTable& table,
-                           Rng& rng) {
+inline int32_t chooseCraft(Policy p, const ItemMeta& meta, const Inventory& inv,
+                           const RecipeTable& table, Rng& rng) {
     int32_t best = -1;
     int32_t bestScore = -1;
     uint32_t ties = 0;
     for (uint32_t r = 0; r < table.recipeCount(); ++r) {
         if (!inv.craftable(r)) continue;
         const ItemId result = table.recipe(r).result;
-        if (result >= DEV_ITEM_COUNT) continue;
-        const uint8_t axis = DEV_ITEM_AXIS[result];
+        if (result >= table.itemTypeCount()) continue;
+        const uint8_t axis = meta.axis[result];
         if (!acceptsAxis(p, axis)) continue;          // **축이 아니면 재료를 아낀다**
         // 받아들인 축 안에서는 등급이 전부다 — 사다리가 등급당 2.5배다.
         const int32_t score = p == Policy::Random
             ? 0
-            : DEV_ITEM_TIER[result] * 10 + axisPreference(p, axis);
+            : meta.tier[result] * 10 + axisPreference(p, axis);
         if (score > bestScore) { bestScore = score; best = static_cast<int32_t>(r); ties = 1; }
         else if (score == bestScore) {
             // **동점은 난수로 가른다** — 인덱스 순으로 고정하면 조합식 정의 순서가
@@ -170,14 +171,15 @@ inline int32_t chooseCraft(Policy p, const Inventory& inv, const RecipeTable& ta
     return best;
 }
 
-inline uint32_t choose(Policy p, const SimConfig& cfg, const CardOfferSet& offer, Rng& rng) {
+inline uint32_t choose(Policy p, const SimConfig& cfg, const ItemMeta& meta,
+                       const CardOfferSet& offer, Rng& rng) {
     if (offer.count == 0) return 0;
     if (p == Policy::Random) return rng.range(offer.count);
 
     uint32_t best = 0;
-    int32_t  bestScore = score(p, cfg, offer.offers[0]);
+    int32_t  bestScore = score(p, cfg, meta, offer.offers[0]);
     for (uint32_t i = 1; i < offer.count && i < MAX_CARDS_PER_LEVEL; ++i) {
-        const int32_t sc = score(p, cfg, offer.offers[i]);
+        const int32_t sc = score(p, cfg, meta, offer.offers[i]);
         if (sc > bestScore) { bestScore = sc; best = i; }
     }
     return best;

@@ -28,7 +28,7 @@
 
 #include "../include/dc/sim.h"
 #include "card_policy.h"
-#include "dev_data.h"
+#include "data_files.h"
 
 using namespace dc;
 
@@ -52,8 +52,7 @@ struct RunResult {
 static RunResult runOnce(const SimConfig& cfg, uint64_t seed, dev::Policy policy,
                          int32_t checkpointTick) {
     World w;
-    w.init(seed);
-    dev::applyHeroBaseline(w);
+    initWorld(w, seed, dev::data().cfg, dev::data().table, dev::data().hero);
     static SimScratch scratch;
     Rng choiceRng = Rng::derive(seed, RngStream::Cards);
 
@@ -68,26 +67,26 @@ static RunResult runOnce(const SimConfig& cfg, uint64_t seed, dev::Policy policy
             qe.tick  = w.tickCount();
             qe.kind  = InputKind::QteGrade;
             qe.value = static_cast<uint32_t>(QteGrade::Perfect);
-            (void)applyInput(w, cfg, dev::devRecipeTable(), qe);
+            (void)applyInput(w, cfg, dev::data().table, qe);
         }
         if (w.cards.offer.open()) {
             InputEvent e;
             e.tick  = w.tickCount();
             e.kind  = InputKind::CardChoice;
-            e.value = dev::choose(policy, cfg, w.cards.offer, choiceRng);
-            (void)applyInput(w, cfg, dev::devRecipeTable(), e);
+            e.value = dev::choose(policy, cfg, dev::data().meta, w.cards.offer, choiceRng);
+            (void)applyInput(w, cfg, dev::data().table, e);
         }
         // **조합은 언제든** (§5). 플레이어가 상시 인벤토리를 보고 있다고 보고,
         // 만들 수 있으면 바로 만든다 — 재료를 쌓아둘 이유가 없다(사다리가 항상 이득).
         for (;;) {
-            const int32_t r = dev::chooseCraft(policy, w.inventory, dev::devRecipeTable(),
+            const int32_t r = dev::chooseCraft(policy, dev::data().meta, w.inventory, dev::data().table,
                                                choiceRng);
             if (r < 0) break;
             InputEvent ce;
             ce.tick  = w.tickCount();
             ce.kind  = InputKind::Craft;
             ce.value = static_cast<uint32_t>(r);
-            if (!applyInput(w, cfg, dev::devRecipeTable(), ce)) break;
+            if (!applyInput(w, cfg, dev::data().table, ce)) break;
         }
 
         stepWorld(w, cfg, scratch);
@@ -117,7 +116,7 @@ int main(int argc, char** argv) {
     const int32_t runs = argc > 1 ? std::atoi(argv[1]) : 400;
     const int32_t checkpointTick = argc > 2 ? std::atoi(argv[2]) : 3000;   // 150초
     g_qtePerfect = argc > 3 && std::atoi(argv[3]) != 0;
-    const SimConfig cfg = dev::devConfig();
+    const SimConfig& cfg = dev::data().cfg;
 
     printf("몬테카를로 밸런싱 하네스 — 정책 %d종 × %d판, 체크포인트 %d틱(%.0f초)\n",
            static_cast<int32_t>(dev::Policy::Count), runs,

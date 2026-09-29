@@ -9,15 +9,14 @@
 #include <initializer_list>
 
 #include "../include/dc/sim.h"
-#include "../tools/dev_data.h"
+#include "../tools/data_files.h"
 #include "test_main.h"
 
 using namespace dc;
 
 static World makeWorld(uint64_t seed = 1) {
     World w;
-    w.init(seed);
-    dev::applyHeroBaseline(w);
+    initWorld(w, seed, dev::data().cfg, dev::data().table, dev::data().hero);
     return w;
 }
 
@@ -36,7 +35,7 @@ static SpawnDesc mob(Archetype a, int32_t hp, int32_t windup, int32_t dmg) {
 
 int main() {
     printf("test_qte\n");
-    const SimConfig cfg = dev::devConfig();
+    const SimConfig& cfg = dev::data().cfg;
 
     dctest::section("판정 검증 — 시뮬은 등급을 믿지 않는다");
     {

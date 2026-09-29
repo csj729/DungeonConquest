@@ -6,21 +6,20 @@
 
 #include "../include/dc/sim.h"
 #include "../tools/card_policy.h"
-#include "../tools/dev_data.h"
+#include "../tools/data_files.h"
 #include "test_main.h"
 
 using namespace dc;
 
 static World makeWorld(uint64_t seed = 1) {
     World w;
-    w.init(seed);
-    dev::applyHeroBaseline(w);
+    initWorld(w, seed, dev::data().cfg, dev::data().table, dev::data().hero);
     return w;
 }
 
 int main() {
     printf("test_card\n");
-    const SimConfig cfg = dev::devConfig();
+    const SimConfig& cfg = dev::data().cfg;
 
     dctest::section("등급 확률 — data/cards.json과 일치");
     {
@@ -82,7 +81,7 @@ int main() {
             CHECK(!seen[c.entryId]);          // **같은 전설이 두 번 나오지 않는다**
             seen[c.entryId] = true;
             w.cards.pendingLevelUps = 1;
-            CHECK(chooseCard(w, legendOnly, dev::devRecipeTable(), 0));
+            CHECK(chooseCard(w, legendOnly, dev::data().table, 0));
         }
         CHECK_EQ(w.cards.legendLeft(cfg.legendPoolSize), 0u);
         printf("    전설 %u종 전부 획득 — 중복 0\n", cfg.legendPoolSize);
@@ -130,15 +129,15 @@ int main() {
         c.value = Fixed::fromPermille(300);
         w.cards.offer.offers[0] = c;
         w.cards.offer.count = 1;
-        CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
+        CHECK(chooseCard(w, cfg, dev::data().table, 0));
         const int32_t once = w.cards.engrave[2].raw;
         CHECK(once > 0);
 
         w.cards.offer.offers[0] = c; w.cards.offer.count = 1;
-        CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
+        CHECK(chooseCard(w, cfg, dev::data().table, 0));
         CHECK_EQ(w.cards.engrave[2].raw, once * 2);   // **정확히 두 배** — 덧셈이다
         w.cards.offer.offers[0] = c; w.cards.offer.count = 1;
-        CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
+        CHECK(chooseCard(w, cfg, dev::data().table, 0));
         CHECK_EQ(w.cards.engrave[2].raw, once * 3);
     }
 
@@ -167,11 +166,11 @@ int main() {
         for (int i = 4; i > 0; --i) {
             CHECK_EQ(w.cards.pendingLevelUps, i);
             CHECK(w.cards.offer.open());
-            CHECK(chooseCard(w, cfg, dev::devRecipeTable(), 0));
+            CHECK(chooseCard(w, cfg, dev::data().table, 0));
         }
         CHECK_EQ(w.cards.pendingLevelUps, 0);
         CHECK(!w.cards.offer.open());
-        CHECK(!chooseCard(w, cfg, dev::devRecipeTable(), 0));      // 열린 화면이 없으면 거부
+        CHECK(!chooseCard(w, cfg, dev::data().table, 0));      // 열린 화면이 없으면 거부
     }
 
     dctest::section("리롤 — 성장 카드를 통째로 다시");
@@ -200,7 +199,7 @@ int main() {
     {
         auto play = [&](InputLog& log, bool record) {
             World w = makeWorld(31337);
-            dev::applyHeroBaseline(w);
+            initWorld(w, w.masterSeed(), dev::data().cfg, dev::data().table, dev::data().hero);
             SimScratch sc;
             Rng r = Rng::derive(5, RngStream::Events);
             if (!record) log.rewind(0);
@@ -211,11 +210,11 @@ int main() {
                         e.tick  = w.tickCount();
                         e.kind  = InputKind::CardChoice;
                         e.value = r.range(w.cards.offer.count);
-                        if (applyInput(w, cfg, dev::devRecipeTable(), e)) (void)log.record(e);
+                        if (applyInput(w, cfg, dev::data().table, e)) (void)log.record(e);
                     }
                 } else {
                     InputEvent e;
-                    while (log.next(w.tickCount(), &e)) (void)applyInput(w, cfg, dev::devRecipeTable(), e);
+                    while (log.next(w.tickCount(), &e)) (void)applyInput(w, cfg, dev::data().table, e);
                 }
                 stepWorld(w, cfg, sc);
             }
@@ -233,7 +232,7 @@ int main() {
         // 범위 밖 선택은 거부한다 — 입력 로그가 오염됐을 수 있다.
         World w = makeWorld(1);
         gainExp(w, cfg, cfg.needFor(1));
-        CHECK(!chooseCard(w, cfg, dev::devRecipeTable(), 99));
+        CHECK(!chooseCard(w, cfg, dev::data().table, 99));
         CHECK(w.cards.offer.open());        // 거부해도 화면은 그대로다
     }
 
@@ -287,11 +286,11 @@ int main() {
 
         // ── E_REND(파쇄) — 방어 무시 ──
         {
-            World a; a.init(7); dev::applyHeroBaseline(a);
+            World a; initWorld(a, 7, dev::data().cfg, dev::data().table, dev::data().hero);
             const EntityId ta = trash(a, Fixed(1), 100000, 200);
             const Fixed plain = applySkillHit(a, cfg, static_cast<uint32_t>(a.entities.denseOf(ta)),
                                               Fixed(100));
-            World b; b.init(7); dev::applyHeroBaseline(b);
+            World b; initWorld(b, 7, dev::data().cfg, dev::data().table, dev::data().hero);
             b.cards.engrave[engraveIndex(EngraveId::Rend)] = Fixed::fromPermille(500);
             const EntityId tb = trash(b, Fixed(1), 100000, 200);
             const Fixed rend = applySkillHit(b, cfg, static_cast<uint32_t>(b.entities.denseOf(tb)),
@@ -304,7 +303,7 @@ int main() {
 
         // ── E_SWARM(군집) — 주변 적 수에 비례 ──
         {
-            World w; w.init(7); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 7, dev::data().cfg, dev::data().table, dev::data().hero);
             CHECK_EQ(swarmMult(w, cfg).raw, Fixed::one().raw);     // 각인 없으면 1.0배
             w.cards.engrave[engraveIndex(EngraveId::Swarm)] = Fixed::fromPermille(90);
             CHECK_EQ(swarmMult(w, cfg).raw, Fixed::one().raw);     // 적이 없으면 여전히 1.0배
@@ -324,7 +323,7 @@ int main() {
 
         // ── E_CRIT(예리함) — 치확 100% 초과분이 치피로 간다 ──
         {
-            World w; w.init(7); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 7, dev::data().cfg, dev::data().table, dev::data().hero);
             Fixed ch = Fixed::fromPermille(100), mu = Fixed::fromPermille(1500);
             critWithEngrave(w, &ch, &mu);
             CHECK_EQ(ch.raw, Fixed::fromPermille(100).raw);        // 각인 없으면 그대로
@@ -348,7 +347,7 @@ int main() {
 
         // ── E_WIDE(확장) — 광역 반경 ──
         {
-            World w; w.init(7); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 7, dev::data().cfg, dev::data().table, dev::data().hero);
             CHECK_EQ(wideRadius(w, cfg.aoeRadius).raw, cfg.aoeRadius.raw);
             w.cards.engrave[engraveIndex(EngraveId::Wide)] = Fixed::fromPermille(200);
             CHECK(wideRadius(w, cfg.aoeRadius).raw > cfg.aoeRadius.raw);
@@ -369,7 +368,7 @@ int main() {
 
         // ── E_DECAY(부식) — 도트가 시간에 걸쳐 들어간다 ──
         {
-            World w; w.init(8); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 8, dev::data().cfg, dev::data().table, dev::data().hero);
             w.cards.engrave[engraveIndex(EngraveId::Decay)] = Fixed::fromPermille(300);
             const EntityId t = spawnAt(w, Fixed(1), Fixed{}, 100000);
             const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(t));
@@ -387,7 +386,7 @@ int main() {
             CHECK_EQ(w.entities.damageTaken[i].raw, after.raw);
 
             // **갱신이지 중첩이 아니다** — 다시 맞아도 틱당 피해가 커지지 않는다
-            World w2; w2.init(8); dev::applyHeroBaseline(w2);
+            World w2; initWorld(w2, 8, dev::data().cfg, dev::data().table, dev::data().hero);
             w2.cards.engrave[engraveIndex(EngraveId::Decay)] = Fixed::fromPermille(300);
             const EntityId t2 = spawnAt(w2, Fixed(1), Fixed{}, 100000);
             const uint32_t j = static_cast<uint32_t>(w2.entities.denseOf(t2));
@@ -403,7 +402,7 @@ int main() {
 
         // ── E_PIERCE(관통) — 타겟 뒤 직선만 맞는다 ──
         {
-            World w; w.init(8); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 8, dev::data().cfg, dev::data().table, dev::data().hero);
             w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
             w.cards.engrave[engraveIndex(EngraveId::Pierce)] = Fixed::fromPermille(250);
 
@@ -424,7 +423,7 @@ int main() {
         // ── E_CHAIN(연타) — 총 피해가 오르고 2회로 나뉜다 ──
         {
             auto totalDamage = [&](int32_t chainPermille) {
-                World w; w.init(8); dev::applyHeroBaseline(w);
+                World w; initWorld(w, 8, dev::data().cfg, dev::data().table, dev::data().hero);
                 if (chainPermille > 0) {
                     w.cards.engrave[engraveIndex(EngraveId::Chain)] =
                         Fixed::fromPermille(chainPermille);
@@ -459,7 +458,7 @@ int main() {
 
         // ── R_BEACON(추적의 신호탄) — 엘리트·보스에만 붙는다 ──
         {
-            World w; w.init(9); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             CHECK_EQ(beaconMult(w, Archetype::Trash).raw, Fixed::one().raw);
             w.cards.relic[relicIndex(RelicId::Beacon)] = Fixed::fromPermille(150);
             // **잡몹에는 무용지물** — 이게 물량 유물들과 정반대 축이라는 근거다
@@ -470,7 +469,7 @@ int main() {
 
         // ── R_RAGE(분노의 토템) — 피격 중첩, 상한 고정, 통째 만료 ──
         {
-            World w; w.init(9); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             w.cards.relic[relicIndex(RelicId::Rage)] = Fixed::fromPermille(10);
             CHECK_EQ(heroPowerMult(w, cfg).raw, Fixed::one().raw);   // 안 맞으면 1.0배
 
@@ -498,7 +497,7 @@ int main() {
 
         // ── R_TIDE(밀물의 인장) — 구간 경과에 비례, 구간 넘어가면 리셋 ──
         {
-            World w; w.init(9); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             w.cards.relic[relicIndex(RelicId::Tide)] = Fixed::fromPermille(3);
             w.run.segmentStartTick = 0;
             CHECK_EQ(heroPowerMult(w, cfg).raw, Fixed::one().raw);
@@ -519,7 +518,7 @@ int main() {
 
         // ── R_BOLT(뇌전의 성물) — 주기마다 한 마리 ──
         {
-            World w; w.init(9); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             w.cards.relic[relicIndex(RelicId::Bolt)] = Fixed::fromPermille(400);
             for (int32_t k = 0; k < 5; ++k) spawnAt(w, Fixed(50), Fixed(50), Archetype::Trash, 100000);
 
@@ -545,10 +544,10 @@ int main() {
         {
             // 골드가 아니라 경험치다 (골드 시스템 미구현). **전투와 경쟁하지 않는
             // 유일한 축**이라 카드를 더 자주 뽑게 해 선택지 품질을 산다.
-            World plain; plain.init(9); dev::applyHeroBaseline(plain);
+            World plain; initWorld(plain, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             gainExp(plain, cfg, 1000);
 
-            World greedy; greedy.init(9); dev::applyHeroBaseline(greedy);
+            World greedy; initWorld(greedy, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             greedy.cards.relic[relicIndex(RelicId::Greed)] = Fixed::fromPermille(200);
             gainExp(greedy, cfg, 1000);
 
@@ -565,7 +564,7 @@ int main() {
             CHECK(greedy.hero.level >= plain.hero.level);
 
             // **경험치는 int64다** — Fixed 범위(±524,288)를 넘는 값에서도 배율이 맞아야 한다
-            World big; big.init(9); dev::applyHeroBaseline(big);
+            World big; initWorld(big, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             big.cards.relic[relicIndex(RelicId::Greed)] = Fixed::fromPermille(200);
             gainExp(big, cfg, 100000000LL);
             int64_t bigTotal = big.hero.exp;
@@ -577,7 +576,7 @@ int main() {
 
         // ── R_FROST(서리 오라) — 반경 안만 둔화 ──
         {
-            World w; w.init(9); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 9, dev::data().cfg, dev::data().table, dev::data().hero);
             w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
             const Fixed r = cfg.frostRadius;
             spawnAt(w, r - Fixed(1), Fixed{}, Archetype::Trash, 100000);   // 안
@@ -610,7 +609,7 @@ int main() {
         // ── RL_ECHO(무한의 메아리) — 기본 공격이 한 번 더 ──
         {
             auto damageIn = [&](bool echo) {
-                World w; w.init(12); dev::applyHeroBaseline(w);
+                World w; initWorld(w, 12, dev::data().cfg, dev::data().table, dev::data().hero);
                 if (echo) w.cards.legendTake(legendIndexOf(LegendId::Echo));
                 const EntityId t = spawnAt(w, Fixed(1), Fixed{}, 100000);
                 w.hero.target = t;
@@ -628,7 +627,7 @@ int main() {
 
         // ── RL_STORM(폭풍의 핵) — 반경 안 전원에게 매 틱 ──
         {
-            World w; w.init(12); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 12, dev::data().cfg, dev::data().table, dev::data().hero);
             w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
             const EntityId inside  = spawnAt(w, cfg.stormRadius - Fixed(1), Fixed{}, 100000);
             const EntityId outside = spawnAt(w, cfg.stormRadius + Fixed(5), Fixed{}, 100000);
@@ -655,7 +654,7 @@ int main() {
         {
             // 매 틱 도는 지속 피해에 부식이 붙으면 각인 하나가 초당 20회 발동하는
             // 꼴이 되어 예산이 통째로 무너진다.
-            World w; w.init(12); dev::applyHeroBaseline(w);
+            World w; initWorld(w, 12, dev::data().cfg, dev::data().table, dev::data().hero);
             w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
             w.cards.legendTake(legendIndexOf(LegendId::Storm));
             w.cards.engrave[engraveIndex(EngraveId::Decay)] = Fixed::fromPermille(300);
@@ -681,12 +680,11 @@ int main() {
         // **조합은 언제든 할 수 있다** (§5) — 레벨업 모달과 달리 시뮬이 멈추지 않는다.
         // 그래서 정확히 어느 틱에 눌렀는지가 결과를 바꾸고, 입력 로그에 남아야
         // 서버가 재현할 수 있다. 이 테스트가 그 계약을 고정한다.
-        const RecipeTable& table = dev::devRecipeTable();
+        const RecipeTable& table = dev::data().table;
 
         auto play = [&](bool craftMid, InputLog* log) {
             World w;
-            w.init(77);
-            dev::applyHeroBaseline(w);
+                        initWorld(w, 77, dev::data().cfg, dev::data().table, dev::data().hero);
             static SimScratch sc;
             Rng cr = Rng::derive(77, RngStream::Cards);
             for (int32_t i = 0; i < 4000; ++i) {
@@ -694,7 +692,8 @@ int main() {
                     InputEvent e;
                     e.tick = w.tickCount();
                     e.kind = InputKind::CardChoice;
-                    e.value = dev::choose(dev::Policy::Power, cfg, w.cards.offer, cr);
+                    e.value = dev::choose(dev::Policy::Power, cfg, dev::data().meta,
+                                          w.cards.offer, cr);
                     if (applyInput(w, cfg, table, e) && log != nullptr) (void)log->record(e);
                 }
                 // 전투 중에 조합을 시도한다 — 시뮬을 멈추지 않는다
@@ -727,8 +726,7 @@ int main() {
 
         // **같은 로그를 재생하면 같은 체크섬이 나온다** — 조합이 결정론을 깨지 않는다
         World replay;
-        replay.init(77);
-        dev::applyHeroBaseline(replay);
+                initWorld(replay, 77, dev::data().cfg, dev::data().table, dev::data().hero);
         static SimScratch rsc;
         log.rewind(0);
         for (int32_t i = 0; i < 4000; ++i) {

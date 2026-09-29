@@ -6,15 +6,14 @@
 #include <initializer_list>
 
 #include "../include/dc/sim.h"
-#include "../tools/dev_data.h"
+#include "../tools/data_files.h"
 #include "test_main.h"
 
 using namespace dc;
 
 static World makeWorld(uint64_t seed = 1) {
     World w;
-    w.init(seed);
-    dev::applyHeroBaseline(w);
+    initWorld(w, seed, dev::data().cfg, dev::data().table, dev::data().hero);
     return w;
 }
 
@@ -35,7 +34,7 @@ static SpawnDesc mob(Archetype a, int32_t prio, Fixed x, Fixed y, int32_t hp = 2
 
 int main() {
     printf("test_systems\n");
-    const SimConfig cfg = dev::devConfig();
+    const SimConfig& cfg = dev::data().cfg;
 
     // 아래 우선순위 테스트들은 **감쇠를 끄고** 순수 우선순위 규칙만 본다.
     // 거리 감쇠는 뒤의 전용 섹션에서 따로 검증한다.

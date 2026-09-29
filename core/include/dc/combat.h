@@ -406,6 +406,34 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
     if (leech.raw > 0 && dealt.raw > 0) w.purgeCorruption(dealt * leech);
 }
 
+// 보스 패턴 순환 — **고정 순서 0 → 1 → 2 → 0.** 랜덤이 아니다
+// (monsters_vertical_slice.md: 플레이어가 리듬을 학습할 수 있어야 한다).
+//
+// 한 번 불릴 때마다 현재 패턴의 피해·텔레그래프·리듬을 엔티티 슬롯에 싣고
+// 인덱스를 하나 전진시킨다. 그래서 **호출 시점이 곧 "한 사이클의 시작"** 이고,
+// 그 아래 윈드업 분기와 qteRun이 여기서 실린 값을 읽는다.
+//
+// 보스가 아니거나 패턴 표가 비면 아무것도 하지 않는다 — 잡몹·엘리트는 공격이
+// 한 종류뿐이라 스폰 시 실린 값을 그대로 쓴다.
+inline void loadBossPattern(World& w, const SimConfig& cfg, uint32_t i) {
+    if (w.entities.archetype[i] != Archetype::Boss) return;
+    if (cfg.bossPatternCount == 0) return;
+
+    const uint32_t slot = w.entities.patternIndex[i] % cfg.bossPatternCount;
+    const BossPattern& p = cfg.bossPatterns[slot];
+
+    w.entities.attackDamage[i]   = p.damage;
+    w.entities.windupTicks[i]    = p.windupTicks;
+    w.entities.attackInterval[i] = p.cooldownTicks;
+
+    // **uint8_t 순환이므로 255에서 0으로 감는다.** 그대로 두면 오버플로가
+    // 아니라 정의된 랩어라운드이고, 아래 % 연산이 순서를 유지한다 —
+    // 다만 패턴 수가 256의 약수가 아니면 감기는 지점에서 순서가 튄다.
+    // 그래서 **미리 나머지를 취해 0..count-1 안에 가둔다.**
+    w.entities.patternIndex[i] =
+        static_cast<uint8_t>((slot + 1u) % cfg.bossPatternCount);
+}
+
 inline void qteRun(World& w, const SimConfig& cfg) {
     if (w.hero.qteCooldown > 0) --w.hero.qteCooldown;
     if (!w.hero.qte.open()) return;
@@ -673,6 +701,11 @@ inline void combatRun(World& w, const SimConfig& cfg) {
         // 텔레그래프 진행 중이면 QTE 창이 열려 있다. 해결은 qteRun이 한다.
         if (w.entities.windupLeft[i] > 0) { --w.entities.windupLeft[i]; continue; }
         if (w.entities.attackCooldown[i] > 0) { --w.entities.attackCooldown[i]; continue; }
+
+        // **보스: 이번 사이클에 쓸 패턴을 싣는다.** 쿨다운이 끝난 직후여야 한다 —
+        // 아래 윈드업 분기와 qteRun의 빗나감 피해가 둘 다 여기서 실린 값을 읽으므로,
+        // 뒤로 미루면 한 패턴 늦은 값으로 판정된다.
+        loadBossPattern(w, cfg, i);
 
         // **QTE는 표시된 패턴에만 걸린다** (§3). 일반 몹은 windupTicks가 0이라
         // 예비 동작 없이 즉시 들어가고 자동 판정된다.

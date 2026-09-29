@@ -484,17 +484,21 @@ int main() {
         printf("    2000틱 × 2회 일치\n");
     }
 
-    dctest::section("공격 간격 — 엘리트·보스가 잡몹 주기로 바뀌지 않는다");
+    dctest::section("공격 간격 — 엘리트가 잡몹 주기로 바뀌지 않는다");
     {
         // **회귀 테스트.** 공격 후 `cfg.trash.cooldownTicks`를 넣고 있어서
         // 엘리트·보스(60틱)가 첫 공격 이후 잡몹 주기(30틱)를 썼다 —
         // 공격 빈도가 2배가 되어 QTE 빈도와 잠식 피해가 설계와 달라졌다.
         // 스폰 시 값이 아니라 **두 번째 공격 이후**를 봐야 잡힌다.
+        //
+        // **보스는 여기서 보지 않는다.** 패턴 순환이 붙은 뒤로 보스의 간격은
+        // 고정이 아니라 캐스팅마다 바뀐다 — 같은 회귀(잡몹 주기로 떨어지는가)는
+        // 아래 "보스 패턴" 절이 사이클 전체로 본다.
         CHECK(cfg.elites[0].cooldownTicks != cfg.trash.cooldownTicks);
 
-        for (int32_t which = 0; which < 2; ++which) {
-            const MonsterConfig& m = which == 0 ? cfg.elites[1] : cfg.boss;  // 방패병 · 보스
-            const char* name = which == 0 ? "엘리트" : "보스";
+        {
+            const MonsterConfig& m = cfg.elites[1];   // 방패병
+            const char* name = "엘리트";
 
             World w = makeWorld(31);
             SpawnDesc d = makeDesc(m, Fixed(100000));   // 죽지 않을 만큼 단단하게
@@ -792,6 +796,74 @@ int main() {
         CHECK(w.run.clearPoints > 100);
         printf("    300초 런 — 처치 %d · 게이지 %d · 적 생존 중 최장 무처치 공백 %d틱\n",
                prevKills, w.run.clearPoints, worstGap);
+    }
+
+    dctest::section("보스 패턴 — 고정 순환이다 (0 → 1 → 2 → 0)");
+    {
+        // **순환은 랜덤이 아니다** (monsters_vertical_slice.md). 플레이어가 리듬을
+        // 학습할 수 있어야 액션 쾌감이 성립하므로, 순서가 섞이는 것은 버그다.
+        // 두 바퀴 + 한 칸을 보아 **감기는 지점까지** 확인한다.
+        CHECK(cfg.bossPatternCount == 3);
+
+        World w = makeWorld(41);
+        SpawnDesc d = makeDesc(cfg.boss, Fixed(100000));    // 죽지 않을 만큼 단단하게 (Fixed 20.12 상한 안)
+        d.posX = Fixed{}; d.posY = Fixed{};
+        const EntityId id = w.entities.spawn(d, 0, 41);
+        CHECK(id.valid());
+        const int32_t dense = w.entities.denseOf(id);
+        CHECK(dense >= 0);
+        CHECK_EQ(w.entities.patternIndex[dense], 0);        // 스폰은 0번부터
+
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        w.hero.target = EntityId{};                         // 영웅 반격이 섞이지 않게
+
+        // **stepWorld와 같은 순서로 두 시스템만 돌린다.** 스폰·이동까지 돌리면
+        // 잡몹이 섞여 보스의 리듬이 아니라 판 전체를 재게 된다. 틱 카운터는
+        // 직접 올린다 — qteRun이 창을 닫을 시점을 tickCount로 보기 때문에
+        // 이걸 빼면 텔레그래프가 영영 해소되지 않는다.
+        struct Cast { int32_t slot, damage, interval, windup; bool qteOpen; };
+        Cast seen[7]{};
+        int32_t n = 0;
+        int32_t prevIdx = w.entities.patternIndex[dense];
+        int32_t ticks = 0;
+        for (; ticks < 2000 && n < 7; ++ticks) {
+            w.beginTick();
+            qteRun(w, cfg);                 // 입력 없음 = Miss. 해소만 시킨다
+            combatRun(w, cfg);
+            w.endTick();
+            const int32_t idx = w.entities.patternIndex[dense];
+            if (idx == prevIdx) continue;
+            // patternIndex가 움직인 틱이 곧 캐스팅 시작이다 — loadBossPattern이
+            // 값을 싣고 다음 칸으로 넘긴 순간이므로, 지금 실려 있는 값이 이번
+            // 캐스팅의 것이다.
+            seen[n++] = { prevIdx, w.entities.attackDamage[dense].raw,
+                          w.entities.attackInterval[dense],
+                          w.entities.windupTicks[dense], w.hero.qte.open() };
+            prevIdx = idx;
+        }
+        CHECK_EQ(n, 7);
+
+        for (int32_t k = 0; k < n; ++k) {
+            const int32_t slot = k % static_cast<int32_t>(cfg.bossPatternCount);
+            const BossPattern& want = cfg.bossPatterns[slot];
+            CHECK_EQ(seen[k].slot, slot);                   // 순서 — 섞이면 여기서 걸린다
+            CHECK_EQ(seen[k].damage, want.damage.raw);
+            CHECK_EQ(seen[k].interval, want.cooldownTicks);
+            CHECK_EQ(seen[k].windup, want.windupTicks);
+            // **QTE는 텔레그래프가 붙은 패턴에만 열린다** (design.md §3).
+            // 전부 열리면 보스전 QTE 빈도가 예산의 3배가 된다.
+            CHECK_EQ(seen[k].qteOpen, want.windupTicks > 0);
+        }
+
+        // 잡몹 주기로 떨어지지 않았는가 — 위 "공격 간격" 회귀를 보스 쪽에서 잇는다.
+        // 사이클은 세 패턴의 (쿨다운 + 윈드업 + 캐스팅 1틱)의 합이다.
+        int32_t cycle = 0;
+        for (uint32_t k = 0; k < cfg.bossPatternCount; ++k) {
+            cycle += cfg.bossPatterns[k].cooldownTicks + cfg.bossPatterns[k].windupTicks + 1;
+        }
+        CHECK(cycle > 3 * (cfg.trash.cooldownTicks + 1));
+        printf("    %d틱에 7캐스팅 · 사이클 %d틱 (%.1f초) · 텔레그래프 1개\n",
+               ticks, cycle, static_cast<double>(cycle) / config::TICK_HZ);
     }
 
     dctest::section("보스 페이즈 2 — 임계에서 한 번만 정화한다");

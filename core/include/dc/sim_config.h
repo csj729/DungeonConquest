@@ -27,6 +27,7 @@ namespace dc {
 constexpr uint32_t MAX_SKILLS       = 8;
 constexpr uint32_t MAX_ELITE_TYPES  = 8;
 constexpr uint32_t MAX_ELITE_SPAWNS = 32;   // 맵당 19마리 + 여유
+constexpr uint32_t MAX_BOSS_PATTERNS = 8;   // 페이즈 1은 3개, 페이즈 2 가산분 여유
 
 // 고유 스킬 (§3). 발동은 통합 proc 1회, 어떤 스킬인지는 가중 추첨이다.
 struct SkillConfig {
@@ -53,6 +54,13 @@ struct MonsterConfig {
 
 // 클리어 게이지가 이 점수에 닿으면 해당 엘리트가 등장한다 (§2).
 // **웨이브 시퀀스가 아니라 게이지 임계**이므로 시간이 아니라 처치량에 걸린다.
+// 보스 패턴 한 칸. windupTicks가 0이 아니면 그 패턴에 QTE(위기 회피)가 붙는다.
+struct BossPattern {
+    Fixed   damage{};          // 타수를 합친 값
+    int32_t windupTicks  = 0;  // 텔레그래프. 0이면 예비 동작 없이 즉시
+    int32_t cooldownTicks = 0; // 다음 패턴까지
+};
+
 struct EliteSpawnPoint {
     int32_t  atClearPoints = 0;
     uint32_t eliteIndex    = 0;
@@ -193,6 +201,17 @@ struct SimConfig {
     // ── 로스터 ──
     MonsterConfig   trash{};        // 잡몹은 근접 한 종류뿐이다 (원거리는 폐지)
     MonsterConfig   boss{};
+    // 보스 패턴 — **고정 순환이다. 랜덤이 아니다** (monsters_vertical_slice.md).
+    // 0 → 1 → 2 → 0 순서로 돌며, 플레이어가 리듬을 학습할 수 있어야 액션 쾌감이
+    // 성립한다. 확률 장치가 없으므로 결정론에도 아무것도 걸리지 않는다.
+    //
+    // damage는 **타수를 합친 값**이다 — mitigate가 피해에 선형이라 3×63과 189가
+    // 같은 결과이고, 타수는 프레젠테이션 몫이라 시뮬이 들고 있을 이유가 없다.
+    //
+    // windupTicks가 0이 아닌 패턴에만 QTE가 걸린다 (§3). 페이즈 1에서는
+    // 대곤봉 강타 하나뿐이라 보스전 QTE 빈도가 저절로 예산(구간당 3~5회) 안에 든다.
+    BossPattern     bossPatterns[MAX_BOSS_PATTERNS]{};
+    uint32_t        bossPatternCount = 0;
     MonsterConfig   elites[MAX_ELITE_TYPES]{};
     uint32_t        eliteCount = 0;
     EliteSpawnPoint eliteSpawns[MAX_ELITE_SPAWNS]{};

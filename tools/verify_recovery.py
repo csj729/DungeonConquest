@@ -59,11 +59,11 @@ ELITE_IN_RANGE_MIN = 0.40
 # 초록불이었다 — 검사가 낡은 상수를 검사하고 있었기 때문이다.
 #   `cmake --build build/release --target dc_boss && ./build/release/core/dc_boss 100 1`
 # 두 번째 인자가 QTE 플레이다 (0 무입력 · 1 항상 완벽). 아래는 1의 출력이다.
-BOSS_SEC        = 57.0    # 실측. 처치와 사망이 섞인 평균이라 설계 밴드(60~90,
+BOSS_SEC        = 54.4    # 실측. 처치와 사망이 섞인 평균이라 설계 밴드(60~90,
                           # monsters.json:boss.target_sec)보다 낮게 나온다
-BOSS_INFLOW     = 34.8    # /초. 맵 구간(22.8)보다 높다 — 보스 피해가 얹힌다
-BOSS_ORB        = 14.1    # /초. 보스전에도 잡몹 스폰이 상한을 유지해 구슬은 계속 나온다
-BOSS_LEECH      = 2.8     # /초. 회복 카드 몫
+BOSS_INFLOW     = 34.3    # /초. 맵 구간(22.8)보다 높다 — 보스 피해가 얹힌다
+BOSS_ORB        = 13.8    # /초. 보스전에도 잡몹 스폰이 상한을 유지해 구슬은 계속 나온다
+BOSS_LEECH      = 2.7     # /초. 회복 카드 몫
 BOSS_ARRIVE     = 341.7   # 도달 시 잠식 (최대치 1250)
 BOSS_PHASE2_PURGE = _PROG["boss_phase2_purge"]
 
@@ -83,8 +83,8 @@ BOSS_PHASE2_PURGE = _PROG["boss_phase2_purge"]
 # 걸고, 무입력 쪽은 밴드 아래에 있을 것을 따로 요구한다. 둘을 한 숫자로 뭉개면
 # "QTE를 쳐도 안 쳐도 비슷하다"는 상태가 초록불로 통과한다 — 패턴 시스템이
 # 존재할 이유가 사라지는데도 검사는 조용하다.
-BOSS_SURVIVE_SKILLED = 0.453   # QTE 항상 완벽 (dc_boss 100 1)
-BOSS_SURVIVE_NOINPUT = 0.189   # QTE 무입력    (dc_boss 100 0)
+BOSS_SURVIVE_SKILLED = 0.264   # QTE 항상 완벽 (dc_boss 100 1)
+BOSS_SURVIVE_NOINPUT = 0.098   # QTE 무입력    (dc_boss 100 0)
 BOSS_SURVIVE_BAND = (0.25, 0.60)
 
 # **"기저만으로는 못 버티는가"도 이제 모델이 아니라 실측이다.**
@@ -93,10 +93,10 @@ BOSS_SURVIVE_BAND = (0.25, 0.60)
 # 보스가 세지면 분모가 줄어 적자도 같이 줄어드는 순환이 있었다 — 보스를 강화했는데
 # "기저만으로 완주"가 뜨는 자리다. dc_boss가 보스 등장 틱에 월드를 복제해
 # 회복을 끈 판을 실제로 끝까지 돌리므로, 이제 그냥 세면 된다.
-BOSS_SURVIVE_BARE    = 0.013   # 구슬·흡혈·페이즈2 전부 없음 (dc_boss D 갈래)
+BOSS_SURVIVE_BARE    = 0.010   # 구슬·흡혈·페이즈2 전부 없음 (dc_boss D 갈래)
 BOSS_SURVIVE_BARE_MAX = 0.10
-BOSS_SURVIVE_NOLEECH = 0.341   # 흡혈만 없음 (B 갈래) — 회복 카드의 실제 몫
-BOSS_SURVIVE_NOORB   = 0.177   # 구슬만 없음 (C 갈래)
+BOSS_SURVIVE_NOLEECH = 0.145   # 흡혈만 없음 (B 갈래) — 회복 카드의 실제 몫
+BOSS_SURVIVE_NOORB   = 0.113   # 구슬만 없음 (C 갈래)
 
 SEGMENT_PURGE = _PROG["segment_clear_purge"]
 SEGMENTS = _SEG["segment_start_points"]
@@ -286,7 +286,7 @@ def report():
     print("     (패턴 이전 스윕: 300 → 650으로 올려도 도달 후 생존 29.8% → 32.6%)")
     print("  ※ **보스 패턴 순환이 이 자리를 다시 열었다.** 자리표시자 시절 보스는")
     print("     경감 전 15.6/초였고, 설계된 패턴 3종은 사이클 403틱에 650 = 32.3/초다.")
-    print("     같은 데이터에서 무입력 18.9% · 숙련 45.3%로 갈린다 — 그 간격이 곧")
+    print("     같은 데이터에서 무입력 9.8% · 숙련 26.4%로 갈린다 — 그 간격이 곧")
     print("     대곤봉 강타(사이클 피해의 45%)를 회피했는가의 값이다")
     print("  ※ **숫자를 손으로 고치지 말 것.** core/tools/dc_boss가 낸 출력을 옮긴다 —")
     print("     보스 등장 틱에 월드를 네 벌로 복제해 유입·구슬·흡혈을 갈라 잰다\n")

@@ -94,6 +94,7 @@ constexpr BP BOSS_PATTERNS[3] = {
     {293, 80, 120},   // 대곤봉 강타  느림 · **QTE 있음** (윈드업 80 > 궁병대장 60)
     {168,  0, 120},   // 돌진 찌르기  중간 · QTE 없음
 };
+constexpr int32_t  BOSS_CC_GAUGE_MAX = 100;   // monsters.json: boss.cc_gauge_max
 constexpr int32_t  SLICE_BOSS_ATTACK_RANGE_MILLITILE = 3500;
 constexpr int32_t  MOB_SEPARATION_MILLITILE   = 1500;   // 몹 ↔ 몹
 constexpr int32_t  HERO_SEPARATION_MILLITILE  = 1000;   // 몹 ↔ 영웅 (첫 링 반지름)
@@ -129,6 +130,11 @@ inline SimConfig devConfig() {
     c.orbPickupRadiusMilli             = 1500;
     c.bossPhase2AtPermille             = 500;    // monsters.json: boss.phase2_at_permille
     c.bossPhase2Purge                  = 400;    // progression.json
+    // 페이즈 2 가산 — monsters.json: boss.phase2_*
+    c.bossPhase2AuraDps                = 14;     // 정화 400 ÷ 페이즈2 28.9초
+    c.bossPhase2SummonCount            = 8;      // 구간 8의 배치 크기
+    c.bossPhase2SummonPeriodTicks      = 201;    // 사이클 403의 절반
+    c.bossCcResistStepPermille         = 1000;   // monsters.json: boss.cc_resist_step_permille
     c.orbLifetimeTicks                 = 200;
 
     // data/spawn.json
@@ -263,6 +269,9 @@ inline SimConfig devConfig() {
     c.boss.approachSpeed  = c.trash.approachSpeed;
     c.boss.attackRange    = Fixed::fromPermille(SLICE_BOSS_ATTACK_RANGE_MILLITILE);
     c.boss.typeId         = 100;
+    // **없으면 QTE 완벽이 그로기를 못 만든다** — 임계치 0은 "채울 수 없다"로
+    // 읽히므로 §3이 약속한 "CC 스탯 없는 빌드의 무력화 경로"가 통째로 닫힌다.
+    c.boss.ccGaugeMax     = Fixed(BOSS_CC_GAUGE_MAX);
 
     c.bossPatternCount = sizeof(BOSS_PATTERNS) / sizeof(BOSS_PATTERNS[0]);
     for (uint32_t i = 0; i < c.bossPatternCount; ++i) {

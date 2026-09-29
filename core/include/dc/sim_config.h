@@ -116,6 +116,18 @@ struct SimConfig {
     // 유효하다. 0이면 아무 일도 하지 않는다.
     int32_t bossPhase2AtPermille = 0;
     int32_t bossPhase2Purge      = 0;
+    // ── 페이즈 2 가산 (monsters_vertical_slice.md §3) ──
+    // **페이즈 1 패턴을 대체하지 않고 추가한다.** 끄는 로직이 없으므로 단조
+    // 증가이고, 비활성화 경로가 아예 존재하지 않는다.
+    //
+    // 셋 다 **로테이션 밖에 둔다.** 패턴 칸으로 끼워 넣으면 사이클이 403 → 725틱이
+    // 되는데 페이즈 2는 실측 28.9초(578틱)라 한 바퀴도 못 돈다 — 졸개 소환을
+    // 한 번도 못 보고 끝나는 판이 생긴다. 병렬로 두면 둘 다 반드시 등장한다.
+    int32_t bossPhase2AuraDps    = 0;   // 광역 지속딜. 초당 피해(경감 전)
+    int32_t bossPhase2SummonCount = 0;  // 졸개 소환 — 한 번에 부르는 수
+    int32_t bossPhase2SummonPeriodTicks = 0;
+    // 보스만 CC 발동마다 임계치가 오른다 (§9). 무한 락을 막는 표준 안전장치다.
+    int32_t bossCcResistStepPermille = 0;
 
     // ── 클리어 게이지 (segments.json) ──
     int32_t trashPoints          = 0;

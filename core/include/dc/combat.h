@@ -434,6 +434,27 @@ inline void loadBossPattern(World& w, const SimConfig& cfg, uint32_t i) {
         static_cast<uint8_t>((slot + 1u) % cfg.bossPatternCount);
 }
 
+// CC 발동 임계치. **보스만 발동할 때마다 오른다** (§9) —
+// `ccGaugeMax × (1 + resistStep × ccTriggerCount)`.
+//
+// 저장된 `ccGaugeMax`는 **기준값 그대로 둔다.** 발동할 때마다 그 자리를 덮으면
+// 기준값이 사라져 "몇 배까지 올랐나"를 되물을 수 없고, 되돌리는 경로(그로기
+// 해제·판 리셋)가 생기는 순간 복구할 원본이 없다. 여기서 매번 계산하는 쪽이
+// 상태가 하나 적다.
+//
+// 엘리트는 임계치 고정이다 — CC 빌드로 계속 묶어둘 수 있는 중간 위협이고,
+// 그게 보스와 엘리트를 가르는 설계 축이다.
+inline Fixed ccThreshold(const EntityStore& e, const SimConfig& cfg, uint32_t i) {
+    if (e.archetype[i] != Archetype::Boss || cfg.bossCcResistStepPermille <= 0) {
+        return e.ccGaugeMax[i];
+    }
+    // 1 + step × count. **넓은 타입이 아니라 Fixed 곱으로 간다** — count는
+    // 한 판에 한 자릿수이고 ccGaugeMax는 100 언저리라 20.12 범위를 넘지 않는다.
+    const Fixed mult = Fixed(1)
+                     + Fixed::fromPermille(cfg.bossCcResistStepPermille) * e.ccTriggerCount[i];
+    return e.ccGaugeMax[i] * mult;
+}
+
 inline void qteRun(World& w, const SimConfig& cfg) {
     if (w.hero.qteCooldown > 0) --w.hero.qteCooldown;
     if (!w.hero.qte.open()) return;
@@ -466,11 +487,14 @@ inline void qteRun(World& w, const SimConfig& cfg) {
     // 완벽 — CC 게이지를 채운다. **피해가 아니라 게이지로 주는 이유**는 보스의
     // 실효 체력이 커서 반격 피해로는 체감이 없고, 게이지는 CC 스탯 없는 빌드에도
     // 보스를 무력화할 경로를 열어주기 때문이다 (§3).
+    //
+    // **충전량은 기준 임계치의 비율이다** — 오른 임계치가 아니라. 그래야 저항
+    // 상승이 실제로 작동한다(오른 값에 비례하면 항상 같은 횟수에 발동한다).
     const Fixed gain = w.entities.ccGaugeMax[i]
                      * Fixed::fromPermille(cfg.qtePerfectCcGainPermille);
     w.entities.ccGauge[i] += gain;
-    if (w.entities.ccGaugeMax[i].raw > 0
-        && w.entities.ccGauge[i].raw >= w.entities.ccGaugeMax[i].raw) {
+    const Fixed threshold = ccThreshold(w.entities, cfg, i);
+    if (threshold.raw > 0 && w.entities.ccGauge[i].raw >= threshold.raw) {
         w.entities.ccGauge[i] = Fixed{};
         ++w.entities.ccTriggerCount[i];
         w.entities.groggyLeft[i] = cfg.groggyTicks;
@@ -508,8 +532,27 @@ inline void orbRun(World& w, const SimConfig& cfg) {
 // 구간 진입 정화와 같은 장치이고 같은 이유로 존재한다 — 보스전 57초에는
 // 구간 경계가 하나도 없어 숨 돌릴 자리가 없었다. 다른 점은 **시간이 아니라
 // 보스 체력이 조건**이라는 것뿐이다.
+// 페이즈 2에 들어가면 **광역 지속딜이 계속 흐른다.** 로테이션과 무관하게
+// 매 틱 들어오므로, 정화 400이 한 번에 틔워준 숨통을 페이즈 2 내내 도로 조인다.
+//
+// **한 번에 합쳐 적용하지 않는 이유**가 패턴 피해와 다르다. 패턴은 타수를 합쳐도
+// 결과가 같지만(mitigate가 선형), 지속딜은 구슬·흡혈과 같은 틱을 두고 경쟁한다 —
+// 합쳐 버리면 "회복이 아슬아슬하게 앞섰다"가 성립하지 않는다.
+inline void bossPhase2AuraRun(World& w, const SimConfig& cfg) {
+    if (!w.run.bossPhase2 || !w.run.bossAlive) return;
+    if (cfg.bossPhase2AuraDps <= 0 || cfg.tickHz <= 0) return;
+    // 방어력 감쇠를 그대로 탄다 — 피해이므로 다른 피해와 같은 문을 지난다.
+    // 나눗셈은 0방향 절삭이다(C++11 표준). 초당 14 / 20Hz = 틱당 0.7이고
+    // Fixed 20.12에서 2867raw라 절삭 손실이 0.01% 미만이다.
+    const Fixed perSec = mitigate(Fixed(cfg.bossPhase2AuraDps),
+                                  w.hero.stats.value(Stat::Armor), cfg.armorK);
+    w.hero.corruption += perSec / cfg.tickHz;
+    w.notifyCorruptionChanged();
+}
+
 inline void bossPhaseRun(World& w, const SimConfig& cfg) {
-    if (!w.run.bossAlive || w.run.bossPhase2) return;
+    if (w.run.bossPhase2) { bossPhase2AuraRun(w, cfg); return; }
+    if (!w.run.bossAlive) return;
     if (cfg.bossPhase2AtPermille <= 0 || cfg.bossPhase2Purge <= 0) return;
 
     const uint32_t n = w.entities.count();
@@ -522,6 +565,11 @@ inline void bossPhaseRun(World& w, const SimConfig& cfg) {
         if (hp * 1000 <= max * cfg.bossPhase2AtPermille) {
             w.purgeCorruption(Fixed(cfg.bossPhase2Purge));
             w.run.bossPhase2 = true;
+            // 첫 소환은 **한 주기 뒤다.** 진입 즉시 부르면 정화와 소환이 같은 틱에
+            // 겹쳐 서로를 가린다 — 숨통이 트인 것도 물량이 는 것도 체감되지 않는다.
+            w.run.bossSummonNextTick = w.tickCount() + cfg.bossPhase2SummonPeriodTicks;
+            // 진입한 틱부터 장판이 깔린다. 다음 틱으로 미루면 진입 연출과 어긋난다.
+            bossPhase2AuraRun(w, cfg);
         }
         return;   // 보스는 하나다
     }

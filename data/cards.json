@@ -3,6 +3,8 @@
   "cards_per_level": 3,
   "engrave_slots_per_skill": 3,
   "legend_pool_size": 9,
+  "_stat_card_pool": "일반 등급 스탯 카드 풀. **여기서 빌드 축이 갈린다** — 화력(공격력·공속)이냐 생존(방어력·잠식 최대치)이냐. 이름은 stats.json의 키이고 순서가 곧 추첨 순서다.",
+  "stat_card_pool": ["attack_power", "attack_speed", "armor", "corruption_max"],
   "grade_step": [
     1,
     2,

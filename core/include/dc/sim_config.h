@@ -67,6 +67,15 @@ struct EliteSpawnPoint {
 };
 
 struct SimConfig {
+    // 이 설정을 만든 `data/*.json`의 지문 (FNV-1a). **서버와 클라가 다른 데이터를
+    // 로드했는지 가리는 값이다** — `Inventory::tableHash_`가 조합 테이블에 대해
+    // 하는 일을 설정 전체로 넓힌 것이다 (§5).
+    //
+    // **아직 체크섬에 들어가지 않는다.** 코어가 아직 `dev_data.h`로 설정을 받고
+    // 있어서 이 값이 0인 경로가 살아 있기 때문이다. 로더로 전환하면서 World에
+    // 물린다 — 그때까지는 로더가 채우기만 한다.
+    uint64_t dataHash = 0;
+
     // ── 진행 (progression.json) ──
     int32_t tickHz         = 0;
     int32_t totalSegments  = 0;

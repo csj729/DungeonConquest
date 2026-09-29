@@ -52,10 +52,16 @@ function(dc_add_test name src)
 
     dc_apply_sanitizer(${name})
 
+    # 데이터 파일 경로. **로더 테스트가 진짜 data/*.json을 읽는다** — 축소판
+    # 픽스처로 테스트하면 실제 파일이 로더를 통과하는지는 영영 모른다.
+    target_compile_definitions(${name} PRIVATE DC_DATA_DIR="${CMAKE_SOURCE_DIR}/data")
+
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
 dc_add_test(test_fixed     tests/test_fixed.cpp)
+dc_add_test(test_json      tests/test_json.cpp)
+dc_add_test(test_config_loader tests/test_config_loader.cpp)
 dc_add_test(test_rng       tests/test_rng.cpp)
 dc_add_test(test_entity_id tests/test_entity_id.cpp)
 dc_add_test(test_entity_store tests/test_entity_store.cpp)

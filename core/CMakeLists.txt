@@ -19,6 +19,23 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     # 오버플로는 플래그가 아니라 코드로 막고(넓은 타입 승격), UBSan이 검사한다.
 endif()
 
+# 새니타이저 플래그. **dc_add_test 밖에서도 걸 수 있어야 한다** — 한때 dc_abi와
+# test_abi가 이 함수를 쓰지 않는다는 이유로 -DDC_SANITIZE=address를 줘도 플래그가
+# 안 붙은 채 "통과"했다. CLAUDE.md는 시뮬 코어가 UBSan/ASan에서 통과할 것을
+# 요구하는데, ABI 표면은 핸들 수명과 포인터 노출이 새로 생기는 자리라 특히 봐야 한다.
+function(dc_apply_sanitizer target)
+    if(DC_SANITIZE STREQUAL "undefined")
+        target_compile_options(${target} PRIVATE
+            -fsanitize=undefined,integer-divide-by-zero,shift
+            -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
+        target_link_options(${target} PRIVATE -fsanitize=undefined)
+    elseif(DC_SANITIZE STREQUAL "address")
+        target_compile_options(${target} PRIVATE
+            -fsanitize=address -fno-omit-frame-pointer -g)
+        target_link_options(${target} PRIVATE -fsanitize=address)
+    endif()
+endfunction()
+
 # 테스트 공통 설정
 function(dc_add_test name src)
     add_executable(${name} ${src})
@@ -33,16 +50,7 @@ function(dc_add_test name src)
         )
     endif()
 
-    if(DC_SANITIZE STREQUAL "undefined")
-        target_compile_options(${name} PRIVATE
-            -fsanitize=undefined,integer-divide-by-zero,shift
-            -fno-sanitize-recover=all -fno-omit-frame-pointer -g)
-        target_link_options(${name} PRIVATE -fsanitize=undefined)
-    elseif(DC_SANITIZE STREQUAL "address")
-        target_compile_options(${name} PRIVATE
-            -fsanitize=address -fno-omit-frame-pointer -g)
-        target_link_options(${name} PRIVATE -fsanitize=address)
-    endif()
+    dc_apply_sanitizer(${name})
 
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
@@ -60,6 +68,38 @@ dc_add_test(test_inventory  tests/test_inventory.cpp)
 dc_add_test(test_systems    tests/test_systems.cpp)
 dc_add_test(test_qte        tests/test_qte.cpp)
 dc_add_test(test_card       tests/test_card.cpp)
+
+# ── C ABI 공유 라이브러리 ───────────────────────────────────────────────
+# Unity(C#)와 검증 서버(C#)가 P/Invoke로 부르는 단 하나의 표면.
+# **코어는 여전히 독립 INTERFACE 타깃이다** — 이 타깃이 코어에 의존하지 그 반대가
+# 아니므로 레이어 분리가 빌드 단위로 강제된다 (CLAUDE.md).
+add_library(dc_abi SHARED abi/dc_abi.cpp)
+target_link_libraries(dc_abi PRIVATE dc_core)
+target_include_directories(dc_abi PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/abi)
+target_compile_definitions(dc_abi PRIVATE DC_ABI_BUILD)
+
+# 기본 숨김. **표면에 있어야 할 것만 나가도록** 강제한다 — extern "C"를 빠뜨린
+# 심볼이 실수로 내보내지면 C# 쪽에서 우연히 링크되고, 그게 ABI 계약을 조용히 넓힌다.
+set_target_properties(dc_abi PROPERTIES
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON)
+dc_apply_sanitizer(dc_abi)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(dc_abi PRIVATE
+        -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Werror)
+endif()
+
+# ABI 계약 테스트 — **순수 C로 빌드한다.** 헤더가 C에서 읽히는지, 그리고 서버
+# 진입점이 클라이언트 경로와 같은 체크섬을 내는지를 본다.
+add_executable(test_abi tests/test_abi.c)
+target_link_libraries(test_abi PRIVATE dc_abi)
+set_target_properties(test_abi PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_abi PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+dc_apply_sanitizer(test_abi)
+add_test(NAME test_abi COMMAND test_abi)
 
 # 헤드리스 체크섬 러너. CI가 Debug/Release 출력을 비교하는 대상이며,
 # 서버 리플레이 검증(headless run → checksum) 진입점의 원형이다.

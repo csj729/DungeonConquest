@@ -3,7 +3,9 @@
 # 시뮬 코어는 독립 타깃으로 빌드되며 Unity·서버 어느 쪽에도 의존하지 않는다.
 # 레이어 분리는 리뷰가 아니라 **빌드 단위로 강제한다** (CLAUDE.md).
 cmake_minimum_required(VERSION 3.16)
-project(DungeonConquest LANGUAGES CXX)
+# **C도 켠다.** ABI 계약 테스트를 순수 C로 빌드해야 "헤더가 정말 C에서 읽히는가"가
+# 주장이 아니라 빌드 결과가 된다 — C++로 테스트하면 헤더에 C++ 타입이 섞여도 통과한다.
+project(DungeonConquest LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

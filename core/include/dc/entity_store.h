@@ -38,6 +38,10 @@ namespace EntityFlag {
 constexpr uint8_t None   = 0;
 constexpr uint8_t Ranged = 1u << 0;   // 원거리 몹 (§2 구간 구성의 melee/ranged)
 constexpr uint8_t Groggy = 1u << 1;   // CC 게이지 만충으로 행동 불가 (§9)
+// 처형(고유 각인 W_EXECUTE) 면역. **각인이 아니라 몬스터가 들고 있다** —
+// "보스면 제외"를 코드에 박지 않으려는 것이고(CLAUDE.md: 하드코딩 분기 금지),
+// 처형 면역 엘리트를 만들 자리도 같이 생긴다.
+constexpr uint8_t ExecuteImmune = 1u << 2;
 }  // namespace EntityFlag
 
 // 스폰 인자. 인자 12개짜리 함수를 만들지 않으려는 목적도 있지만,

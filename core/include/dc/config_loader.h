@@ -375,6 +375,14 @@ inline bool ConfigLoader::loadMonsters(const json::Doc& d, SimConfig* cfg) {
     cfg->boss.archetype      = Archetype::Boss;
     cfg->boss.approachSpeed  = approach;
     cfg->boss.typeId         = static_cast<uint16_t>(take32(r["slice_boss_type_id"]));
+    // 처형(W_EXECUTE) 면역. 없으면 임계 400permille이 페이즈 2(체력 500permille
+    // 시작, 실측 28.9초)의 80%를 생략해 전설 각인 하나가 보스 시스템을 무력화한다.
+    if (r["boss_execute_immune"].asBool()) {
+        cfg->boss.flags = static_cast<uint8_t>(cfg->boss.flags | EntityFlag::ExecuteImmune);
+        feed(1);
+    } else {
+        feed(0);
+    }
 
     cfg->bossPhase2AtPermille           = take32(b["phase2_at_permille"]);
     cfg->bossPhase2AuraDps              = take32(b["phase2_aura_dps"]);
@@ -469,6 +477,52 @@ inline bool ConfigLoader::loadCards(const json::Doc& d, SimConfig* cfg) {
     if (frSum != 1000) {
         return fail(DataFile::Cards, "화로 등급 확률 합이 1000이 아니다",
                     "forge_tier_rate_permille");
+    }
+
+    // ── 고유 각인 6종 (전설 풀 3~8번) ──
+    //
+    // **id로 찾는다. 배열 순서를 믿지 않는다.** 순서는 전설 풀 인덱스와 같아야
+    // 하지만(리플레이), 그 불변식은 아래에서 따로 검사한다 — 순서에 의존해 읽으면
+    // 데이터에서 두 줄이 바뀌었을 때 엉뚱한 각인에 수치가 들어가고 아무도 모른다.
+    const json::Value ue = r["unique_engravings"];
+    if (ue.size() == 0) {
+        return fail(DataFile::Cards, "고유 각인이 비어 있다", "unique_engravings");
+    }
+    // 전설 풀 = 전설 유물 3종 + 고유 각인. 칸 수가 맞지 않으면 뽑히지 않는
+    // 각인이나 효과 없는 칸이 생기는데, 둘 다 조용히 틀린다.
+    if (ue.size() + 3 != cfg->legendPoolSize) {
+        return fail(DataFile::Cards, "전설 풀 크기가 유물 3 + 고유 각인 수와 다르다",
+                    "legend_pool_size");
+    }
+    {
+        // 기대 순서 — `LegendId` 3~8과 같아야 한다.
+        static const char* kOrder[6] = {"W_EXECUTE", "W_SHOCKWAVE", "W_VORTEX",
+                                        "W_CENTRIFUGE", "W_AFTERSHOCK", "W_FISSURE"};
+        for (uint32_t i = 0; i < ue.size() && i < 6; ++i) {
+            if (!ue.at(i)["id"].strEquals(kOrder[i])) {
+                return fail(DataFile::Cards, "고유 각인 순서가 LegendId와 다르다",
+                            "unique_engravings");
+            }
+        }
+        const json::Value ex = ue.at(0);
+        cfg->executeThresholdPermille = take32(ex["threshold_permille"]);
+        cfg->executeAllAttacks        = ex["scope"].strEquals("all_attacks");
+        feed(cfg->executeAllAttacks ? 1 : 0);
+
+        cfg->shockwaveWidth = Fixed::fromPermille(take32(ue.at(1)["width_millitile"]));
+
+        cfg->vortexDurationTicks = take32(ue.at(2)["duration_ticks"]);
+        cfg->vortexDpsPermille   = take32(ue.at(2)["dps_permille"]);
+
+        cfg->centrifugeStepPermille = take32(ue.at(3)["radius_step_permille"]);
+        cfg->centrifugeMaxStacks    = take32(ue.at(3)["max_stacks"]);
+
+        cfg->aftershockDamagePermille = take32(ue.at(4)["damage_permille"]);
+        cfg->aftershockFuseTicks      = take32(ue.at(4)["fuse_ticks"]);
+
+        cfg->fissureSlowPermille  = take32(ue.at(5)["slow_permille"]);
+        cfg->fissureRadius        = Fixed::fromPermille(take32(ue.at(5)["radius_millitile"]));
+        cfg->fissureDurationTicks = take32(ue.at(5)["duration_ticks"]);
     }
 
     // 일반 등급 스탯 카드 풀. **여기서 빌드 축이 갈린다.**

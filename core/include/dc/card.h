@@ -75,8 +75,20 @@ enum class LegendId : uint16_t {
     Echo  = 0,   // 무한의 메아리 — 기본 공격 1회 추가 발동
     Storm = 1,   // 폭풍의 핵 — 영웅 주위 상시 회전 칼날
     Forge = 2,   // 대장장이의 화로 — 구간 종료 시 아이템 1개 획득
-    UniqueFirst = 3,   // 3~8: 직업 고유 각인 (미설계)
+    // 3~8: 전사 고유 각인. **순서는 `data/cards.json`의 `unique_engravings`와
+    // 같다** — 풀 인덱스가 리플레이에 기록되므로 순서를 바꾸면 기존 로그가 깨진다.
+    Execute    = 3,   // 처형 — 체력 임계 이하 즉시 처치 (영웅의 모든 타격)
+    Shockwave  = 4,   // 충격파 — 단일 타격이 직선 관통으로, 전력 피해
+    Vortex     = 5,   // 소용돌이 — 회전이 지속 장판으로 ★미구현
+    Centrifuge = 6,   // 원심력 — 적을 벨 때마다 반경 증가
+    Aftershock = 7,   // 여진 — 기절 지점 2차 폭발 ★미구현
+    Fissure    = 8,   // 균열 — 기절 지점 지속 둔화 ★미구현
+    UniqueFirst = 3,
 };
+
+// ★미구현 3종(Vortex · Aftershock · Fissure)은 **같은 지역 효과 풀 하나**를
+// 기다린다 — 위치 + 수명 + 상한 + 안정 압축을 갖춘 풀로, `OrbState`와 같은 틀이다.
+// 수치는 이미 `data/cards.json`에 있고 `SimConfig`가 읽는다 (효과만 비어 있다).
 
 constexpr uint32_t legendIndexOf(LegendId l) { return static_cast<uint32_t>(l); }
 

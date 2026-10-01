@@ -205,6 +205,49 @@ int main() {
         }
     }
 
+    dctest::section("고유 각인 6종 — 전설 풀과 맞물리고 수치가 살아 있다");
+    {
+        // **순서는 로더가 id로 검사한다**(LegendId 3~8과 일치). 여기서는 그 뒤에
+        // 남는 관계만 본다 — 값이 비면 효과가 조용히 0이 되는 자리들이다.
+        CHECK_EQ(loaded.legendPoolSize, 9u);    // 유물 3 + 고유 각인 6
+
+        // 처형 — 임계는 열린 구간 (0, 1000)이어야 한다. 0이면 효과가 없고
+        // 1000이면 모든 적이 한 대에 죽는다. 둘 다 크래시 없이 조용히 틀린다.
+        CHECK(loaded.executeThresholdPermille > 0);
+        CHECK(loaded.executeThresholdPermille < 1000);
+        // scope가 스킬 발동이면 예산의 39%에 그친다 (heroes_vertical_slice.md §4)
+        CHECK(loaded.executeAllAttacks);
+        // 보스 면역이 실제로 플래그로 들어왔다 — 없으면 페이즈 2의 80%가 생략된다
+        CHECK((loaded.boss.flags & EntityFlag::ExecuteImmune) != 0);
+
+        // 충격파 — **E_PIERCE보다 좁아야 한다.** 같은 폭에 전력 피해면 예산의
+        // 194%가 된다. 길이는 pierceLength를 공유하므로 따로 없다.
+        CHECK(loaded.shockwaveWidth.raw > 0);
+        CHECK(loaded.shockwaveWidth.raw < loaded.pierceWidth.raw);
+
+        // 원심력 — 상한이 0이면 효과가 없고, 없으면(= 매우 크면) 폭주한다
+        CHECK(loaded.centrifugeStepPermille > 0);
+        CHECK(loaded.centrifugeMaxStacks > 0);
+        CHECK(loaded.centrifugeMaxStacks <= 100);
+
+        // ★효과 미구현 3종도 **값은 적재된다.** 비어 있으면 구현 시점에
+        // "왜 아무 일도 안 나는지"를 로더까지 되짚어야 한다.
+        CHECK(loaded.vortexDurationTicks > 0);
+        CHECK(loaded.vortexDpsPermille > 0);
+        CHECK(loaded.aftershockDamagePermille > 0);
+        CHECK(loaded.aftershockFuseTicks > 0);
+        CHECK(loaded.fissureSlowPermille > 0);
+        CHECK(loaded.fissureSlowPermille <= 1000);
+        CHECK(loaded.fissureRadius.raw > 0);
+        CHECK(loaded.fissureDurationTicks > 0);
+
+        printf("    처형 %d‰(모든 공격·보스 면역) · 충격파 반폭 %d < 관통 %d · "
+               "원심력 +%d‰ 상한 %d\n",
+               loaded.executeThresholdPermille, loaded.shockwaveWidth.raw,
+               loaded.pierceWidth.raw, loaded.centrifugeStepPermille,
+               loaded.centrifugeMaxStacks);
+    }
+
     dctest::section("등급별 CSR — RL_FORGE가 O(1)로 뽑는 근거");
     {
         // CSR이 **아이템 전부를 정확히 한 번씩** 담아야 한다. 한 칸이 비면

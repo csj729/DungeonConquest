@@ -264,6 +264,8 @@ inline Fixed frostMult(const World& w, const SimConfig& cfg, uint32_t i) {
 
 // 관통은 스킬 경로에서도 쓰이므로 선언을 앞에 둔다 (정의는 아래).
 inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
+inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage);
 
 // E_DECAY(부식) — 타격한 적에게 도트를 건다.
 // **갱신이지 중첩이 아니다.** 다시 맞으면 지속이 새로 시작되고 틱당 피해는 큰 쪽이
@@ -285,12 +287,43 @@ inline void applyDecay(World& w, const SimConfig& cfg, uint32_t i) {
 // `hooks`가 false면 onHit 각인을 건너뛴다. **도트 자신은 도트를 갱신하면 안 된다** —
 // decayRun이 매 틱 applyDecay를 다시 부르면 지속이 영원히 새로 시작되어 도트가
 // 끝나지 않는다. 테스트가 이걸 잡았다.
+// W_EXECUTE(처형) — 체력이 임계 이하면 즉시 처치한다. 고유 각인 3번.
+//
+// **비교는 정수 교차곱으로 한다.** `남은 체력 / 최대 체력 <= 임계/1000`을
+// 나눗셈 없이 `남은 체력 × 1000 <= 최대 체력 × 임계`로 본다 — 나눗셈을 쓰면
+// 절삭 방향이 경계에서 결과를 바꾸고, Fixed 나눗셈은 그 자리에서 정밀도를 잃는다.
+// raw는 int32이므로 1000을 곱하기 전에 int64로 승격한다 (부호 있는 오버플로는 UB).
+inline bool executeIfBelowThreshold(World& w, const SimConfig& cfg, uint32_t i) {
+    if (cfg.executeThresholdPermille <= 0) return false;
+    if (!w.cards.legendHas(legendIndexOf(LegendId::Execute))) return false;
+    if ((w.entities.flags[i] & EntityFlag::ExecuteImmune) != 0) return false;
+
+    const int64_t max  = w.entities.maxHp[i].raw;
+    const int64_t left = max - static_cast<int64_t>(w.entities.damageTaken[i].raw);
+    if (left <= 0) return false;                    // 이미 죽을 피해를 받았다
+    if (left * 1000 > max * cfg.executeThresholdPermille) return false;
+
+    w.entities.damageTaken[i] = w.entities.maxHp[i];
+    return true;
+}
+
 inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage,
                            bool hooks = true) {
     if (w.entities.deadAt(i)) return Fixed{};
     const Fixed dealt = mitigate(rawDamage * beaconMult(w, w.entities.archetype[i]),
                                  rendArmor(w, w.entities.armor[i]), cfg.armorK);
     w.entities.damageTaken[i] += dealt;
+
+    // ── W_EXECUTE(처형) — 고유 각인 ──
+    //
+    // **남은 체력을 그대로 채워 죽음 경로로 보낸다.** 별도 처치 처리를 쓰면
+    // 경험치·구슬·클리어 포인트가 두 군데에 적히고, 한쪽만 고치는 사고가 난다.
+    //
+    // `hooks`가 false인 호출(도트 · 보스 장판 · R_BOLT · RL_STORM)은 제외한다 —
+    // 설계가 말한 범위는 **영웅의 타격**이고, 예산도 공속(1.54/s)으로 환산했다.
+    // 틱형 피해까지 포함하면 판정 빈도가 올라 예산을 넘는다.
+    if (hooks) executeIfBelowThreshold(w, cfg, i);
+
     if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) {
         if (hooks) applyDecay(w, cfg, i);   // 살아남은 적에게만 · 도트 자신은 제외
         return dealt;
@@ -367,16 +400,14 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
     for (int32_t pass = 0; pass < hits; ++pass) {
         if (sk.aoe) {
             // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
-            uint32_t hit[config::MAX_ENTITIES];
-            const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY,
-                                               wideRadius(w, aoeRadiusOf(w)),
-                                               hit, config::MAX_ENTITIES);
-            for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], dmg);
+            dealt += applyAoeHits(w, cfg, dmg);
         } else {
             const int32_t d = w.entities.denseOf(w.hero.target);
             if (d >= 0) {
                 dealt += applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
                 applyPierce(w, cfg, static_cast<uint32_t>(d), dmg);
+                // W_SHOCKWAVE(충격파) — **단일기가 직선 관통이 된다.** 고유 각인 4번
+                dealt += applyShockwave(w, cfg, static_cast<uint32_t>(d), dmg);
             }
 
             // E_WIDE(확장) — **단일기는 주변에 여파를 남긴다.**
@@ -653,30 +684,120 @@ inline void boltRun(World& w, const SimConfig& cfg) {
 // 영웅 → 타겟 방향의 반직선 위에서, 타겟보다 멀고 폭 안에 있는 적을 고른다.
 // 직선 판정은 내적(진행 거리)과 외적(수직 거리)으로 한다 — 제곱근이 필요 없고
 // 전부 정수 연산이라 결정론에 안전하다.
-inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage) {
-    const Fixed ratio = w.cards.engrave[engraveIndex(EngraveId::Pierce)];
-    if (ratio.raw <= 0 || cfg.pierceWidth.raw <= 0) return;
-
+// 영웅 → 타겟 반직선 위, 타겟보다 **뒤**이고 폭·길이 안에 있는 적을 모은다.
+// dense 오름차순으로 채우므로 순회 순서가 배열 순서로 고정된다.
+//
+// E_PIERCE(관통)와 W_SHOCKWAVE(충격파)가 같은 기하를 공유한다 — 다른 것은
+// **폭과 피해 비율**뿐이다. 두 벌로 두면 한쪽만 고치는 사고가 난다.
+inline uint32_t collectInLine(const World& w, uint32_t target, Fixed width, Fixed length,
+                              uint32_t* out, uint32_t outMax) {
     const int64_t dx = static_cast<int64_t>(w.entities.posX[target].raw) - w.hero.posX.raw;
     const int64_t dy = static_cast<int64_t>(w.entities.posY[target].raw) - w.hero.posY.raw;
     const int64_t len = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(dx * dx + dy * dy)));
-    if (len <= 0) return;
+    if (len <= 0) return 0;
 
+    uint32_t found = 0;
     const uint32_t n = w.entities.count();
-    for (uint32_t i = 0; i < n; ++i) {
+    for (uint32_t i = 0; i < n && found < outMax; ++i) {
         if (i == target || w.entities.deadAt(i)) continue;
         const int64_t ex = static_cast<int64_t>(w.entities.posX[i].raw) - w.hero.posX.raw;
         const int64_t ey = static_cast<int64_t>(w.entities.posY[i].raw) - w.hero.posY.raw;
         // 진행 거리 = 내적 / |d| — 타겟보다 뒤이고 사거리 안이어야 한다
         const int64_t along = (ex * dx + ey * dy) / len;
         if (along <= len) continue;
-        if (along > len + static_cast<int64_t>(cfg.pierceLength.raw)) continue;
+        if (along > len + static_cast<int64_t>(length.raw)) continue;
         // 수직 거리 = |외적| / |d|
         int64_t perp = (ex * dy - ey * dx) / len;
         if (perp < 0) perp = -perp;
-        if (perp > static_cast<int64_t>(cfg.pierceWidth.raw)) continue;
-        applySkillHit(w, cfg, i, damage * ratio);
+        if (perp > static_cast<int64_t>(width.raw)) continue;
+        out[found++] = i;
     }
+    return found;
+}
+
+inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage) {
+    const Fixed ratio = w.cards.engrave[engraveIndex(EngraveId::Pierce)];
+    if (ratio.raw <= 0 || cfg.pierceWidth.raw <= 0) return;
+
+    uint32_t hit[config::MAX_ENTITIES];
+    const uint32_t n = collectInLine(w, target, cfg.pierceWidth, cfg.pierceLength,
+                                     hit, config::MAX_ENTITIES);
+    for (uint32_t k = 0; k < n; ++k) applySkillHit(w, cfg, hit[k], damage * ratio);
+}
+
+// W_SHOCKWAVE(충격파) — 고유 각인 4번. **단일 타격이 직선 관통으로 바뀐다.**
+//
+// E_PIERCE와 겹쳐 쌓이는 것이 의도다 (cards_vertical_slice.md §4 중복 규칙) —
+// 다만 질이 다르다: 관통은 감쇠된 피해, 충격파는 **전력 피해**다. 그래서 반폭을
+// E_PIERCE(700)의 절반으로 잡았다. 같은 폭에 전력 피해면 예산의 194%가 된다.
+//
+// 길이는 `pierceLength`를 공유한다 — "보이는 만큼 뚫는다"가 두 각인에서 같아야
+// 플레이어가 판정을 하나로 학습한다.
+inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fixed damage) {
+    if (cfg.shockwaveWidth.raw <= 0) return Fixed{};
+    if (!w.cards.legendHas(legendIndexOf(LegendId::Shockwave))) return Fixed{};
+
+    uint32_t hit[config::MAX_ENTITIES];
+    const uint32_t n = collectInLine(w, target, cfg.shockwaveWidth, cfg.pierceLength,
+                                     hit, config::MAX_ENTITIES);
+    Fixed dealt{};
+    for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], damage);
+    return dealt;
+}
+
+// 광역기 한 발. **W_CENTRIFUGE(원심력)가 여기서 반경을 키운다** — 고유 각인 6번.
+//
+// 각인이 없으면 반경 한 번에 한 번 훑는 것으로 끝난다(기존 동작과 같다).
+// 있으면 **벤 수만큼 반경을 키워 다시 훑는다.** 이미 맞은 적은 제외하므로 한
+// 발동에서 같은 적을 두 번 때리지 않는다.
+//
+// ## 결정론
+//
+// `collectInRadius`가 dense 오름차순으로 채우고, 제외 표식도 dense 인덱스다.
+// **틱 중간에는 dense 인덱스가 움직이지 않는다** — 삭제는 틱 종료 압축이므로
+// (world.h) 한 발동 안에서 인덱스가 안정적이다. 죽은 적은 다음 패스의
+// `collectInRadius`가 걸러내므로 표식과 생존 판정이 어긋나지 않는다.
+//
+// ## 종료
+//
+// 새로 맞은 적이 없거나 중첩 상한에 닿으면 멈춘다. 상한이 10이고 패스마다
+// 최소 1중첩이 쌓이므로 **최대 11패스**다 — 512마리에서 11 × O(N)이고,
+// dc_load 실측으로 광역 발동은 12.4초마다 한 번이라 비용이 묻힌다.
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage) {
+    const Fixed base = wideRadius(w, aoeRadiusOf(w));
+    uint32_t hit[config::MAX_ENTITIES];
+
+    const bool grow = cfg.centrifugeStepPermille > 0 && cfg.centrifugeMaxStacks > 0
+                   && w.cards.legendHas(legendIndexOf(LegendId::Centrifuge));
+    if (!grow) {
+        const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY, base,
+                                           hit, config::MAX_ENTITIES);
+        Fixed dealt{};
+        for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], damage);
+        return dealt;
+    }
+
+    uint8_t struck[config::MAX_ENTITIES] = {0};
+    Fixed   radius = base;
+    Fixed   dealt{};
+    int32_t stacks = 0;
+    for (;;) {
+        const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY, radius,
+                                           hit, config::MAX_ENTITIES);
+        int32_t fresh = 0;
+        for (uint32_t k = 0; k < n; ++k) {
+            if (struck[hit[k]] != 0) continue;
+            struck[hit[k]] = 1;
+            ++fresh;
+            dealt += applySkillHit(w, cfg, hit[k], damage);
+        }
+        if (fresh == 0 || stacks >= cfg.centrifugeMaxStacks) break;
+        stacks += fresh;
+        if (stacks > cfg.centrifugeMaxStacks) stacks = cfg.centrifugeMaxStacks;
+        radius = base * (Fixed::one()
+                       + Fixed::fromPermille(cfg.centrifugeStepPermille * stacks));
+    }
+    return dealt;
 }
 
 inline void combatRun(World& w, const SimConfig& cfg) {

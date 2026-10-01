@@ -670,8 +670,8 @@ int main() {
             // 해석을 흐리는 요인이라 테스트로 사실을 박아둔다.
             CHECK_EQ(cfg.legendPoolSize, 9u);
             CHECK_EQ(legendIndexOf(LegendId::UniqueFirst), 3u);
-            printf("    전설 풀 %u칸 중 효과 구현 3칸(ECHO·STORM·FORGE) · 고유 각인 6칸은 미구현\n",
-                   cfg.legendPoolSize);
+            printf("    전설 풀 %u칸 중 효과 구현 6칸(유물 3 + 각인 처형·충격파·원심력)"
+                   " · 소용돌이·여진·균열 3칸은 미구현\n", cfg.legendPoolSize);
         }
     }
 

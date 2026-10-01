@@ -164,6 +164,39 @@ struct SimConfig {
     // RL_STORM(폭풍의 핵) — 반경과 초당 피해(공격력 대비 permille)
     Fixed    stormRadius{};
     int32_t  stormDpsPermille = 0;
+
+    // ── 고유 각인 (전설 풀 3~8번 · heroes_vertical_slice.md §4) ──
+    //
+    // **전부 배수가 아니라 성질을 바꾼다.** 그래야 하는 이유는 산수다 — 전설
+    // 예산(총 DPS +15%)을 스킬 하나의 DPS로 나누면 1.03 ~ 2.47배가 필요해서,
+    // 스킬에 붙는 배수로는 채울 수 없다.
+    //
+    // 셋(Vortex · Aftershock · Fissure)은 **값만 적재되고 효과는 아직 없다** —
+    // 지역 효과 풀 하나를 기다린다. 코어가 읽지 않는 설정을 두지 않으려면
+    // 로더에서 빼야 하는데, 그러면 6종 중 3종만 읽는 반쪽 로더가 되고 어느 쪽이
+    // 적재되는지가 두 곳에 흩어진다. 한 번에 다 읽고 **여기 주석 하나로** 어느
+    // 것이 비어 있는지 말한다.
+
+    // W_EXECUTE 처형 — 체력이 이 비율 이하인 대상을 즉시 처치한다.
+    // `executeAllAttacks`가 false면 스킬 발동에만 붙는데, 그러면 발동 주기
+    // 10.8초가 임계 구간보다 길어 임계 50%에서도 예산의 39%에 그친다.
+    int32_t  executeThresholdPermille = 0;
+    bool     executeAllAttacks        = false;
+    // W_SHOCKWAVE 충격파 — 직선 판정의 반폭. 길이는 `pierceLength`를 공유한다.
+    // E_PIERCE(700)의 절반인 이유는 예산이다 — 같은 폭에 전력 피해면 194%가 된다.
+    Fixed    shockwaveWidth{};
+    // W_CENTRIFUGE 원심력 — 적을 벨 때마다 반경이 이만큼 늘고, 상한이 있다.
+    // **상한은 반드시 둔다** — 없으면 물량↑ → 반경↑ → 처치↑ → 물량↑이 폭주한다.
+    int32_t  centrifugeStepPermille = 0;
+    int32_t  centrifugeMaxStacks    = 0;
+    // ★효과 미구현 — 지역 효과 풀 대기
+    int32_t  vortexDurationTicks      = 0;
+    int32_t  vortexDpsPermille        = 0;
+    int32_t  aftershockDamagePermille = 0;
+    int32_t  aftershockFuseTicks      = 0;
+    int32_t  fissureSlowPermille      = 0;
+    Fixed    fissureRadius{};
+    int32_t  fissureDurationTicks     = 0;
     // 타겟 우선순위 거리 감쇠 (타일당). 닿을 수 없는 표적에 묶이지 않게 한다.
     int32_t  targetPriorityFalloffPerTile = 0;
 

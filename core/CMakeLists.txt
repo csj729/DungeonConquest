@@ -77,6 +77,10 @@ dc_add_test(test_inventory  tests/test_inventory.cpp)
 dc_add_test(test_systems    tests/test_systems.cpp)
 dc_add_test(test_qte        tests/test_qte.cpp)
 dc_add_test(test_card       tests/test_card.cpp)
+# 전설 고유 각인. **고정 체크섬이 못 보는 자리다** — dev_script가 전설을 1.5% ×
+# 9칸에서 뽑으므로 1200틱 런이 특정 각인을 집을 확률이 2%뿐이고, 세 효과를 전부
+# 꺼도 골든 값이 안 움직인다. 여기서 각인을 직접 쥐여 발동 경로를 돌린다.
+dc_add_test(test_legend    tests/test_legend.cpp)
 # 물량 부하 **정상성** — 512/1024마리 경로를 ASan·UBSan 빌드에서 실제로 실행한다.
 # 성능 숫자는 도구(dc_load)가 Release에서 잰다. 일반 구간 30~60마리에서는 절대
 # 밟지 않는 배열 넘침·Fixed 오버플로가 여기서만 드러난다.

@@ -13,6 +13,7 @@ sys.path.insert(0, "tools")
 MODULES = [
     ("gamedata", "데이터 로드 · 정수 검사"),
     ("verify_core_constants", "C++ 구조 상수 대조"),
+    ("verify_abi_bindings", "C ABI ↔ C# 선언 대조"),
     # **위 도구 바로 뒤에 둔다.** 저 도구는 C++와 JSON이 같은지만 보고,
     # 이 도구는 그 JSON 값이 올바르게 도출됐는지를 본다. 둘이 사이좋게 같이
     # 틀리면 앞 도구는 74/74 일치로 통과한다 — 실제로 다섯 번 그랬다.

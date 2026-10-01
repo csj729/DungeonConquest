@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: 검증 도구 16개
+      - name: 검증 도구 17개
         run: python3 tools/run_all.py
 
       # **검사가 조용히 무뎌지는 것이 도출식 검사의 고장 방식이다.**

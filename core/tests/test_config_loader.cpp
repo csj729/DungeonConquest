@@ -188,21 +188,64 @@ int main() {
         }
         SimConfig c2; RecipeTable r2; HeroBaseline h2;
         CHECK(ld2.load(&c2, &r2, &h2, &meta));
-        CHECK(meta.tierCount > 0);
-        for (uint32_t i = 1; i < meta.tierCount; ++i) {
+        CHECK(c2.itemTierCount > 0);
+        for (uint32_t i = 1; i < c2.itemTierCount; ++i) {
             CHECK(meta.tierPower[i] > meta.tierPower[i - 1]);   // 사다리는 오른다
         }
         // 뽑기 풀은 전부 최하 등급이다 — **조합으로만 올라간다**는 규칙 (§5)
         for (uint32_t i = 0; i < c2.commonPoolSize; ++i) {
-            CHECK_EQ(meta.tier[c2.commonPool[i]], 0);
+            CHECK_EQ(c2.itemTier[c2.commonPool[i]], 0);
         }
         // 조합 결과는 재료보다 등급이 높다
         for (uint32_t r = 0; r < r2.recipeCount(); ++r) {
             const RecipeData& rd = r2.recipe(r);
             for (uint32_t k = 0; k < rd.count; ++k) {
-                CHECK(meta.tier[rd.result] > meta.tier[rd.ingredients[k]]);
+                CHECK(c2.itemTier[rd.result] > c2.itemTier[rd.ingredients[k]]);
             }
         }
+    }
+
+    dctest::section("등급별 CSR — RL_FORGE가 O(1)로 뽑는 근거");
+    {
+        // CSR이 **아이템 전부를 정확히 한 번씩** 담아야 한다. 한 칸이 비면
+        // 그 아이템은 화로에서 영영 안 나오는데 크래시는 없다.
+        CHECK_EQ(loaded.tierStart[0], 0u);
+        CHECK_EQ(loaded.tierStart[loaded.itemTierCount], loaded.itemTypeCount);
+
+        uint32_t seen[DC_MAX_ITEM_TYPES_CFG] = {0};
+        for (uint32_t t = 0; t < loaded.itemTierCount; ++t) {
+            CHECK(loaded.tierItemCount(t) > 0);          // 빈 등급은 데이터 오류다
+            for (uint32_t k = loaded.tierStart[t]; k < loaded.tierStart[t + 1]; ++k) {
+                const uint32_t id = loaded.tierItems[k];
+                CHECK(id < loaded.itemTypeCount);
+                CHECK_EQ(loaded.itemTier[id], static_cast<uint8_t>(t));   // 제자리에 있다
+                ++seen[id];
+            }
+        }
+        for (uint32_t i = 0; i < loaded.itemTypeCount; ++i) CHECK_EQ(seen[i], 1u);
+
+        // 최하 등급 칸 수 = 뽑기 풀 크기. 두 경로가 같은 "흔함"을 보고 있다
+        CHECK_EQ(loaded.tierItemCount(0), loaded.commonPoolSize);
+
+        // 계수 정렬은 등급 안에서 **인덱스 순서를 보존**한다 (결정론 전제)
+        for (uint32_t t = 0; t < loaded.itemTierCount; ++t) {
+            for (uint32_t k = loaded.tierStart[t] + 1; k < loaded.tierStart[t + 1]; ++k) {
+                CHECK(loaded.tierItems[k] > loaded.tierItems[k - 1]);
+            }
+        }
+
+        // 화로 확률 — 합 1000이고, 확률이 붙은 등급에는 아이템이 있다
+        int32_t sum = 0;
+        for (uint32_t t = 0; t < MAX_ITEM_TIERS; ++t) {
+            sum += loaded.forgeTierRate[t];
+            if (loaded.forgeTierRate[t] > 0) CHECK(loaded.tierItemCount(t) > 0);
+        }
+        CHECK_EQ(sum, 1000);
+        printf("    등급 %u단 · 칸 수", loaded.itemTierCount);
+        for (uint32_t t = 0; t < loaded.itemTierCount; ++t) {
+            printf(" %u(%d‰)", loaded.tierItemCount(t), loaded.forgeTierRate[t]);
+        }
+        printf("\n");
     }
 
     dctest::section("**깨진 데이터는 조용히 통과하지 않는다**");

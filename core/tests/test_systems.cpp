@@ -475,7 +475,7 @@ int main() {
         auto play = [&](uint64_t seed, int32_t ticks) {
             World w = makeWorld(seed);
             static SimScratch scratch;
-            for (int32_t i = 0; i < ticks; ++i) stepWorld(w, cfg, scratch);
+            for (int32_t i = 0; i < ticks; ++i) stepWorld(w, cfg, dev::data().table, scratch);
             return w.checksum();
         };
         CHECK_EQU(play(20250921, 2000), play(20250921, 2000));
@@ -676,7 +676,7 @@ int main() {
         World w = makeWorld(24);
         w.hero.corruption = Fixed(1200);
         w.run.clearPoints = cfg.segmentStartPoints[1];
-        progressRun(w, cfg);                       // 구간 1 → 2, 한 칸
+        progressRun(w, cfg, dev::data().table);                       // 구간 1 → 2, 한 칸
         CHECK_EQ(Fixed(1200).raw - w.hero.corruption.raw, Fixed(cfg.segmentClearPurge).raw);
 
         // **한 틱에 두 구간을 넘겨도 두 칸분을 준다** — 한 번만 주면 빨리 미는
@@ -684,9 +684,97 @@ int main() {
         World w2 = makeWorld(25);
         w2.hero.corruption = Fixed(1200);
         w2.run.clearPoints = cfg.segmentStartPoints[3];
-        progressRun(w2, cfg);                      // 구간 1 → 4, 세 칸
+        progressRun(w2, cfg, dev::data().table);                      // 구간 1 → 4, 세 칸
         CHECK_EQ(w2.run.segmentIndex, 3);
         CHECK_EQ(Fixed(1200).raw - w2.hero.corruption.raw, Fixed(3 * cfg.segmentClearPurge).raw);
+    }
+
+    dctest::section("RL_FORGE — 구간 종료 시 아이템, 건너뛴 칸 수만큼");
+    {
+        const RecipeTable& table = dev::data().table;
+        auto held = [&](const World& x) {
+            int32_t n = 0;
+            for (uint32_t i = 0; i < cfg.itemTypeCount; ++i) {
+                n += x.inventory.count(static_cast<ItemId>(i));
+            }
+            return n;
+        };
+
+        // **없으면 아무 일도 없다.** 효과가 전설 소지와 무관하게 돌면 전설이
+        // 전설이 아니게 되는데, 증상은 "아이템이 좀 많다"뿐이라 안 보인다.
+        World off = makeWorld(240);
+        off.run.clearPoints = cfg.segmentStartPoints[1];
+        progressRun(off, cfg, table);
+        CHECK_EQ(held(off), 0);
+
+        World w = makeWorld(241);
+        w.cards.legendTake(legendIndexOf(LegendId::Forge));
+        w.run.clearPoints = cfg.segmentStartPoints[1];
+        progressRun(w, cfg, table);                 // 한 칸 → 1개
+        CHECK_EQ(held(w), 1);
+
+        // 한 틱에 세 칸을 넘기면 세 개다 — 정화와 같은 규칙
+        World w3 = makeWorld(242);
+        w3.cards.legendTake(legendIndexOf(LegendId::Forge));
+        w3.run.clearPoints = cfg.segmentStartPoints[3];
+        progressRun(w3, cfg, table);
+        CHECK_EQ(w3.run.segmentIndex, 3);
+        CHECK_EQ(held(w3), 3);
+
+        // 진행이 멈추면 더 주지 않는다 (같은 구간을 다시 평가해도 재발동 없음)
+        progressRun(w3, cfg, table);
+        CHECK_EQ(held(w3), 3);
+
+        // **아이템이 실제로 스탯에 반영된다.** 지급만 하고 refresh를 빠뜨리면
+        // 인벤은 늘어나는데 영웅은 그대로인 조용한 실패가 된다.
+        World st = makeWorld(243);
+        const Fixed before = st.hero.stats.value(Stat::AttackPower);
+        st.cards.legendTake(legendIndexOf(LegendId::Forge));
+        st.run.clearPoints = cfg.segmentStartPoints[7];
+        progressRun(st, cfg, table);                // 일곱 칸 → 아이템 7개
+        CHECK_EQ(held(st), 7);
+        CHECK(st.hero.stats.value(Stat::AttackPower).raw > before.raw);
+    }
+
+    dctest::section("RL_FORGE 등급 분포 — 데이터의 확률을 따라간다");
+    {
+        // **코어가 데이터를 그대로 쓰는지**를 본다. 기대값을 여기 적으면 두 번째
+        // 진실 원천이 되므로, `cfg.forgeTierRate`에서 받아 비교한다.
+        const RecipeTable& table = dev::data().table;
+        constexpr int32_t N = 20000;
+        int32_t got[MAX_ITEM_TIERS] = {0};
+        World w = makeWorld(244);
+        for (int32_t i = 0; i < N; ++i) {
+            // 어느 등급이 늘었는지 보려면 지급 전후를 비교해야 한다
+            uint16_t snapshot[DC_MAX_ITEM_TYPES_CFG];
+            for (uint32_t k = 0; k < cfg.itemTypeCount; ++k) {
+                snapshot[k] = w.inventory.count(static_cast<ItemId>(k));
+            }
+            CHECK(forgeGrant(w, cfg, table));
+            for (uint32_t k = 0; k < cfg.itemTypeCount; ++k) {
+                if (w.inventory.count(static_cast<ItemId>(k)) != snapshot[k]) {
+                    ++got[cfg.itemTier[k]];
+                    break;
+                }
+            }
+        }
+        printf("    %d회 굴림:", N);
+        for (uint32_t t = 0; t < cfg.itemTierCount; ++t) {
+            const int32_t want = cfg.forgeTierRate[t] * N / 1000;
+            printf(" %u등급 %d(기대 %d)", t, got[t], want);
+            // 3σ는 N=20000·p=0.6에서 ±208이다. ±2%p(±400)면 느슨하지만
+            // **확률이 뒤바뀌거나 칸이 밀리는** 종류의 사고는 전부 잡는다.
+            CHECK(got[t] >= want - N / 50 && got[t] <= want + N / 50);
+        }
+        printf("\n");
+
+        // 같은 등급 안은 균등이다 — 한 종류도 빠지지 않는다
+        for (uint32_t t = 0; t < cfg.itemTierCount; ++t) {
+            if (cfg.forgeTierRate[t] == 0) continue;
+            for (uint32_t k = cfg.tierStart[t]; k < cfg.tierStart[t + 1]; ++k) {
+                CHECK(w.inventory.count(static_cast<ItemId>(cfg.tierItems[k])) > 0);
+            }
+        }
     }
 
     dctest::section("E_LEECH — 입힌 피해에 비례해 정화한다");
@@ -737,22 +825,22 @@ int main() {
         // 표를 직접 읽어 경계를 잡는다.
         for (int32_t seg = 0; seg < cfg.segmentsPerMap; ++seg) {
             w.run.clearPoints = cfg.segmentStartPoints[seg];
-            progressRun(w, cfg);
+            progressRun(w, cfg, dev::data().table);
             CHECK_EQ(w.run.segmentIndex, seg);
             // 다음 경계 직전은 아직 이 구간이다
             const int32_t next = seg + 1 < cfg.segmentsPerMap
                                ? cfg.segmentStartPoints[seg + 1] : cfg.clearTargetPoints;
             w.run.clearPoints = next - 1;
-            progressRun(w, cfg);
+            progressRun(w, cfg, dev::data().table);
             CHECK_EQ(w.run.segmentIndex, seg);
         }
         // 목표를 넘겨도 표 밖으로 나가지 않는다
         w.run.clearPoints = cfg.clearTargetPoints * 1000;
-        progressRun(w, cfg);
+        progressRun(w, cfg, dev::data().table);
         CHECK_EQ(w.run.segmentIndex, cfg.segmentsPerMap - 1);
         // **되돌아가지 않는다** — 게이지가 깎여도 구간은 유지된다
         w.run.clearPoints = 0;
-        progressRun(w, cfg);
+        progressRun(w, cfg, dev::data().table);
         CHECK_EQ(w.run.segmentIndex, cfg.segmentsPerMap - 1);
 
         // 램프가 실제로 살아 있는가 — 배치 표 첫 칸만 쓰이면 난이도가 평평해진다
@@ -775,7 +863,7 @@ int main() {
         static SimScratch scratch;
         int32_t prevKills = 0, worstGap = 0, gap = 0;
         for (int32_t i = 0; i < 6000; ++i) {     // 300초
-            stepWorld(w, cfg, scratch);
+            stepWorld(w, cfg, dev::data().table, scratch);
             const int32_t kills = w.run.killedTrash + w.run.killedElite;
             if (kills > prevKills) { prevKills = kills; gap = 0; }
             else if (aliveCount(w.entities) > 0) {

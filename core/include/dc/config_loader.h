@@ -79,11 +79,12 @@ inline const char* statJsonName(uint32_t i) {
 //
 // 축·등급 어휘는 데이터가 정한다 (`items.json`의 `axes` · `grades` 목록 순서).
 // C++가 "화력"을 알고 있으면 그것도 하드코딩이다.
+// **등급은 여기 없다.** RL_FORGE가 등급으로 추첨하면서 시뮬도 등급을 알아야
+// 했으므로 `SimConfig::itemTier` 하나로 모았다 — 같은 값이 두 곳에 살면 한쪽만
+// 고치는 사고가 난다 (CLAUDE.md).
 struct ItemMeta {
-    uint8_t  axis[DC_MAX_ITEM_TYPES_CFG]{};   // axes 목록의 인덱스
-    uint8_t  tier[DC_MAX_ITEM_TYPES_CFG]{};   // grades 목록의 인덱스
-    int32_t  tierPower[8]{};                  // 등급별 총 위력 permille
-    uint32_t tierCount = 0;
+    uint8_t  axis[DC_MAX_ITEM_TYPES_CFG]{};        // axes 목록의 인덱스
+    int32_t  tierPower[MAX_ITEM_TIERS]{};          // 등급별 총 위력 permille
 };
 
 // 영웅 기준선. `World::init()` 뒤에 `StatBlock::init`으로 심는다.
@@ -447,6 +448,29 @@ inline bool ConfigLoader::loadCards(const json::Doc& d, SimConfig* cfg) {
     cfg->swarmRadius   = Fixed::fromPermille(take32(r["swarm_radius_millitile"]));
     cfg->swarmMaxStacks = take32(r["swarm_max_stacks"]);
 
+    // RL_FORGE 등급 확률. **합이 1000이어야 한다** — 모자라면 아무 일도 일어나지
+    // 않는 발동이 생기고, 넘치면 뒤쪽 등급이 도달 불가가 된다. 둘 다 조용히
+    // 틀리는 종류라 여기서 막는다. 칸 수는 `items.json`의 등급 수와 맞물리므로
+    // `loadItems`가 한 번 더 대조한다 (cards가 items보다 먼저 읽힌다).
+    const json::Value fr = r["forge_tier_rate_permille"];
+    if (fr.size() == 0 || fr.size() > MAX_ITEM_TIERS) {
+        return fail(DataFile::Cards, "화로 등급 확률 칸 수가 범위를 벗어난다",
+                    "forge_tier_rate_permille");
+    }
+    int32_t frSum = 0;
+    for (uint32_t i = 0; i < fr.size(); ++i) {
+        cfg->forgeTierRate[i] = take32(fr.at(i));
+        if (cfg->forgeTierRate[i] < 0) {
+            return fail(DataFile::Cards, "화로 등급 확률이 음수다",
+                        "forge_tier_rate_permille");
+        }
+        frSum += cfg->forgeTierRate[i];
+    }
+    if (frSum != 1000) {
+        return fail(DataFile::Cards, "화로 등급 확률 합이 1000이 아니다",
+                    "forge_tier_rate_permille");
+    }
+
     // 일반 등급 스탯 카드 풀. **여기서 빌드 축이 갈린다.**
     const json::Value pool = r["stat_card_pool"];
     if (pool.size() > STAT_COUNT) {
@@ -518,33 +542,75 @@ inline bool ConfigLoader::loadItems(const json::Doc& d, SimConfig* cfg, RecipeTa
     for (uint32_t i = 0; i < commons.size(); ++i) readStats(commons.at(i), i);
     for (uint32_t i = 0; i < rs.size(); ++i)      readStats(rs.at(i), commons.size() + i);
 
-    // ── 하네스용 메타 (축 · 등급) ──
-    if (meta != nullptr) {
-        const json::Value axes   = root["axes"];
-        const json::Value grades = root["grades"];
-        const json::Value power  = root["tier_power_permille"];
-        if (power.size() > 8) return fail(DataFile::Items, "등급이 8을 넘는다",
-                                          "tier_power_permille");
-        meta->tierCount = power.size();
-        for (uint32_t i = 0; i < power.size(); ++i) meta->tierPower[i] = power.at(i).asI32();
+    // ── 등급 · 축 ──
+    //
+    // **등급은 시뮬도 읽는다** (RL_FORGE가 등급으로 추첨한다). 축은 하네스의
+    // 카드 정책 전용이라 `meta`가 있을 때만 채운다.
+    const json::Value axes   = root["axes"];
+    const json::Value grades = root["grades"];
+    if (grades.size() == 0 || grades.size() > MAX_ITEM_TIERS) {
+        return fail(DataFile::Items, "등급 수가 범위를 벗어난다", "grades");
+    }
+    cfg->itemTierCount = grades.size();
 
-        // **어휘를 C++가 알고 있으면 그것도 하드코딩이다** — 목록에서 인덱스를 찾는다.
-        auto indexIn = [&](const json::Value& list, const json::Value& name) -> uint32_t {
-            for (uint32_t i = 0; i < list.size(); ++i) {
-                if (name.strSame(list.at(i))) return i;
-            }
-            return list.size();   // 못 찾음
-        };
-        for (uint32_t i = 0; i < itemCount; ++i) {
-            const json::Value item = i < commons.size()
-                ? commons.at(i) : rs.at(i - commons.size());
+    // **어휘를 C++가 알고 있으면 그것도 하드코딩이다** — 목록에서 인덱스를 찾는다.
+    auto indexIn = [&](const json::Value& list, const json::Value& name) -> uint32_t {
+        for (uint32_t i = 0; i < list.size(); ++i) {
+            if (name.strSame(list.at(i))) return i;
+        }
+        return list.size();   // 못 찾음
+    };
+    for (uint32_t i = 0; i < itemCount; ++i) {
+        const json::Value item = i < commons.size()
+            ? commons.at(i) : rs.at(i - commons.size());
+        const uint32_t g = indexIn(grades, item["grade"]);
+        if (g >= grades.size()) return fail(DataFile::Items, "모르는 등급 이름", "grade");
+        cfg->itemTier[i] = static_cast<uint8_t>(g);
+        feed(g);   // 등급이 시뮬에 들어가므로 지문에도 들어간다
+
+        if (meta != nullptr) {
             const uint32_t a = indexIn(axes, item["axis"]);
-            const uint32_t g = indexIn(grades, item["grade"]);
-            if (a >= axes.size() || g >= grades.size()) {
-                return fail(DataFile::Items, "모르는 축 또는 등급 이름");
-            }
+            if (a >= axes.size()) return fail(DataFile::Items, "모르는 축 이름", "axis");
             meta->axis[i] = static_cast<uint8_t>(a);
-            meta->tier[i] = static_cast<uint8_t>(g);
+        }
+    }
+    if (meta != nullptr) {
+        const json::Value power = root["tier_power_permille"];
+        if (power.size() != grades.size()) {
+            return fail(DataFile::Items, "등급 수와 위력 표 길이가 다르다",
+                        "tier_power_permille");
+        }
+        for (uint32_t i = 0; i < power.size(); ++i) meta->tierPower[i] = power.at(i).asI32();
+    }
+
+    // 등급별 목록을 **계수 정렬**로 CSR에 눕힌다. 두 패스뿐이고(세기 → 배치)
+    // 같은 등급 안에서 아이템 인덱스 순서가 보존된다 — RL_FORGE가 O(1)로
+    // "등급 안에서 균등"을 뽑는 근거다 (`SimConfig::tierItems` 주석 참조).
+    for (uint32_t i = 0; i < itemCount; ++i) ++cfg->tierStart[cfg->itemTier[i] + 1];
+    for (uint32_t t = 0; t < cfg->itemTierCount; ++t) {
+        cfg->tierStart[t + 1] += cfg->tierStart[t];
+    }
+    {
+        uint32_t cursor[MAX_ITEM_TIERS + 1];
+        for (uint32_t t = 0; t <= cfg->itemTierCount; ++t) cursor[t] = cfg->tierStart[t];
+        for (uint32_t i = 0; i < itemCount; ++i) {
+            cfg->tierItems[cursor[cfg->itemTier[i]]++] = static_cast<uint16_t>(i);
+        }
+    }
+
+    // 화로 확률 표는 cards.json에서 왔다. **등급 수와 칸 수가 어긋나면 조용히
+    // 도달 불가 등급이나 아무 일도 없는 발동이 생긴다** — 두 파일을 맞대 보는
+    // 유일한 지점이 여기다 (합 검사는 `loadCards`가 이미 했다).
+    for (uint32_t t = 0; t < cfg->itemTierCount; ++t) {
+        if (cfg->forgeTierRate[t] != 0 && cfg->tierItemCount(t) == 0) {
+            return fail(DataFile::Items, "화로가 아이템 없는 등급을 뽑게 되어 있다",
+                        "grades");
+        }
+    }
+    for (uint32_t t = cfg->itemTierCount; t < MAX_ITEM_TIERS; ++t) {
+        if (cfg->forgeTierRate[t] != 0) {
+            return fail(DataFile::Items, "화로 등급 확률이 등급 수보다 많다",
+                        "forge_tier_rate_permille");
         }
     }
 

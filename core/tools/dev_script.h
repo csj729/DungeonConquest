@@ -104,7 +104,7 @@ inline void scriptTick(World& w, const SimConfig& cfg, const RecipeTable& table)
     }
 
     static SimScratch scratch;      // [파생] — 매 틱 재구축되므로 World 밖에 둔다
-    stepWorld(w, cfg, scratch);              // ← 실제 틱 루프
+    stepWorld(w, cfg, table, scratch);              // ← 실제 틱 루프
 }
 
 inline void runScript(World& w, int32_t ticks) {

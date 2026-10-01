@@ -44,7 +44,7 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
 
     static SimScratch scratch;
     for (int32_t t = 0; t < ticks; ++t) {
-        stepWorld(w, c, scratch);
+        stepWorld(w, c, dev::data().table, scratch);
         if (t < ticks / 4) continue;          // 초반 과도구간은 버린다
 
         int32_t contact = 0, alive = 0, inAoe = 0;
@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
         World w;
                 initWorld(w, 20250921, dev::data().cfg, dev::data().table, dev::data().hero);
         static SimScratch sc;
-        for (int32_t t = 0; t < ticks; ++t) stepWorld(w, cfg, sc);
+        for (int32_t t = 0; t < ticks; ++t) stepWorld(w, cfg, dev::data().table, sc);
         printf("%10s %10s %10s\n", "반경", "타격 수", "비율");
         for (int32_t rp : {1000, 1500, 2000, 2500, 3000, 4000}) {
             const Fixed r = Fixed::fromPermille(rp);

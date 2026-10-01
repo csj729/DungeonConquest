@@ -374,7 +374,6 @@ int main() {
 
         const RecipeTable& table = dev::data().table;
         const SimConfig&   cfg   = dev::data().cfg;
-        const ItemMeta&    meta  = dev::data().meta;
 
         // 인벤토리가 **실제** 테이블을 들고 있어야 입력이 받아들여진다
         CHECK(w.inventory.matches(table));
@@ -385,15 +384,15 @@ int main() {
             const int32_t c = w.inventory.count(static_cast<ItemId>(i));
             if (c <= 0) continue;
             total += c;
-            if (meta.tier[i] > 0) aboveCommon += c;
-            if (meta.tier[i] > topTier) topTier = meta.tier[i];
+            if (cfg.itemTier[i] > 0) aboveCommon += c;
+            if (cfg.itemTier[i] > topTier) topTier = cfg.itemTier[i];
         }
         CHECK(total > 0);
         CHECK(aboveCommon > 0);          // 조합이 실제로 일어났다
         // **사다리 끝까지 올라간다.** 축소 테이블 시절엔 1단이 상한이었다.
-        CHECK_EQ(topTier, static_cast<int32_t>(meta.tierCount) - 1);
+        CHECK_EQ(topTier, static_cast<int32_t>(cfg.itemTierCount) - 1);
         printf("    1200틱 후 %d개 보유 · 최고 등급 %d/%d · 흔함 초과 %d개\n",
-               total, topTier, meta.tierCount - 1, aboveCommon);
+               total, topTier, cfg.itemTierCount - 1, aboveCommon);
     }
 
     dctest::section("**고정 체크섬** — 시뮬 결과를 말없이 바꾸지 못하게 못 박는다");
@@ -419,12 +418,20 @@ int main() {
         // 테이블을 걷어낸 변경이다 — 사다리가 2단에서 막혀 있던 것이 풀리면서
         // 보유 아이템이 달라졌다. 위 "조합 사다리" 절이 그 결과를 따로 못 박는다.
         //
+        // 세 번째는 RL_FORGE(대장장이의 화로)다. **움직인 것은 설정 지문뿐이다** —
+        // `cards.json`의 `forge_tier_rate_permille`과 `items.json`의 등급이 새로
+        // 지문에 들어갔다. 세 변경(지문에 등급 추가 · 지문에 화로 확률 추가 ·
+        // 화로 발동)을 하나씩 되돌려 확인했고, **앞의 둘만 되돌리면 이전 값이
+        // 정확히 복원된다** — 즉 화로 자체는 이 런에서 한 번도 발동하지 않았다.
+        // 전설 1.5% × 풀 9칸이라 1200틱 런이 화로를 뽑을 확률이 2% 남짓이기
+        // 때문이다. 발동 경로는 `test_systems`의 RL_FORGE 두 절이 직접 못 박는다.
+        //
         // 이 값이 깨지면 시뮬이 바뀐 것이다. **갱신하기 전에 왜 움직였는지
         // 답할 수 있어야 한다.**
         struct Golden { uint64_t seed; int32_t ticks; uint64_t total; };
         constexpr Golden kGolden[] = {
-            {1u,        1200, 10016807016178002919ull},
-            {20250918u, 1200, 2536415252906709173ull},
+            {1u,        1200, 650853166623814782ull},
+            {20250918u, 1200, 13455500439637089810ull},
         };
         for (const Golden& g : kGolden) {
             World w;

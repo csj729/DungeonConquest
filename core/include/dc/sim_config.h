@@ -28,6 +28,7 @@ constexpr uint32_t MAX_SKILLS       = 8;
 constexpr uint32_t MAX_ELITE_TYPES  = 8;
 constexpr uint32_t MAX_ELITE_SPAWNS = 32;   // 맵당 19마리 + 여유
 constexpr uint32_t MAX_BOSS_PATTERNS = 8;   // 페이즈 1은 3개, 페이즈 2 가산분 여유
+constexpr uint32_t MAX_ITEM_TIERS    = 8;   // 수직 슬라이스는 5등급
 
 // 고유 스킬 (§3). 발동은 통합 proc 1회, 어떤 스킬인지는 가중 추첨이다.
 struct SkillConfig {
@@ -71,9 +72,8 @@ struct SimConfig {
     // 로드했는지 가리는 값이다** — `Inventory::tableHash_`가 조합 테이블에 대해
     // 하는 일을 설정 전체로 넓힌 것이다 (§5).
     //
-    // **아직 체크섬에 들어가지 않는다.** 코어가 아직 `dev_data.h`로 설정을 받고
-    // 있어서 이 값이 0인 경로가 살아 있기 때문이다. 로더로 전환하면서 World에
-    // 물린다 — 그때까지는 로더가 채우기만 한다.
+    // `World::bindDataHash()`로 **체크섬 도메인에 들어간다** — 서버와 클라가 다른
+    // 데이터를 들고 있으면 틱 0에서 바로 갈라진다.
     uint64_t dataHash = 0;
 
     // ── 진행 (progression.json) ──
@@ -218,6 +218,31 @@ struct SimConfig {
     // 레벨업 화면 맨 왼쪽 고정 칸이 뽑는 풀. **항상 흔함 등급**이다 (§4).
     uint16_t commonPool[16] = {0};
     uint32_t commonPoolSize = 0;
+
+    // 등급(`items.json`의 `grades` 인덱스). 조합 사다리의 단이자 RL_FORGE의 추첨 축이다.
+    uint8_t  itemTier[DC_MAX_ITEM_TYPES_CFG] = {0};
+    uint32_t itemTierCount = 0;
+
+    // 등급별 아이템 목록 — **CSR(압축 행) 레이아웃**이다.
+    // `tierItems[tierStart[t] .. tierStart[t+1])`이 등급 t의 아이템 전부다.
+    //
+    // RL_FORGE는 "등급 안에서 균등"을 뽑아야 한다. 매번 전체를 훑으면 후보를
+    // 세는 패스와 고르는 패스로 51종 × 2가 되는데, 적재 시 한 번 계수 정렬해
+    // 두면 `tierItems[tierStart[t] + rng.range(n)]` 한 번으로 끝난다 — O(종수)가
+    // O(1)이 된다. 계수 정렬은 **같은 등급 안에서 아이템 인덱스 순서를
+    // 보존**하므로 결정론에도 안전하다(§10: 순회 순서가 결과를 바꾸지 않는다).
+    uint16_t tierItems[DC_MAX_ITEM_TYPES_CFG] = {0};
+    uint32_t tierStart[MAX_ITEM_TIERS + 1]    = {0};
+
+    // RL_FORGE(대장장이의 화로) — 구간 종료 시 받는 아이템의 등급 확률(permille).
+    // **합이 1000이고 로더가 검사한다.** 상위 2등급이 0인 것은 의도다 (§5:
+    // 희귀함·전설적인은 조합으로만 올라간다).
+    int32_t  forgeTierRate[MAX_ITEM_TIERS] = {0};
+
+    uint32_t tierItemCount(uint32_t tier) const {
+        if (tier >= itemTierCount) return 0;
+        return tierStart[tier + 1] - tierStart[tier];
+    }
 
     // ── 로스터 ──
     MonsterConfig   trash{};        // 잡몹은 근접 한 종류뿐이다 (원거리는 폐지)

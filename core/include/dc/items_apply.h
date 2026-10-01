@@ -59,6 +59,39 @@ inline void refreshItemStats(World& w, const SimConfig& cfg) {
     w.hero.slowAura = slow;
 }
 
+// RL_FORGE(대장장이의 화로) — **구간 종료 시 아이템 1개를 무작위로 받는다** (§3).
+//
+// ## 등급 추첨은 두 단계다
+//
+// 등급을 가중 추첨하고, 등급 안에서는 균등이다. 확률(600/280/120)은 조합 비용
+// (1.00/2.00/4.25 흔함 환산)에 반비례해서 세 등급이 기대 가치에 거의 똑같이
+// 기여한다 — 어느 등급이 떠도 장기 가치는 같은데 체감은 특별함이 압도적이다.
+//
+// 등급 안 균등 추첨은 `SimConfig`가 적재 시 깔아 둔 CSR을 쓰므로 **난수 1회 +
+// 배열 조회 1회**다. 후보를 매번 세는 구현이면 발동마다 51종을 두 번 훑는다.
+//
+// ## 굴림 순서는 결과와 무관하게 고정이다
+//
+// `weighted()` → `range()`를 **항상 이 순서로 끝까지 부른다.** 어느 등급이
+// 떴는지, `add`가 거부했는지로 호출이 갈리면 그 분기가 그대로 난수열 분기점이
+// 되어 "아이템이 꽉 찬 판만 리플레이가 깨지는" 종류의 버그가 된다 — 그래서
+// 빈 등급 방어와 인벤 거부 처리를 **굴림 뒤에** 둔다.
+//
+// (`Rng::range`는 기각 표집이라 호출당 소비량이 들쭉날쭉하지만, 상태가 난수열
+// 자체이므로 같은 입력이면 같은 횟수를 소비한다 — 결정론에 걸리지 않는다.)
+inline bool forgeGrant(World& w, const SimConfig& cfg, const RecipeTable& table) {
+    if (cfg.itemTierCount == 0) return false;
+    const uint32_t tier = w.rngItems.weighted(cfg.forgeTierRate, cfg.itemTierCount);
+    const uint32_t n    = cfg.tierItemCount(tier);
+    const uint32_t pick = w.rngItems.range(n);
+    if (n == 0) return false;   // 로더가 막지만 코어도 자기 전제를 지킨다
+
+    const ItemId item = static_cast<ItemId>(cfg.tierItems[cfg.tierStart[tier] + pick]);
+    if (!w.inventory.add(table, item)) return false;
+    refreshItemStats(w, cfg);
+    return true;
+}
+
 }  // namespace dc
 
 #endif  // DC_ITEMS_APPLY_H

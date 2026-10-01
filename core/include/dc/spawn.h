@@ -8,6 +8,7 @@
 
 #include <cstdint>
 
+#include "items_apply.h"
 #include "sim_config.h"
 #include "world.h"
 
@@ -69,7 +70,9 @@ inline SpawnDesc makeDesc(const MonsterConfig& m, Fixed hp) {
 //
 // segmentIndex는 지금은 clearPoints의 함수지만 [상태]로 남긴다 — 맵 진행
 // (mapIndex)이 붙으면 게이지가 리셋되면서 순수 함수가 아니게 된다.
-inline void progressRun(World& w, const SimConfig& cfg) {
+// RL_FORGE가 테이블을 요구하므로 `table`을 받는다 — 아이템을 넣는 쪽은 어디든
+// `Inventory::matches`를 통과해야 한다 (§5).
+inline void progressRun(World& w, const SimConfig& cfg, const RecipeTable& table) {
     if (cfg.segmentsPerMap <= 0) return;
     const int32_t seg = cfg.segmentForPoints(w.run.clearPoints);
     // **진행도는 되돌아가지 않는다** (§2). 게이지가 줄지 않으므로 지금은
@@ -80,6 +83,16 @@ inline void progressRun(World& w, const SimConfig& cfg) {
     // 게이지가 한 틱에 두 구간을 넘길 수 있으므로, 넘긴 칸 수로 곱해야 한다 —
     // 한 번만 주면 빨리 미는 빌드가 오히려 손해를 본다.
     w.purgeCorruption(Fixed((seg - w.run.segmentIndex) * cfg.segmentClearPurge));
+
+    // RL_FORGE(대장장이의 화로) — **넘긴 칸마다 한 개**다. 정화와 같은 이유로
+    // 곱해야 한다. 한 번만 주면 엘리트를 연달아 잡아 두 구간을 한 틱에 넘기는
+    // 빌드가 오히려 손해를 본다.
+    //
+    // **런 전체 기대 획득량이 획득 시점으로 4배 갈린다** — 전설 유물 중 유일하게
+    // 시점에 민감한 효과다 (cards_vertical_slice.md §3).
+    if (w.cards.legendHas(legendIndexOf(LegendId::Forge))) {
+        for (int32_t k = w.run.segmentIndex; k < seg; ++k) forgeGrant(w, cfg, table);
+    }
     w.run.segmentIndex = seg;
     // R_TIDE(밀물의 인장)가 여기서 리셋된다 — 구간 경과에 비례해 오르는 유물이다.
     w.run.segmentStartTick = w.tickCount();

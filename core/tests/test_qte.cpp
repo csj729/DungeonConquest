@@ -85,7 +85,7 @@ int main() {
                     e.kind = InputKind::QteGrade; e.value = static_cast<uint32_t>(grade);
                     (void)w.applyInput(e);
                 }
-                stepWorld(w, cfg, sc);
+                stepWorld(w, cfg, dev::data().table, sc);
             }
             const int32_t dense = w.entities.denseOf(t);
             return w.entities.damageTaken[static_cast<uint32_t>(dense)].raw;
@@ -121,7 +121,7 @@ int main() {
                     }
                     ++resolved;
                 }
-                stepWorld(w, cfg, sc);
+                stepWorld(w, cfg, dev::data().table, sc);
             }
             struct R { int32_t corruption, cc, groggy, count; };
             const uint32_t d = static_cast<uint32_t>(w.entities.denseOf(e));
@@ -154,7 +154,7 @@ int main() {
         SimScratch sc;
         bool sawCrisis = false, sawSkill = false;
         for (int i = 0; i < 400; ++i) {
-            stepWorld(w, cfg, sc);
+            stepWorld(w, cfg, dev::data().table, sc);
             if (w.hero.qte.kind == QteKind::CrisisEvade)  sawCrisis = true;
             if (w.hero.qte.kind == QteKind::SkillAmplify) sawSkill = true;
         }
@@ -171,9 +171,9 @@ int main() {
         w.hero.target = e;
         SimScratch sc;
         const int32_t before = w.hero.corruption.raw;
-        for (int i = 0; i < 20; ++i) stepWorld(w, cfg, sc);
+        for (int i = 0; i < 20; ++i) stepWorld(w, cfg, dev::data().table, sc);
         CHECK_EQ(w.hero.corruption.raw, before);   // 그로기 동안 때리지 못한다
-        for (int i = 0; i < 60; ++i) stepWorld(w, cfg, sc);
+        for (int i = 0; i < 60; ++i) stepWorld(w, cfg, dev::data().table, sc);
         CHECK(w.hero.corruption.raw > before);     // 풀리면 다시 때린다
     }
 
@@ -232,7 +232,7 @@ int main() {
                     InputEvent e;
                     while (log.next(w.tickCount(), &e)) (void)w.applyInput(e);
                 }
-                stepWorld(w, cfg, sc);
+                stepWorld(w, cfg, dev::data().table, sc);
             }
             return w.checksum();
         };
@@ -271,7 +271,7 @@ int main() {
         QteKind last = QteKind::None;
         const int32_t SEGMENT_TICKS = 500;    // 구간 1 목표
         for (int32_t i = 0; i < SEGMENT_TICKS; ++i) {
-            stepWorld(w, cfg, sc);
+            stepWorld(w, cfg, dev::data().table, sc);
             if (w.hero.qte.kind != last && w.hero.qte.open()) {
                 if (w.hero.qte.kind == QteKind::SkillAmplify) ++skill; else ++crisis;
             }

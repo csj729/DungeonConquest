@@ -68,7 +68,7 @@ void stepOnce(World& w, const SimConfig& cfg, dev::Policy policy, Rng& choiceRng
         (void)applyInput(w, cfg, dev::data().table, e);
     }
     for (;;) {
-        const int32_t r = dev::chooseCraft(policy, dev::data().meta, w.inventory, dev::data().table, choiceRng);
+        const int32_t r = dev::chooseCraft(policy, cfg, dev::data().meta, w.inventory, dev::data().table, choiceRng);
         if (r < 0) break;
         InputEvent ce;
         ce.tick  = w.tickCount();
@@ -76,7 +76,7 @@ void stepOnce(World& w, const SimConfig& cfg, dev::Policy policy, Rng& choiceRng
         ce.value = static_cast<uint32_t>(r);
         if (!applyInput(w, cfg, dev::data().table, ce)) break;
     }
-    stepWorld(w, cfg, scratch);
+    stepWorld(w, cfg, dev::data().table, scratch);
 }
 
 enum Variant { A_BASE = 0, B_NO_LEECH, C_NO_ORB, D_INFLOW, VARIANTS };

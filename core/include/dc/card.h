@@ -79,16 +79,19 @@ enum class LegendId : uint16_t {
     // 같다** — 풀 인덱스가 리플레이에 기록되므로 순서를 바꾸면 기존 로그가 깨진다.
     Execute    = 3,   // 처형 — 체력 임계 이하 즉시 처치 (영웅의 모든 타격)
     Shockwave  = 4,   // 충격파 — 단일 타격이 직선 관통으로, 전력 피해
-    Vortex     = 5,   // 소용돌이 — 회전이 지속 장판으로 ★미구현
+    Vortex     = 5,   // 소용돌이 — 회전이 지속 장판으로
     Centrifuge = 6,   // 원심력 — 적을 벨 때마다 반경 증가
-    Aftershock = 7,   // 여진 — 기절 지점 2차 폭발 ★미구현
-    Fissure    = 8,   // 균열 — 기절 지점 지속 둔화 ★미구현
+    Aftershock = 7,   // 여진 — 캐스트 중심에 2차 폭발
+    Fissure    = 8,   // 균열 — 캐스트 중심에 지속 둔화 지역
     UniqueFirst = 3,
 };
 
-// ★미구현 3종(Vortex · Aftershock · Fissure)은 **같은 지역 효과 풀 하나**를
-// 기다린다 — 위치 + 수명 + 상한 + 안정 압축을 갖춘 풀로, `OrbState`와 같은 틀이다.
-// 수치는 이미 `data/cards.json`에 있고 `SimConfig`가 읽는다 (효과만 비어 있다).
+// **9칸 전부 효과가 있다.** Vortex · Aftershock · Fissure는 `ZoneState`(world.h)
+// 하나를 `kind` 값 세 개로 나눠 쓴다 — 위치 + 수명 + 상한 + 안정 압축이 셋 다
+// 같은 모양이라, `if`를 늘리지 않고 풀 하나로 표현된다.
+//
+// **각인이 어느 스킬에 붙는지는 `SimConfig::uniqueSkill`이 안다** (데이터에서 온다).
+// `aoe` 여부로 가르면 원심력이 광역기 둘 다에 걸려 예산의 221%가 된다.
 
 constexpr uint32_t legendIndexOf(LegendId l) { return static_cast<uint32_t>(l); }
 

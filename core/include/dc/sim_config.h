@@ -177,6 +177,22 @@ struct SimConfig {
     // 적재되는지가 두 곳에 흩어진다. 한 번에 다 읽고 **여기 주석 하나로** 어느
     // 것이 비어 있는지 말한다.
 
+    // **각 각인이 붙는 스킬 인덱스.** `LegendId::UniqueFirst`(3)부터 6칸이고,
+    // `data/cards.json`의 `unique_engravings[].skill`을 `skills[].id`에서 찾아
+    // 넣는다 — C++가 "W_WHIRL이 1번"을 알고 있으면 그것도 하드코딩이다.
+    //
+    // **이 표가 없으면 각인이 엉뚱한 스킬에서 터진다.** 1차 구현에서 원심력이
+    // `aoe == true`인 스킬 전부(회전 베기 + 대지 가르기)에 걸려 예산의 221%가
+    // 됐다 — 크래시가 없어서 테스트도 전부 초록이었다.
+    int32_t  uniqueSkill[6] = {-1, -1, -1, -1, -1, -1};
+
+    // 각인이 이 스킬에 붙는가. 범위를 벗어나면 false — 효과가 없는 쪽으로 닫는다.
+    bool uniqueOnSkill(uint32_t legendIndex, uint32_t skillIndex) const {
+        if (legendIndex < 3 || legendIndex >= 9) return false;
+        const int32_t want = uniqueSkill[legendIndex - 3];
+        return want >= 0 && static_cast<uint32_t>(want) == skillIndex;
+    }
+
     // W_EXECUTE 처형 — 체력이 이 비율 이하인 대상을 즉시 처치한다.
     // `executeAllAttacks`가 false면 스킬 발동에만 붙는데, 그러면 발동 주기
     // 10.8초가 임계 구간보다 길어 임계 50%에서도 예산의 39%에 그친다.

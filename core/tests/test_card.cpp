@@ -581,16 +581,16 @@ int main() {
             const Fixed r = cfg.frostRadius;
             spawnAt(w, r - Fixed(1), Fixed{}, Archetype::Trash, 100000);   // 안
             spawnAt(w, r + Fixed(5), Fixed{}, Archetype::Trash, 100000);   // 밖
-            CHECK_EQ(frostMult(w, cfg, 0).raw, Fixed::one().raw);          // 유물 없으면 1.0
+            CHECK_EQ(slowMult(w, cfg, 0).raw, Fixed::one().raw);          // 유물 없으면 1.0
 
             w.cards.relic[relicIndex(RelicId::Frost)] = Fixed::fromPermille(100);
-            CHECK_EQ(frostMult(w, cfg, 0).raw,
+            CHECK_EQ(slowMult(w, cfg, 0).raw,
                      (Fixed::one() - Fixed::fromPermille(100)).raw);   // 반경 안 −10%
-            CHECK_EQ(frostMult(w, cfg, 1).raw, Fixed::one().raw);               // 반경 밖 그대로
+            CHECK_EQ(slowMult(w, cfg, 1).raw, Fixed::one().raw);               // 반경 밖 그대로
 
             // 100%를 넘겨도 역주행하지 않는다 (정지까지만)
             w.cards.relic[relicIndex(RelicId::Frost)] = Fixed::fromPermille(1500);
-            CHECK_EQ(frostMult(w, cfg, 0).raw, 0);
+            CHECK_EQ(slowMult(w, cfg, 0).raw, 0);
             printf("    R_FROST 10%%: 반경 %.1f타일 안만 0.90배 · 밖은 1.00배\n",
                    (double)r.raw / Fixed::ONE_RAW);
         }
@@ -670,8 +670,8 @@ int main() {
             // 해석을 흐리는 요인이라 테스트로 사실을 박아둔다.
             CHECK_EQ(cfg.legendPoolSize, 9u);
             CHECK_EQ(legendIndexOf(LegendId::UniqueFirst), 3u);
-            printf("    전설 풀 %u칸 중 효과 구현 6칸(유물 3 + 각인 처형·충격파·원심력)"
-                   " · 소용돌이·여진·균열 3칸은 미구현\n", cfg.legendPoolSize);
+            printf("    전설 풀 %u칸 **전부 효과 구현** (유물 3 + 고유 각인 6)\n",
+                   cfg.legendPoolSize);
         }
     }
 

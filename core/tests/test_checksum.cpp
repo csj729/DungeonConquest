@@ -426,7 +426,16 @@ int main() {
         // 전설 1.5% × 풀 9칸이라 1200틱 런이 화로를 뽑을 확률이 2% 남짓이기
         // 때문이다. 발동 경로는 `test_systems`의 RL_FORGE 두 절이 직접 못 박는다.
         //
-        // 네 번째는 고유 각인 3종(처형·충격파·원심력)이다. **또 설정 지문뿐이다** —
+        // 다섯 번째는 고유 각인 2차(소용돌이·여진·균열 + 스킬 바인딩)다.
+        // **움직인 것은 설정 지문과 체크섬 도메인뿐이다**:
+        //   · `unique_engravings[].skill`이 지문에 들어갔다
+        //   · **로더 순서가 바뀌었다** (skills가 cards보다 먼저여야 각인을 스킬에
+        //     묶을 수 있다) → feed 순서가 바뀌므로 지문이 바뀐다
+        //   · `ZoneState`가 spawn 영역 체크섬에 들어갔다
+        // 시뮬 동작은 그대로다. 아래 루프가 **이 런이 고유 각인을 뽑지 않고 장판을
+        // 깔지 않음을 직접 검사**하므로, 그 주장이 말이 아니라 검사로 남는다.
+        //
+        // 네 번째는 고유 각인 1차(처형·충격파·원심력)였다. **또 설정 지문뿐이다** —
         // `unique_engravings` 수치와 `boss_execute_immune`이 새로 지문에 들어갔다.
         // 효과를 셋 다 끈 빌드와 지문 feed만 뺀 빌드를 각각 돌려 확인했고,
         // **지문만 되돌리면 이전 값이 정확히 복원된다.** 즉 이 런은 세 각인을
@@ -439,8 +448,8 @@ int main() {
         // 답할 수 있어야 한다.**
         struct Golden { uint64_t seed; int32_t ticks; uint64_t total; };
         constexpr Golden kGolden[] = {
-            {1u,        1200, 4318155390477776443ull},
-            {20250918u, 1200, 17559678386819457360ull},
+            {1u,        1200, 15806837728238600908ull},
+            {20250918u, 1200, 9553022293675595301ull},
         };
         for (const Golden& g : kGolden) {
             World w;
@@ -450,8 +459,18 @@ int main() {
                 dev::scriptTick(w, dev::data().cfg, dev::data().table);
             }
             CHECK_EQU(w.checksum(), g.total);
+
+            // **"고유 각인이 안 뽑혀서 값이 안 변했다"를 말이 아니라 검사로 둔다.**
+            // 위 주석이 매번 같은 주장을 반복하는데, 그 전제가 깨지는 날(드라이버
+            // 정책이 바뀌거나 전설 확률이 오르면) 주석은 조용히 거짓이 된다.
+            // 그러면 다음 사람이 체크섬이 움직인 이유를 잘못 짚는다.
+            for (uint32_t u = legendIndexOf(LegendId::UniqueFirst); u < 9; ++u) {
+                CHECK(!w.cards.legendHas(u));
+            }
+            CHECK_EQ(w.zones.count, 0u);     // 장판이 한 번도 깔리지 않았다
         }
-        printf("    시드 %zu개 고정값 일치\n", sizeof(kGolden) / sizeof(kGolden[0]));
+        printf("    시드 %zu개 고정값 일치 · 고유 각인 미획득 · 장판 0개\n",
+               sizeof(kGolden) / sizeof(kGolden[0]));
     }
 
     return dctest::summary("test_checksum");

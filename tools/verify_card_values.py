@@ -13,6 +13,16 @@ import math
 
 기준선은 `balance_baseline.py`의 전사다. 각인은 스킬 하나에만 붙으므로
 **회전 베기**(가중치 0.35, 광역)를 기준 스킬로 삼는다.
+
+## 전설 등급도 여기서 본다
+
+한동안 이 도구는 **공통 각인 8종과 일반 유물 6종만** 검산했다. 그래서 전설 유물
+3종이 예산의 몇 배인지 아무도 보지 않았고, `RL_ECHO`가 예산의 5.4배인 것이
+빨간불로 뜨지 않았다 — 검산 밖에 있는 수치는 틀려도 조용하다.
+
+지금은 전설 유물 3종과 고유 각인 6종을 함께 본다. 유물의 초과는 **의도된
+미결 사항**(전설은 "판의 규칙을 바꾸는 급"이라는 설계 문구)이므로 FAIL로 두지
+않고 `LEGEND_RELIC_OVER` 에 못 박는다 — 값이 움직이면 그때 걸린다.
 """
 import sys
 sys.path.insert(0, "tools")
@@ -25,6 +35,7 @@ from balance_baseline import (
 from verify_card_rates import RATES
 
 # ── 등급별 파워 예산 ───────────────────────────────────────────
+import gamedata as gd
 from gamedata import CARDS as _CARDS, pm as _pm
 
 GRADE_UNIT = {g["name"]: _pm(g["value_unit_permille"]) for g in _CARDS["grades"]}
@@ -32,6 +43,27 @@ GRADE_BUDGET = {g["name"]: _pm(g["power_budget_permille"]) for g in _CARDS["grad
 BUDGET_TOL = 0.30          # 각인별 편차 허용폭 (예산 대비 ±30%)
 
 REF_SKILL = "회전 베기"
+
+# 전설 유물의 예산 초과 배수. **PASS/FAIL이 아니라 못 박은 현상이다** —
+# 전설 등급 예산(+15%)과 전설 유물 설계("판의 규칙을 바꾸는 급")가 어긋나 있고,
+# 그 격차를 숫자로 고정해 둔다. 유물 수치를 건드리면 여기가 걸린다.
+LEGEND_RELIC_OVER = {"RL_ECHO": 5.4, "RL_STORM": 3.4, "RL_FORGE": 0.5}
+LEGEND_OVER_TOL = 0.15      # ±15% 안에서만 움직일 수 있다
+
+# 고유 각인 6종의 예산 환산 가정. 전부 여기 모아둔다.
+EXEC_TTK = {"잡몹": None, "엘리트": 9.5, "보스": 70.0}   # 잡몹은 기준선 DPS에서 계산
+# 전투 시간 배분 — 엘리트·보스 안에서 보스 몫. 보스 70초 vs 엘리트 19마리×9.5초=180초
+BOSS_SHARE_IN_ELITE = 70.0 / (70.0 + 19 * 9.5)
+PIERCE_EXTRA_PER_WIDTH = 2.0 / 700      # E_PIERCE: 반폭 700에서 추가 2.0명 (선형 가정)
+
+# 보스 처형 면역은 **몬스터 데이터가 정한다** (각인이 "보스면 제외"를 알지 않는다)
+BOSS_EXECUTE_IMMUNE = bool(gd.load("monsters")["boss_execute_immune"])
+
+# RL_STORM 반경 안 평균 대상 수 — dc_field 실측 (cards.json `_storm` 참조)
+STORM_TARGETS = 5.4
+# RL_FORGE 1회 발동의 위력 증가. 흔함 환산 1.64개분 × 흔함 1개의 위력
+_ITEMS = gd.load("items")
+FORGE_FIRST_GAIN = 1.64 * _pm(_ITEMS["tier_power_permille"][0])
 
 # ── 기준선 전투 가정 ───────────────────────────────────────────
 # 예산 환산에 쓰는 가정. 전부 여기 모아둔다 — 흩어지면 검산이 안 된다.
@@ -149,6 +181,92 @@ def relic_delta(rid, v):
     raise KeyError(rid)
 
 
+# ── 고유 각인 6종 ───────────────────────────────────────────────
+UNIQUE = {e["id"]: e for e in _CARDS["unique_engravings"]}
+UNIQUE_UNPRICED = {
+    "W_FISSURE": "둔화(접근 지연)는 R_FROST와 같은 이유로 DPS 환산 기준이 없다",
+}
+
+
+def _exec_saving(threshold, rate, ttk):
+    """처형이 줄이는 시간의 비율.
+
+    임계 아래로 내려간 뒤 **처형 판정이 붙은 공격이 한 번 들어와야** 발동하므로,
+    그 대기(지수분포)를 빼야 한다. 이 한 항이 "스킬 발동에 묶으면 전설이 될 수
+    없다"를 만든다 — 발동 주기 10.8초가 임계 구간보다 길면 거의 못 쓴다.
+    """
+    win = ttk * threshold
+    return (win - (1 - math.exp(-rate * win)) / rate) / ttk
+
+
+def unique_delta(uid):
+    """고유 각인 1장이 기준선 총 DPS에 더하는 양. 없으면 None (UNPRICED)."""
+    e = UNIQUE[uid]
+    total, _b, _a = hero_dps()
+    skill_dps, proc_per_sec = ref_skill_dps()
+    aps = TICK_HZ / HERO["attack_interval_ticks"]
+    crit = 1 + HERO["crit_chance"] * (HERO["crit_mult"] - 1)
+    # 각인이 붙은 스킬의 대상당 DPS (기준 스킬이 아니라 그 스킬이다)
+    mult, weight, _aoe = SKILLS[{"W_SMASH": "분쇄 강타", "W_WHIRL": "회전 베기",
+                                "W_CLEAVE": "대지 가르기"}[e["skill"]]]
+    own_pps = aps * PROC_RATE * weight
+    own_dps = own_pps * HERO["attack_power"] * mult * crit
+
+    if uid == "W_EXECUTE":
+        T = _pm(e["threshold_permille"])
+        # scope가 all_attacks면 판정 빈도가 공속이다. 스킬에 묶이면 발동 빈도다.
+        rate = aps if e["scope"] == "all_attacks" else own_pps
+        ttk = {"잡몹": effective_hp(TRASH["hp"], 0) / total,
+               "엘리트": EXEC_TTK["엘리트"], "보스": EXEC_TTK["보스"]}
+        share = {"잡몹": 1 - ELITE_SHARE,
+                 "엘리트": ELITE_SHARE * (1 - BOSS_SHARE_IN_ELITE),
+                 "보스": ELITE_SHARE * BOSS_SHARE_IN_ELITE}
+        if BOSS_EXECUTE_IMMUNE:
+            share["보스"] = 0.0        # 면역이면 보스 몫은 가치가 아니다
+        return total * sum(share[k] * _exec_saving(T, rate, ttk[k]) for k in ttk)
+
+    if uid == "W_SHOCKWAVE":
+        # 전력 피해로 직선의 적을 추가로 맞힌다. 추가 대상 수는 반폭에 비례한다
+        extra = e["width_millitile"] * PIERCE_EXTRA_PER_WIDTH
+        return own_dps * extra
+
+    if uid == "W_VORTEX":
+        # **즉발을 대체한다** — 잃은 즉발분까지 장판이 메워야 한다
+        dur = e["duration_ticks"] / TICK_HZ
+        field = own_pps * dur * HERO["attack_power"] * _pm(e["dps_permille"]) * AOE_TARGETS
+        return field - own_dps * AOE_TARGETS
+
+    if uid == "W_CENTRIFUGE":
+        # 반경 +v/적 → 대상 수는 반경²에 비례 → 기준선 밀도에서의 이득
+        step = _pm(e["radius_step_permille"])
+        r = 1 + step * min(AOE_TARGETS, e["max_stacks"])
+        return own_dps * AOE_TARGETS * (r ** 2 - 1)
+
+    if uid == "W_AFTERSHOCK":
+        return own_pps * HERO["attack_power"] * _pm(e["damage_permille"]) * AOE_TARGETS
+
+    if uid == "W_FISSURE":
+        return None
+    raise KeyError(uid)
+
+
+# ── 전설 유물 3종 ───────────────────────────────────────────────
+def legend_relic_delta(rid):
+    total, basic, _a = hero_dps()
+    if rid == "RL_ECHO":
+        # 기본 공격 1회 추가 발동. **스킬 proc은 굴리지 않는다**(§3)
+        return basic
+    if rid == "RL_STORM":
+        # 반경 안 대상당 초당 공격력의 v%. 들어오는 수는 dc_field 실측이다
+        v = _pm(_CARDS["storm_dps_permille"])
+        return HERO["attack_power"] * v * STORM_TARGETS
+    if rid == "RL_FORGE":
+        # **첫 발동 1회만** 센다. 구간마다 반복되므로 누적은 획득 시점에 달렸고,
+        # 그 민감도는 verify_item_values.py 목표 5가 따로 본다
+        return total * FORGE_FIRST_GAIN
+    raise KeyError(rid)
+
+
 def report():
     ok = True
     total, basic, avg_mult = hero_dps()
@@ -227,6 +345,67 @@ def report():
     for rid, (name, fmt, v) in RELICS.items():
         print(f"  {rid:<10} 고급: " + fmt.format(v=v))
     print()
+
+    legend_budget = total * GRADE_BUDGET["전설"]
+    print("=== 고유 각인 6종 (전설 — 스킬당 2종) ===")
+    print(f"  전설 1장 예산 {legend_budget:.2f} DPS (총 DPS의 {GRADE_BUDGET['전설']:.0%})")
+    print("  ※ **배수로는 채울 수 없다.** 예산 ÷ 스킬 DPS:")
+    for sid, sname in (("W_SMASH", "분쇄 강타"), ("W_WHIRL", "회전 베기"),
+                       ("W_CLEAVE", "대지 가르기")):
+        mult, weight, _a = SKILLS[sname]
+        aps = TICK_HZ / HERO["attack_interval_ticks"]
+        crit = 1 + HERO["crit_chance"] * (HERO["crit_mult"] - 1)
+        pps = aps * PROC_RATE * weight
+        dps = pps * HERO["attack_power"] * mult * crit
+        print(f"     {sname:<7} 주기 {1/pps:5.1f}s · 대상당 {dps:4.2f} DPS → 예산의 "
+              f"{legend_budget/dps:.2f}배가 필요하다")
+    print(f"  {'ID':<14} {'이름':<5} {'스킬':<9} {'수치':>22} {'ΔDPS':>7} {'예산비':>7}")
+    print("  " + "-" * 78)
+    for uid, e in UNIQUE.items():
+        d = unique_delta(uid)
+        nums = " · ".join(f"{k.rsplit('_', 1)[0]} {v}"
+                          for k, v in e.items()
+                          if k.endswith(("_permille", "_ticks", "_millitile", "_stacks")))
+        if d is None:
+            print(f"  {uid:<14} {e['name']:<5} {e['skill']:<9} {nums:>22} "
+                  f"{'—':>7} {'—':>7}  ※ 상황 가치")
+            continue
+        ratio = d / legend_budget
+        flag = ""
+        if abs(ratio - 1) > BUDGET_TOL:
+            flag = "  ← 편차"
+            ok = False
+        print(f"  {uid:<14} {e['name']:<5} {e['skill']:<9} {nums:>22} "
+              f"{d:>7.2f} {ratio:>6.0%}{flag}")
+    print()
+    for uid, e in UNIQUE.items():
+        key = next((k for k in e if k.endswith("_permille")), None)
+        v = _pm(e[key]) if key else 0.0
+        print(f"  {uid:<14} " + e["desc"].format(v=v))
+    print()
+    for uid, why in UNIQUE_UNPRICED.items():
+        print(f"  ※ {uid}: {why}")
+    print("  ※ **처형이 all_attacks인 것은 예산이 강제한 것이다.** W_SMASH 발동에만")
+    print("     묶으면 주기 10.8초가 임계 구간보다 길어 임계 50%에서도 예산의 39%다.")
+    print("  ※ 보스 처형 면역(monsters.json)이 없으면 임계 400permille이 페이즈 2의")
+    print("     80%를 생략한다 — 전설 각인 하나가 보스 시스템을 무력화한다\n")
+
+    print("=== 전설 유물 3종 — **예산 초과가 못 박혀 있다** ===")
+    print("  전설 등급 예산(+15%)과 전설 유물 설계('판의 규칙을 바꾸는 급')가")
+    print("  어긋나 있다. FAIL로 두지 않고 배수를 고정해 둔다 — 움직이면 걸린다.")
+    print(f"  {'ID':<10} {'ΔDPS':>8} {'예산비':>8} {'못 박은 값':>11} {'판정':>7}")
+    print("  " + "-" * 52)
+    for rid, pinned in LEGEND_RELIC_OVER.items():
+        d = legend_relic_delta(rid)
+        got = d / legend_budget
+        good = abs(got - pinned) <= LEGEND_OVER_TOL * pinned
+        ok &= good
+        print(f"  {rid:<10} {d:>8.2f} {got:>7.2f}배 {pinned:>10.1f}배 "
+              f"{'PASS' if good else 'FAIL':>7}")
+    print("  ※ RL_ECHO는 기본 공격을 한 번 더 넣는다. 기본 공격이 총 DPS의")
+    print(f"     {basic/total:.0%}이므로 그대로 +{basic/total:.0%}다 — 예산의 5.4배다.")
+    print("  ※ RL_FORGE만 예산 **아래**다(0.5배). 구간마다 반복되므로 누적이 본체이고,")
+    print("     그래서 획득 시점에 민감하다 — verify_item_values.py 목표 5가 따로 본다\n")
 
     print("=== 빌드 종속 각인 — 무엇이 값을 움직이는가 ===")
     for eid, (axis, points) in BUILD_SCALED.items():

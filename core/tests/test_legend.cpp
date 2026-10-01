@@ -23,6 +23,9 @@ static World makeWorld(uint64_t seed = 1) {
     return w;
 }
 
+// **hp는 Fixed(20.12) 범위 안이어야 한다** (±524,287). 처음에 1000000을 썼다가
+// UBSan이 `1000000 * 4096`에서 부호 있는 오버플로를 잡았다 — 테스트가 "안 죽는
+// 샌드백"을 원해서 큰 값을 적고 싶어지는 자리라 여기 적어둔다.
 static SpawnDesc mob(Fixed x, Fixed y, int32_t hp, Archetype a = Archetype::Trash,
                      uint8_t flags = EntityFlag::None) {
     SpawnDesc d;
@@ -145,17 +148,29 @@ int main() {
     }
 
     // ── W_SHOCKWAVE 충격파 ────────────────────────────────────────────
-    dctest::section("충격파 — 각인이 없으면 뒤의 적이 안 맞는다");
+    dctest::section("충격파 — **각인이 없으면** 뒤의 적이 안 맞는다 (executeSkill 경로)");
     {
-        World w = makeWorld(6);
-        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
-        const EntityId front = w.entities.spawn(mob(Fixed(2), Fixed{}, 10000), 0, 6);
-        const EntityId back  = w.entities.spawn(mob(Fixed(4), Fixed{}, 10000), 0, 6);
-        const uint32_t f = static_cast<uint32_t>(w.entities.denseOf(front));
-        const uint32_t b = static_cast<uint32_t>(w.entities.denseOf(back));
+        // `applyShockwave`는 더 이상 스스로 소지를 묻지 않는다 — 어느 스킬에
+        // 붙는지는 `executeSkill`이 `uniqueSkill`로 안다. 그래서 게이트가
+        // 실제로 닫히는지는 **스킬 실행 경로로** 봐야 한다.
+        const uint32_t smash = static_cast<uint32_t>(cfg.uniqueSkill[SHOCK - 3]);
+        CHECK(smash < cfg.skillCount);
+        CHECK(!cfg.skills[smash].aoe);        // 충격파는 단일기에 붙는다
 
-        CHECK_EQ(applyShockwave(w, cfg, f, Fixed(100)).raw, 0);
-        CHECK_EQ(w.entities.damageTaken[b].raw, 0);
+        int32_t back[2] = {0, 0};
+        for (int32_t k = 0; k < 2; ++k) {
+            World w = makeWorld(6);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            if (k == 1) w.cards.legendTake(SHOCK);
+            const EntityId f = w.entities.spawn(mob(Fixed(2), Fixed{}, 100000), 0, 6);
+            const EntityId b = w.entities.spawn(mob(Fixed(4), Fixed{}, 100000), 0, 6);
+            w.hero.target = f;
+            executeSkill(w, cfg, smash, QteGrade::Miss);
+            back[k] = w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(b))].raw;
+        }
+        CHECK_EQ(back[0], 0);
+        CHECK(back[1] > 0);
+        printf("    각인 없음 %d raw → 있음 %d raw\n", back[0], back[1]);
     }
 
     dctest::section("충격파 — 뒤의 적에게 **전력** 피해 (E_PIERCE는 감쇠 피해)");
@@ -226,7 +241,7 @@ int main() {
         const uint32_t a = static_cast<uint32_t>(w.entities.denseOf(in));
         const uint32_t b = static_cast<uint32_t>(w.entities.denseOf(out));
 
-        CHECK(applyAoeHits(w, cfg, Fixed(100)).raw > 0);
+        CHECK(applyAoeHits(w, cfg, Fixed(100), /*centrifuge=*/false).raw > 0);
         CHECK(w.entities.damageTaken[a].raw > 0);
         CHECK_EQ(w.entities.damageTaken[b].raw, 0);      // 밖은 안 맞는다
     }
@@ -263,8 +278,8 @@ int main() {
             mob(base * Fixed::fromPermille(1250), Fixed{}, 10000), 0, 11);
         const uint32_t fo = static_cast<uint32_t>(off.entities.denseOf(farOff));
 
-        applyAoeHits(w, cfg, Fixed(100));
-        applyAoeHits(off, cfg, Fixed(100));
+        applyAoeHits(w, cfg, Fixed(100), /*centrifuge=*/true);
+        applyAoeHits(off, cfg, Fixed(100), /*centrifuge=*/false);
         CHECK(w.entities.damageTaken[fi].raw > 0);       // 확장이 닿았다
         CHECK_EQ(off.entities.damageTaken[fo].raw, 0);   // 확장이 없으면 못 닿는다
         printf("    기본 반경의 1.25배 거리: 원심력 %d raw · 없으면 %d raw\n",
@@ -288,7 +303,7 @@ int main() {
         }
 
         const Fixed one = Fixed(100);
-        applyAoeHits(w, cfg, one);
+        applyAoeHits(w, cfg, one, /*centrifuge=*/true);
         // armor 0이라 감쇠가 없다 → 한 번 맞았으면 정확히 one이다
         CHECK_EQ(w.entities.damageTaken[ii].raw, one.raw);
     }
@@ -304,7 +319,7 @@ int main() {
         for (int32_t k = 1; k <= 60; ++k) {
             w.entities.spawn(mob(base * Fixed::fromPermille(200 * k), Fixed{}, 100000), 0, 13);
         }
-        applyAoeHits(w, cfg, Fixed(100));
+        applyAoeHits(w, cfg, Fixed(100), /*centrifuge=*/true);
 
         // 최대 반경 = base × (1 + step×상한). 그 밖의 적은 **한 대도 안 맞아야 한다**
         const Fixed maxR = base * (Fixed::one()
@@ -324,16 +339,217 @@ int main() {
                maxR.raw * 1000 / Fixed::ONE_RAW, hitInside, hitOutside);
     }
 
-    // ── 결정론 ────────────────────────────────────────────────────────
-    dctest::section("세 각인을 다 들고도 **결정론이 유지된다**");
+    // ── 스킬 바인딩 (1차 구현의 버그를 고친 자리) ─────────────────────
+    dctest::section("**각인은 지정된 스킬에서만 터진다** (예산 221% 버그)");
     {
-        // 원심력이 다중 패스를 돌므로 순회 순서가 결과에 새는지가 여기서 드러난다.
+        // 1차 구현은 `aoe` 여부로 갈라서 원심력이 회전 베기 **와** 대지 가르기
+        // 양쪽에 걸렸다. 둘 다 aoe이기 때문이다 — 예산이 99%에서 221%가 됐는데
+        // 크래시가 없어 테스트가 전부 초록이었다.
+        //
+        // 이제 `uniqueSkill`이 데이터에서 온다. 각 각인이 **정확히 한 스킬**을
+        // 가리키고, 서로 다른 각인이 같은 스킬 칸을 공유하는 것은 설계대로다
+        // (스킬당 2종).
+        for (uint32_t u = 0; u < 6; ++u) {
+            CHECK(cfg.uniqueSkill[u] >= 0);
+            CHECK(static_cast<uint32_t>(cfg.uniqueSkill[u]) < cfg.skillCount);
+        }
+        // 처형·충격파는 같은 스킬, 소용돌이·원심력도, 여진·균열도
+        CHECK_EQ(cfg.uniqueSkill[0], cfg.uniqueSkill[1]);
+        CHECK_EQ(cfg.uniqueSkill[2], cfg.uniqueSkill[3]);
+        CHECK_EQ(cfg.uniqueSkill[4], cfg.uniqueSkill[5]);
+        // 세 짝은 서로 다른 스킬이어야 한다
+        CHECK(cfg.uniqueSkill[0] != cfg.uniqueSkill[2]);
+        CHECK(cfg.uniqueSkill[2] != cfg.uniqueSkill[4]);
+
+        // **원심력이 다른 광역기에서는 반경을 키우지 않는다.** 이게 그 버그다.
+        const uint32_t whirl  = static_cast<uint32_t>(cfg.uniqueSkill[CENTRI - 3]);
+        const uint32_t cleave = static_cast<uint32_t>(cfg.uniqueSkill[4]);   // 여진 쪽
+        CHECK(cfg.skills[whirl].aoe);
+        CHECK(cfg.skills[cleave].aoe);        // 전제: 둘 다 광역기다
+
+        const Fixed base = dev::data().hero.bases[static_cast<uint32_t>(Stat::AoeRadius)];
+        int32_t far[2] = {0, 0};
+        for (int32_t k = 0; k < 2; ++k) {
+            World w = makeWorld(20);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            w.cards.legendTake(CENTRI);
+            for (int32_t m = 0; m < 6; ++m) {
+                w.entities.spawn(mob(base / Fixed(4) + Fixed::fromRaw(m * 64), Fixed{},
+                                     100000), 0, 20);
+            }
+            const EntityId f = w.entities.spawn(
+                mob(base * Fixed::fromPermille(1250), Fixed{}, 100000), 0, 20);
+            executeSkill(w, cfg, k == 0 ? whirl : cleave, QteGrade::Miss);
+            far[k] = w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(f))].raw;
+        }
+        CHECK(far[0] > 0);          // 회전 베기 — 확장이 닿는다
+        CHECK_EQ(far[1], 0);        // 대지 가르기 — 확장이 없다
+        printf("    원심력: 회전 베기 %d raw · 대지 가르기 %d raw (붙지 않는다)\n",
+               far[0], far[1]);
+    }
+
+    // ── 지역 효과 풀 ──────────────────────────────────────────────────
+    dctest::section("소용돌이 — 즉발을 **대체한다** (장판 하나가 깔린다)");
+    {
+        const uint32_t whirl = static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Vortex) - 3]);
+        World w = makeWorld(30);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        w.cards.legendTake(legendIndexOf(LegendId::Vortex));
+        const EntityId t = w.entities.spawn(mob(Fixed::fromPermille(500), Fixed{}, 100000), 0, 30);
+        const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(t));
+
+        executeSkill(w, cfg, whirl, QteGrade::Miss);
+        // **즉발 피해가 없다** — 장판으로 바뀌었다
+        CHECK_EQ(w.entities.damageTaken[i].raw, 0);
+        CHECK_EQ(w.zones.count, 1u);
+        CHECK_EQ(static_cast<int32_t>(w.zones.kind[0]), static_cast<int32_t>(ZoneKind::Vortex));
+        CHECK(w.zones.value[0].raw > 0);
+        CHECK_EQ(w.zones.expireTick[0], w.tickCount() + cfg.vortexDurationTicks);
+
+        // **zoneRun만 돌린다.** stepWorld를 쓰면 영웅 기본 공격이 같은 적을
+        // 때려(장판 반경 1.5 < 영웅 사거리 3.0이라 분리할 수 없다) 장판 피해와
+        // 섞인다 — 측정이 아니라 "뭔가 맞았다"가 된다.
+        w.tick();                              // 틱만 전진
+        zoneRun(w, cfg);
+        CHECK_EQ(w.entities.damageTaken[i].raw, w.zones.value[0].raw);
+        printf("    즉발 0 → 장판 1개(%d raw/틱) · 지속 %d틱\n",
+               w.zones.value[0].raw, cfg.vortexDurationTicks);
+    }
+
+    dctest::section("소용돌이 — 지속이 끝나면 **사라지고 피해도 멈춘다**");
+    {
+        const uint32_t whirl = static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Vortex) - 3]);
+        World w = makeWorld(31);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        w.cards.legendTake(legendIndexOf(LegendId::Vortex));
+        const EntityId t = w.entities.spawn(mob(Fixed::fromPermille(500), Fixed{}, 100000), 0, 31);
+        const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(t));
+        executeSkill(w, cfg, whirl, QteGrade::Miss);
+
+        // 틱 전진 + zoneRun만. 전투를 섞지 않는 이유는 위 절과 같다.
+        const int32_t perTick = w.zones.value[0].raw;
+        for (int32_t k = 0; k < cfg.vortexDurationTicks; ++k) { w.tick(); zoneRun(w, cfg); }
+        CHECK_EQ(w.zones.count, 0u);
+        // **만료 틱에도 때린 뒤 사라진다** → 지속 80틱이 정확히 80회 피해다.
+        // zoneRun이 피해를 먼저 한 바퀴 돌리고 제거를 나중에 하는 순서가 이 성질을
+        // 만든다. 반대로 두면 "4초 지속"이 79틱이 되어 데이터와 한 틱 어긋난다.
+        const int32_t frozen = w.entities.damageTaken[i].raw;
+        CHECK_EQ(frozen, perTick * cfg.vortexDurationTicks);
+        for (int32_t k = 0; k < 20; ++k) { w.tick(); zoneRun(w, cfg); }
+        CHECK_EQ(w.entities.damageTaken[i].raw, frozen);
+        printf("    지속 %d틱 = 정확히 %d회 타격 후 소멸 · 이후 0\n",
+               cfg.vortexDurationTicks, cfg.vortexDurationTicks);
+    }
+
+    dctest::section("여진 — 도화선이 끝나는 **그 틱에 한 번** 터진다");
+    {
+        const uint32_t cleave = static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Aftershock) - 3]);
+        World w = makeWorld(32);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        w.cards.legendTake(legendIndexOf(LegendId::Aftershock));
+        const EntityId t = w.entities.spawn(mob(Fixed::fromPermille(500), Fixed{}, 100000), 0, 32);
+        const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(t));
+
+        executeSkill(w, cfg, cleave, QteGrade::Miss);
+        // **가산이다** — 본타가 그대로 들어간 뒤 폭발이 예약된다
+        const int32_t direct = w.entities.damageTaken[i].raw;
+        CHECK(direct > 0);
+        CHECK_EQ(w.zones.count, 1u);
+        CHECK_EQ(static_cast<int32_t>(w.zones.kind[0]), static_cast<int32_t>(ZoneKind::Aftershock));
+
+        // 도화선 중에는 아무 일도 없다 (틱 전진 + zoneRun만 — 전투는 섞지 않는다)
+        for (int32_t k = 0; k < cfg.aftershockFuseTicks - 1; ++k) { w.tick(); zoneRun(w, cfg); }
+        CHECK_EQ(w.entities.damageTaken[i].raw, direct);
+        CHECK_EQ(w.zones.count, 1u);
+        // 그 틱에 터지고 사라진다
+        w.tick(); zoneRun(w, cfg);
+        const int32_t afterBoom = w.entities.damageTaken[i].raw;
+        CHECK(afterBoom > direct);
+        CHECK_EQ(w.zones.count, 0u);
+        // **두 번 터지지 않는다**
+        for (int32_t k = 0; k < 20; ++k) { w.tick(); zoneRun(w, cfg); }
+        CHECK_EQ(w.entities.damageTaken[i].raw, afterBoom);
+        printf("    본타 %d raw → %d틱 뒤 폭발 %d raw · 한 번만\n",
+               direct, cfg.aftershockFuseTicks, afterBoom - direct);
+    }
+
+    dctest::section("균열 — 기절을 **유지하고** 둔화를 더한다 (피해는 0)");
+    {
+        const uint32_t cleave = static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Fissure) - 3]);
+        World w = makeWorld(33);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        w.cards.legendTake(legendIndexOf(LegendId::Fissure));
+        // 균열 반경 안 · 밖에 한 마리씩
+        const EntityId in  = w.entities.spawn(mob(cfg.fissureRadius / Fixed(2), Fixed{}, 100000), 0, 33);
+        const EntityId out = w.entities.spawn(mob(cfg.fissureRadius * Fixed(3), Fixed{}, 100000), 0, 33);
+        const uint32_t a = static_cast<uint32_t>(w.entities.denseOf(in));
+        const uint32_t b = static_cast<uint32_t>(w.entities.denseOf(out));
+
+        executeSkill(w, cfg, cleave, QteGrade::Miss);
+        CHECK_EQ(w.zones.count, 1u);
+        CHECK_EQ(static_cast<int32_t>(w.zones.kind[0]), static_cast<int32_t>(ZoneKind::Fissure));
+
+        // **반경 안은 느려지고 밖은 그대로다.** 피해는 둘 다 균열에서 오지 않는다
+        const Fixed inMult  = slowMult(w, cfg, a);
+        const Fixed outMult = slowMult(w, cfg, b);
+        CHECK(inMult.raw < Fixed::one().raw);
+        CHECK_EQ(outMult.raw, Fixed::one().raw);
+        CHECK_EQ(inMult.raw, (Fixed::one() - Fixed::fromPermille(cfg.fissureSlowPermille)).raw);
+
+        // 장판이 피해를 주지 않는다 — zoneRun을 돌려도 균열은 때리지 않는다
+        const int32_t before = w.entities.damageTaken[a].raw;
+        zoneRun(w, cfg);
+        CHECK_EQ(w.entities.damageTaken[a].raw, before);
+        printf("    반경 안 이동 배율 %d‰ · 밖 1000‰ · 균열 피해 0\n",
+               inMult.raw * 1000 / Fixed::ONE_RAW);
+    }
+
+    dctest::section("균열 — 겹치면 **합산이 아니라 큰 쪽**이다");
+    {
+        // 합산하면 같은 각인을 두 번 쓴 플레이어가 100% 둔화(정지)를 공짜로 얻는다.
+        World w = makeWorld(34);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        const EntityId t = w.entities.spawn(mob(Fixed::fromPermille(500), Fixed{}, 1000), 0, 34);
+        const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(t));
+        const Fixed slow = Fixed::fromPermille(cfg.fissureSlowPermille);
+        for (int32_t k = 0; k < 3; ++k) {
+            w.zones.push(ZoneKind::Fissure, Fixed{}, Fixed{}, cfg.fissureRadius, slow, 9999);
+        }
+        CHECK_EQ(w.zones.count, 3u);
+        CHECK_EQ(slowMult(w, cfg, i).raw, (Fixed::one() - slow).raw);
+    }
+
+    dctest::section("지역 효과 풀 — 가득 차면 **가장 먼저 사라질 것을 밀어낸다**");
+    {
+        World w = makeWorld(35);
+        for (uint32_t k = 0; k < ZoneState::MAX_ZONES; ++k) {
+            w.zones.push(ZoneKind::Vortex, Fixed{}, Fixed{}, Fixed(1), Fixed(1),
+                         500 + static_cast<int32_t>(k));
+        }
+        CHECK_EQ(w.zones.count, ZoneState::MAX_ZONES);
+        CHECK_EQ(w.zones.expireTick[0], 500);
+        w.zones.push(ZoneKind::Fissure, Fixed{}, Fixed{}, Fixed(2), Fixed(1), 9999);
+        CHECK_EQ(w.zones.count, ZoneState::MAX_ZONES);
+        CHECK_EQ(w.zones.expireTick[0], 501);                      // 가장 이른 것이 밀렸다
+        CHECK_EQ(static_cast<int32_t>(w.zones.kind[ZoneState::MAX_ZONES - 1]),
+                 static_cast<int32_t>(ZoneKind::Fissure));         // 새 것이 들어왔다
+        // **반경 0은 거부한다** — 아무도 못 맞히는 장판은 상태만 먹는다
+        const uint32_t before = w.zones.count;
+        CHECK(!w.zones.push(ZoneKind::Vortex, Fixed{}, Fixed{}, Fixed{}, Fixed(1), 9999));
+        CHECK_EQ(w.zones.count, before);
+    }
+
+    // ── 결정론 ────────────────────────────────────────────────────────
+    dctest::section("여섯 각인을 다 들고도 **결정론이 유지된다**");
+    {
+        // 원심력의 다중 패스와 지역 효과 풀의 안정 압축이 순회 순서를 결과에
+        // 흘리는지가 여기서 드러난다.
         uint64_t first = 0;
         for (int32_t run = 0; run < 3; ++run) {
             World w = makeWorld(777);
-            w.cards.legendTake(EXEC);
-            w.cards.legendTake(SHOCK);
-            w.cards.legendTake(CENTRI);
+            for (uint32_t u = legendIndexOf(LegendId::UniqueFirst); u < 9; ++u) {
+                w.cards.legendTake(u);     // 여섯 각인 전부
+            }
             static SimScratch sc;
             for (int32_t t = 0; t < 600; ++t) stepWorld(w, cfg, dev::data().table, sc);
             if (run == 0) first = w.checksum();
@@ -343,10 +559,9 @@ int main() {
                static_cast<unsigned long long>(first));
     }
 
-    dctest::section("★미구현 3종은 **수치만 적재되고 효과가 없다**");
+    dctest::section("전설 풀 9칸이 **전부 효과를 갖는다**");
     {
-        // 어느 날 효과가 붙으면 이 절이 먼저 깨진다 — 그때 위쪽처럼 전용 절을
-        // 쓰게 된다. "미구현"을 주석에만 적어두면 구현된 뒤에도 아무 일이 없다.
+        // 수치가 비면 효과가 조용히 0이 된다. 먼저 값이 살아 있는지 본다.
         CHECK(cfg.vortexDurationTicks > 0);
         CHECK(cfg.vortexDpsPermille > 0);
         CHECK(cfg.aftershockDamagePermille > 0);
@@ -355,35 +570,40 @@ int main() {
         CHECK(cfg.fissureRadius.raw > 0);
         CHECK(cfg.fissureDurationTicks > 0);
 
+        // **모든 각인이 자기 스킬에서 무언가를 바꾼다.** 한 칸이라도 효과가
+        // 0이면 전설 기대값이 그만큼 낮아지는데, 증상은 "전설이 시원찮다"뿐이라
+        // 눈으로는 안 보인다. 그래서 칸마다 "들면 결과가 달라진다"를 직접 본다.
+        //
         // **틱 루프로 재면 안 된다.** 전설을 쥐면 그 칸이 카드 풀에서 빠져
-        // (§4 중복 규칙) 추첨이 달라지고 런 전체가 갈라진다 — 효과가 0이어도
-        // 체크섬은 움직인다. 그래서 스킬 실행 한 번만 떼어 비교한다.
-        for (uint32_t sk = 0; sk < cfg.skillCount; ++sk) {
-            int32_t total[2] = {0, 0};
+        // (§4 중복 규칙) 추첨이 달라지고 런 전체가 갈라진다. 스킬 실행 한 번만
+        // 떼어 비교한다.
+        for (uint32_t u = legendIndexOf(LegendId::UniqueFirst); u < 9; ++u) {
+            const uint32_t sk = static_cast<uint32_t>(cfg.uniqueSkill[u - 3]);
+            int64_t sig[2] = {0, 0};
             for (int32_t k = 0; k < 2; ++k) {
                 World w = makeWorld(888);
                 w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
-                if (k == 1) {
-                    w.cards.legendTake(legendIndexOf(LegendId::Vortex));
-                    w.cards.legendTake(legendIndexOf(LegendId::Aftershock));
-                    w.cards.legendTake(legendIndexOf(LegendId::Fissure));
-                }
-                // 단일기·광역기 양쪽에 걸리도록 앞뒤·옆으로 흩뿌린다
+                if (k == 1) w.cards.legendTake(u);
+                // 앞뒤·옆으로 흩뿌려 단일기·광역기 양쪽에 걸리게 한다.
+                // 체력은 처형 임계에 걸릴 만큼 낮게 둔다 (처형 칸도 보려면 필요)
                 for (int32_t d = 1; d <= 5; ++d) {
-                    w.entities.spawn(mob(Fixed::fromPermille(d * 400), Fixed{}, 100000), 0, 888);
+                    w.entities.spawn(mob(Fixed::fromPermille(d * 400), Fixed{}, 40), 0, 888);
                     w.entities.spawn(mob(Fixed::fromPermille(d * 400),
-                                         Fixed::fromPermille(300), 100000), 0, 888);
+                                         Fixed::fromPermille(300), 40), 0, 888);
                 }
                 w.hero.target = w.entities.idAt(0);
                 executeSkill(w, cfg, sk, QteGrade::Miss);
+                // 피해 + 장판 상태를 함께 본다 — 균열은 피해가 0이고 소용돌이는
+                // 즉발이 0이므로 피해만 보면 둘 다 "효과 없음"으로 읽힌다
                 for (uint32_t i = 0; i < w.entities.count(); ++i) {
-                    total[k] += w.entities.damageTaken[i].raw;
+                    sig[k] += w.entities.damageTaken[i].raw;
+                    sig[k] += w.entities.deadAt(i) ? 1 : 0;
                 }
+                sig[k] += static_cast<int64_t>(w.zones.count) * 1000003;
             }
-            CHECK_EQ(total[0], total[1]);
+            CHECK(sig[0] != sig[1]);
         }
-        printf("    세 각인 소지가 스킬 %u종의 피해를 바꾸지 않는다 (설계대로)\n",
-               cfg.skillCount);
+        printf("    고유 각인 6칸이 각자 지정된 스킬에서 결과를 바꾼다\n");
     }
 
     return dctest::summary("test_legend");

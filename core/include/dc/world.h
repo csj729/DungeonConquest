@@ -248,6 +248,82 @@ struct OrbState {
     }
 };
 
+// 지역 효과 (고유 각인 소용돌이 · 여진 · 균열).
+//
+// **셋이 같은 풀을 쓴다.** 효과는 다르지만 상태의 모양이 같다 — 위치 · 반경 ·
+// 값 · 만료 틱. `kind` 하나로 갈라지므로 CLAUDE.md의 "새 기믹은 `if` 추가가
+// 아니라 기존 모디파이어 조합으로"가 지켜진다.
+//
+// 틀은 `OrbState`를 그대로 가져왔다 — 고정 할당 · 안정 압축 · 가득 차면 가장 먼저
+// 사라질 것을 밀어냄 · 전부 체크섬 입력. 구슬과 다른 점은 `kind`와 `radius`뿐이다.
+enum class ZoneKind : uint8_t {
+    None       = 0,
+    Vortex     = 1,   // 소용돌이 — **매 틱** 반경 내 피해. 만료까지 지속
+    Aftershock = 2,   // 여진 — 도화선이 끝나는 **그 틱에 한 번** 폭발
+    Fissure    = 3,   // 균열 — 반경 내 적 둔화. 피해는 없다
+};
+
+struct ZoneState {
+    // 상한 64. 한 판에 동시에 살 수 있는 수는 "발동 주기 ÷ 지속"으로 묶여 있어서
+    // (회전 베기 12.4초 주기 · 장판 4초) 실제로는 한 자릿수다. 여유를 둔 값이다.
+    static constexpr uint32_t MAX_ZONES = 64;
+
+    // [상태] — 전부 체크섬 입력이다
+    Fixed    posX[MAX_ZONES]{};
+    Fixed    posY[MAX_ZONES]{};
+    Fixed    radius[MAX_ZONES]{};
+    // 용도가 kind마다 다르다: 소용돌이·여진은 피해, 균열은 둔화 비율.
+    // **한 칸을 겸용하는 이유**는 셋이 동시에 두 값을 쓰지 않기 때문이다 —
+    // 쓰지 않는 칸을 두면 체크섬이 늘고 "어느 칸이 유효한가"가 새 규칙이 된다.
+    Fixed    value[MAX_ZONES]{};
+    int32_t  expireTick[MAX_ZONES]{};
+    ZoneKind kind[MAX_ZONES]{};
+    uint32_t count = 0;
+
+    // **안정 압축**이다 (EntityStore·OrbState와 같은 규칙).
+    void removeAt(uint32_t i) {
+        if (i >= count) return;
+        for (uint32_t k = i + 1; k < count; ++k) {
+            posX[k - 1] = posX[k];
+            posY[k - 1] = posY[k];
+            radius[k - 1] = radius[k];
+            value[k - 1] = value[k];
+            expireTick[k - 1] = expireTick[k];
+            kind[k - 1] = kind[k];
+        }
+        --count;
+    }
+
+    // 가득 차면 **가장 먼저 사라질 것을 밀어낸다** (구슬과 같은 규칙).
+    // 조용히 버리면 물량이 많은 후반에 장판이 안 깔리는데, 그건 밀도가 높을수록
+    // 광역 각인이 강해야 한다는 설계 의도와 정반대다.
+    bool push(ZoneKind k, Fixed x, Fixed y, Fixed r, Fixed v, int32_t expire) {
+        if (k == ZoneKind::None || r.raw <= 0) return false;
+        if (count >= MAX_ZONES) {
+            uint32_t oldest = 0;
+            for (uint32_t i = 1; i < count; ++i) {
+                if (expireTick[i] < expireTick[oldest]) oldest = i;
+            }
+            removeAt(oldest);
+        }
+        posX[count] = x; posY[count] = y;
+        radius[count] = r; value[count] = v;
+        expireTick[count] = expire; kind[count] = k;
+        ++count;
+        return true;
+    }
+
+    void hashInto(Hasher& h) const {
+        h.feed(count);
+        for (uint32_t i = 0; i < count; ++i) {
+            h.feed(posX[i]); h.feed(posY[i]);
+            h.feed(radius[i]); h.feed(value[i]);
+            h.feed(expireTick[i]);
+            h.feed(static_cast<uint8_t>(kind[i]));
+        }
+    }
+};
+
 struct SpawnState {
     int32_t  nextSpawnTick   = 0;
     uint32_t directionCursor = 0;   // 4방향 균등 배분. 나머지 배분 순서를 고정한다
@@ -275,6 +351,7 @@ public:
         run   = RunState{};
         spawn = SpawnState{};
         orbs  = OrbState{};
+        zones = ZoneState{};
         hero.stats.init(nullptr, nullptr);   // 데이터 로더가 붙으면 여기로 값이 온다
         // 인벤토리는 RecipeTable이 있어야 init할 수 있으므로 여기서는 완전 초기화만
         // 한다. 호출자가 데이터를 로드한 뒤 inventory.init(table)을 부른다.
@@ -348,6 +425,10 @@ public:
             Hasher h;
             spawn.hashInto(h);
             orbs.hashInto(h);    // 구슬은 스폰이 만들어낸 상태다
+            // 지역 효과도 "전장에 놓인 것"이라 같은 영역에 둔다. 영웅 상태도
+            // 엔티티 상태도 아니고, 둘 중 하나에 섞으면 분기 지점을 특정할 때
+            // 엉뚱한 시스템을 먼저 보게 된다.
+            zones.hashInto(h);
             c.spawn = h.value();
         }
         {
@@ -504,6 +585,8 @@ public:
     RunState    run{};
     SpawnState  spawn{};
     OrbState    orbs{};
+    // 지역 효과 (고유 각인 3종). 구슬과 같은 이유로 [상태]다.
+    ZoneState   zones{};
 
     Rng rngSpawn{};
     Rng rngCombat{};

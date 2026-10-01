@@ -63,7 +63,7 @@ inline uint32_t chanceToQ16(Fixed p) {
 // 이동 (§3) — 영웅은 타겟을 향해, 몹은 영웅을 향해. **양쪽 다 추격뿐이다.**
 // 사거리 판정보다 먼저 돌고, 그 뒤에 분리가 겹침을 푼다.
 // 서리 오라는 이동에서 쓰이므로 선언을 앞에 둔다 (정의는 유물 절에).
-inline Fixed frostMult(const World& w, const SimConfig& cfg, uint32_t i);
+inline Fixed slowMult(const World& w, const SimConfig& cfg, uint32_t i);
 
 inline void movementRun(World& w, const SimConfig& cfg) {
     if (cfg.tickHz <= 0) return;
@@ -93,7 +93,7 @@ inline void movementRun(World& w, const SimConfig& cfg) {
         if (w.entities.approachSpeed[i].raw <= 0) continue;
         (void)stepToward(&w.entities.posX[i], &w.entities.posY[i],
                          w.hero.posX, w.hero.posY,
-                         (w.entities.approachSpeed[i] * frostMult(w, cfg, i)) / cfg.tickHz,
+                         (w.entities.approachSpeed[i] * slowMult(w, cfg, i)) / cfg.tickHz,
                          approachStop(w.entities.attackRange[i], cfg), nullptr, nullptr);
     }
 }
@@ -242,22 +242,46 @@ inline Fixed beaconMult(const World& w, Archetype a) {
     return Fixed::one() + relicValue(w, RelicId::Beacon);
 }
 
-// R_FROST(서리 오라) — 반경 안의 적 이동속도를 깎는다. 이동 시점에 곱한다.
-inline Fixed frostMult(const World& w, const SimConfig& cfg, uint32_t i) {
-    // **R_FROST와 CC 축 아이템이 같은 경로를 쓴다.** 둔화가 두 군데에 따로 살면
-    // 합산 규칙이 두 벌이 되고, 한쪽만 고치는 사고가 난다.
-    //
-    // CC를 새 스탯으로 두지 않은 이유가 여기 있다 — 둔화는 적을 늦출 뿐 더 빨리
-    // 죽이지 않아 수익이 체감한다. 섞으면 클리어가 편해지지만 몰아도 이기지 못하므로
-    // **메인 빌드가 되지 않는다** (§4 보너스 축).
-    const Fixed frost = relicValue(w, RelicId::Frost) + Fixed::fromPermille(w.hero.slowAura);
-    if (frost.raw <= 0 || cfg.frostRadius.raw <= 0) return Fixed::one();
-    const int64_t r2 = static_cast<int64_t>(cfg.frostRadius.raw)
-                     * static_cast<int64_t>(cfg.frostRadius.raw);
-    if (distanceSq(w.entities.posX[i], w.entities.posY[i], w.hero.posX, w.hero.posY) > r2) {
-        return Fixed::one();
+// 둔화 — **세 출처가 한 경로를 쓴다**: R_FROST(서리 오라) · CC 축 아이템 ·
+// W_FISSURE(균열). 둔화가 여러 군데에 따로 살면 합산 규칙이 여러 벌이 되고
+// 한쪽만 고치는 사고가 난다.
+//
+// CC를 새 스탯으로 두지 않은 이유가 여기 있다 — 둔화는 적을 늦출 뿐 더 빨리
+// 죽이지 않아 수익이 체감한다. 섞으면 클리어가 편해지지만 몰아도 이기지 못하므로
+// **메인 빌드가 되지 않는다** (§4 보너스 축).
+//
+// 영웅 오라(앞의 둘)는 영웅 중심이고 균열은 **지면에 고정**이라 중심이 다르다.
+// 겹친 균열끼리는 **합산이 아니라 큰 쪽**이다 — E_DECAY가 "갱신이지 중첩이
+// 아니다"로 정한 것과 같은 규칙이고, 합산하면 같은 각인을 두 번 쓴 플레이어가
+// 100% 둔화(정지)를 공짜로 얻는다.
+inline Fixed slowMult(const World& w, const SimConfig& cfg, uint32_t i) {
+    Fixed slow{};
+
+    // 영웅 중심 오라
+    const Fixed aura = relicValue(w, RelicId::Frost) + Fixed::fromPermille(w.hero.slowAura);
+    if (aura.raw > 0 && cfg.frostRadius.raw > 0) {
+        const int64_t r2 = static_cast<int64_t>(cfg.frostRadius.raw)
+                         * static_cast<int64_t>(cfg.frostRadius.raw);
+        if (distanceSq(w.entities.posX[i], w.entities.posY[i],
+                       w.hero.posX, w.hero.posY) <= r2) {
+            slow += aura;
+        }
     }
-    Fixed left = Fixed::one() - frost;
+
+    // 지면에 고정된 균열 — 겹치면 큰 쪽
+    Fixed zone{};
+    for (uint32_t z = 0; z < w.zones.count; ++z) {
+        if (w.zones.kind[z] != ZoneKind::Fissure) continue;
+        const int64_t r2 = static_cast<int64_t>(w.zones.radius[z].raw)
+                         * static_cast<int64_t>(w.zones.radius[z].raw);
+        if (distanceSq(w.entities.posX[i], w.entities.posY[i],
+                       w.zones.posX[z], w.zones.posY[z]) > r2) continue;
+        if (w.zones.value[z].raw > zone.raw) zone = w.zones.value[z];
+    }
+    slow += zone;
+
+    if (slow.raw <= 0) return Fixed::one();
+    Fixed left = Fixed::one() - slow;
     if (left.raw < 0) left = Fixed{};      // 100% 초과 둔화는 정지까지만
     return left;
 }
@@ -265,7 +289,7 @@ inline Fixed frostMult(const World& w, const SimConfig& cfg, uint32_t i) {
 // 관통은 스킬 경로에서도 쓰이므로 선언을 앞에 둔다 (정의는 아래).
 inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
 inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
-inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage);
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool grow);
 
 // E_DECAY(부식) — 타격한 적에게 도트를 건다.
 // **갱신이지 중첩이 아니다.** 다시 맞으면 지속이 새로 시작되고 틱당 피해는 큰 쪽이
@@ -396,18 +420,56 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
     const int32_t hits = chain.raw > 0 ? 2 : 1;
     if (hits == 2) dmg = dmg * (Fixed::one() + chain) / Fixed(2);
 
+    // ── 고유 각인이 이 스킬에 붙는가 ──
+    //
+    // **`aoe` 여부로 가르면 안 된다.** 1차 구현이 그렇게 해서 원심력이 회전 베기와
+    // 대지 가르기 **양쪽**에 걸렸고 예산의 221%가 됐다 — 크래시가 없어 테스트가
+    // 전부 초록이었다. 어느 스킬에 붙는지는 데이터가 정한다 (`uniqueSkill`).
+    const bool hasShock = cfg.uniqueOnSkill(legendIndexOf(LegendId::Shockwave), skillIndex)
+                       && w.cards.legendHas(legendIndexOf(LegendId::Shockwave));
+    const bool hasCentri = cfg.uniqueOnSkill(legendIndexOf(LegendId::Centrifuge), skillIndex)
+                        && w.cards.legendHas(legendIndexOf(LegendId::Centrifuge));
+    const bool hasVortex = cfg.uniqueOnSkill(legendIndexOf(LegendId::Vortex), skillIndex)
+                        && w.cards.legendHas(legendIndexOf(LegendId::Vortex))
+                        && cfg.vortexDurationTicks > 0 && cfg.tickHz > 0;
+
+    // W_VORTEX(소용돌이) — **즉발을 대체한다.** 타격 루프를 아예 타지 않는다.
+    //
+    // 수치가 큰(초당 공격력의 96.5%) 이유가 여기 있다 — 잃은 즉발분까지 메워야
+    // 한다. 가산형이면 31%/초로 E_DECAY 영웅(36%, 단일 대상)과 거의 같아져
+    // 전설인데 영웅 각인처럼 보인다.
+    //
+    // 피해는 **캐스트 시점에 고정**된다 (E_DECAY의 decayPerTick과 같은 규칙).
+    // 매 틱 다시 계산하면 지속 중에 얻은 버프가 이미 깔린 장판에 소급된다.
+    // QTE 증폭은 그대로 태운다 — 그래야 소용돌이 빌드에서 QTE가 죽지 않는다.
+    if (hasVortex) {
+        const Fixed perTick = w.hero.stats.value(Stat::AttackPower)
+                            * Fixed::fromPermille(cfg.vortexDpsPermille)
+                            * qteAmplify(cfg, g) * swarmMult(w, cfg) * heroPowerMult(w, cfg)
+                            / cfg.tickHz;
+        w.zones.push(ZoneKind::Vortex, w.hero.posX, w.hero.posY,
+                     wideRadius(w, aoeRadiusOf(w)), perTick,
+                     w.tickCount() + cfg.vortexDurationTicks);
+        // **E_CHAIN(연타)은 소용돌이에 붙지 않는다.** 장판을 두 개 깔면 지속이
+        // 겹쳐 2배가 되는데, 연타의 설계는 "총 피해를 2회로 나눈다"이지
+        // "효과를 두 번 건다"가 아니다.
+        return;
+    }
+
     Fixed dealt{};
     for (int32_t pass = 0; pass < hits; ++pass) {
         if (sk.aoe) {
             // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
-            dealt += applyAoeHits(w, cfg, dmg);
+            dealt += applyAoeHits(w, cfg, dmg, hasCentri);
         } else {
             const int32_t d = w.entities.denseOf(w.hero.target);
             if (d >= 0) {
                 dealt += applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
                 applyPierce(w, cfg, static_cast<uint32_t>(d), dmg);
                 // W_SHOCKWAVE(충격파) — **단일기가 직선 관통이 된다.** 고유 각인 4번
-                dealt += applyShockwave(w, cfg, static_cast<uint32_t>(d), dmg);
+                if (hasShock) {
+                    dealt += applyShockwave(w, cfg, static_cast<uint32_t>(d), dmg);
+                }
             }
 
             // E_WIDE(확장) — **단일기는 주변에 여파를 남긴다.**
@@ -435,6 +497,36 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
     // 기저는 **처치 수**에, 흡혈은 **입힌 피해**에 비례한다.
     const Fixed leech = w.cards.engrave[engraveIndex(EngraveId::Leech)];
     if (leech.raw > 0 && dealt.raw > 0) w.purgeCorruption(dealt * leech);
+
+    // ── W_AFTERSHOCK(여진) · W_FISSURE(균열) — 둘 다 **가산이다** ──
+    //
+    // 설계가 "기절 지점"이라고 쓴 자리를 **캐스트 중심(영웅 위치)** 으로 잡는다.
+    // 대지 가르기는 영웅 중심 광역이라 두 점이 같고, `W_CLEAVE`의 기절 자체가
+    // 아직 코어에 없다 (heroes_vertical_slice.md §2가 약속했지만 미구현이다 —
+    // 지금 대지 가르기는 회전 베기보다 약한 광역기일 뿐이다). 기절이 붙어도
+    // 중심은 변하지 않으므로 이 선택은 그때도 유효하다.
+    //
+    // 균열은 초안의 "기절 대신"이 아니라 **기절을 유지하고 둔화를 더한다** —
+    // 그러지 않으면 보스 CC 게이지가 대지 가르기로 차지 않아 "CC 스탯 없는
+    // 빌드가 QTE로 보스를 무력화한다"(§3) 경로가 끊기고, 잭팟 카드가 보스전을
+    // 약화시키는 역설이 된다.
+    if (cfg.uniqueOnSkill(legendIndexOf(LegendId::Aftershock), skillIndex)
+        && w.cards.legendHas(legendIndexOf(LegendId::Aftershock))
+        && cfg.aftershockDamagePermille > 0) {
+        const Fixed boom = w.hero.stats.value(Stat::AttackPower)
+                         * Fixed::fromPermille(cfg.aftershockDamagePermille)
+                         * qteAmplify(cfg, g) * swarmMult(w, cfg) * heroPowerMult(w, cfg);
+        w.zones.push(ZoneKind::Aftershock, w.hero.posX, w.hero.posY,
+                     wideRadius(w, aoeRadiusOf(w)), boom,
+                     w.tickCount() + cfg.aftershockFuseTicks);
+    }
+    if (cfg.uniqueOnSkill(legendIndexOf(LegendId::Fissure), skillIndex)
+        && w.cards.legendHas(legendIndexOf(LegendId::Fissure))
+        && cfg.fissureSlowPermille > 0) {
+        w.zones.push(ZoneKind::Fissure, w.hero.posX, w.hero.posY,
+                     cfg.fissureRadius, Fixed::fromPermille(cfg.fissureSlowPermille),
+                     w.tickCount() + cfg.fissureDurationTicks);
+    }
 }
 
 // 보스 패턴 순환 — **고정 순서 0 → 1 → 2 → 0.** 랜덤이 아니다
@@ -530,6 +622,45 @@ inline void qteRun(World& w, const SimConfig& cfg) {
         ++w.entities.ccTriggerCount[i];
         w.entities.groggyLeft[i] = cfg.groggyTicks;
         w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i] | EntityFlag::Groggy);
+    }
+}
+
+// 지역 효과 (고유 각인 소용돌이 · 여진 · 균열) — **도트 계열과 같은 자리다.**
+// 전투보다 먼저 돌아야 "장판으로 죽을 적은 못 때린다"가 성립한다.
+//
+// 한 함수가 세 kind를 돈다. 균열은 여기서 아무것도 하지 않는다 — 둔화는 이동
+// 시점에 `slowMult`가 읽으므로 상태를 건드릴 필요가 없고, **만료만 여기서 본다.**
+//
+// ## 순회를 뒤에서 앞으로 한다
+//
+// 안정 압축이 뒤쪽을 당겨오므로 앞으로 돌면 지운 자리에 올라온 항목을 건너뛴다
+// (구슬과 같은 이유). 피해 적용 순서는 **인덱스 오름차순이어야** 결정론이
+// 유지되므로, 피해를 먼저 한 바퀴 돌리고 제거를 따로 뒤에서 앞으로 한다.
+inline void zoneRun(World& w, const SimConfig& cfg) {
+    if (w.zones.count == 0) return;
+    const int32_t now = w.tickCount();
+
+    // ① 피해 — 인덱스 오름차순
+    for (uint32_t z = 0; z < w.zones.count; ++z) {
+        const ZoneKind k = w.zones.kind[z];
+        if (k == ZoneKind::Fissure) continue;                  // 둔화는 이동이 읽는다
+        // 여진은 **만료 틱에 한 번만** 터진다. 소용돌이는 매 틱이다.
+        if (k == ZoneKind::Aftershock && now < w.zones.expireTick[z]) continue;
+        if (w.zones.value[z].raw <= 0) continue;
+
+        uint32_t hit[config::MAX_ENTITIES];
+        const uint32_t n = collectInRadius(w.entities, w.zones.posX[z], w.zones.posY[z],
+                                           w.zones.radius[z], hit, config::MAX_ENTITIES);
+        for (uint32_t m = 0; m < n; ++m) {
+            // **hooks=false** — 장판·폭발은 영웅의 타격이 아니다. 처형도 도트
+            // 갱신도 붙지 않는다 (예산을 공속으로 환산했기 때문이다).
+            applySkillHit(w, cfg, hit[m], w.zones.value[z], false);
+        }
+    }
+
+    // ② 만료 — 뒤에서 앞으로
+    for (uint32_t z = w.zones.count; z-- > 0;) {
+        if (now >= w.zones.expireTick[z]) w.zones.removeAt(z);
     }
 }
 
@@ -735,7 +866,6 @@ inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed d
 // 플레이어가 판정을 하나로 학습한다.
 inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fixed damage) {
     if (cfg.shockwaveWidth.raw <= 0) return Fixed{};
-    if (!w.cards.legendHas(legendIndexOf(LegendId::Shockwave))) return Fixed{};
 
     uint32_t hit[config::MAX_ENTITIES];
     const uint32_t n = collectInLine(w, target, cfg.shockwaveWidth, cfg.pierceLength,
@@ -763,12 +893,15 @@ inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fix
 // 새로 맞은 적이 없거나 중첩 상한에 닿으면 멈춘다. 상한이 10이고 패스마다
 // 최소 1중첩이 쌓이므로 **최대 11패스**다 — 512마리에서 11 × O(N)이고,
 // dc_load 실측으로 광역 발동은 12.4초마다 한 번이라 비용이 묻힌다.
-inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage) {
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool centrifuge) {
     const Fixed base = wideRadius(w, aoeRadiusOf(w));
     uint32_t hit[config::MAX_ENTITIES];
 
-    const bool grow = cfg.centrifugeStepPermille > 0 && cfg.centrifugeMaxStacks > 0
-                   && w.cards.legendHas(legendIndexOf(LegendId::Centrifuge));
+    // **각인 소지 판정은 호출자가 한다** — 어느 스킬에 붙는지는 `executeSkill`이
+    // `uniqueSkill`로 안다. 여기서 다시 물으면 스킬 정보가 없어 또 `aoe` 여부로
+    // 가르게 되고, 그게 1차 구현의 예산 221% 버그였다.
+    const bool grow = centrifuge && cfg.centrifugeStepPermille > 0
+                   && cfg.centrifugeMaxStacks > 0;
     if (!grow) {
         const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY, base,
                                            hit, config::MAX_ENTITIES);

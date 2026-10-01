@@ -157,6 +157,11 @@ class ConfigLoader {
     size_t      errOff_  = 0;
     uint64_t    hash_    = 1469598103934665603ull;   // FNV-1a offset basis
     int32_t     approachTicks_ = 0;   // spawn.json → loadMonsters가 쓴다
+    // skills.json의 id 목록. **loadCards가 고유 각인의 skill 이름을 여기서 찾는다.**
+    // 문자열을 복사하지 않고 원문 위치만 들고 있다 — 파싱된 문서가 load() 동안
+    // 살아 있으므로 안전하고, 3종이라 선형 탐색이 해시보다 빠르다.
+    json::Value skillIds_[MAX_SKILLS]{};
+    uint32_t    skillIdCount_ = 0;
 };
 
 // ── 구현 ──────────────────────────────────────────────────────────────────
@@ -188,8 +193,10 @@ inline bool ConfigLoader::load(SimConfig* cfg, RecipeTable* recipes, HeroBaselin
     if (!loadSpawn(docs.d[static_cast<uint32_t>(DataFile::Spawn)], cfg)) return false;
     if (!loadSegments(docs.d[static_cast<uint32_t>(DataFile::Segments)], cfg)) return false;
     if (!loadMonsters(docs.d[static_cast<uint32_t>(DataFile::Monsters)], cfg)) return false;
-    if (!loadCards(docs.d[static_cast<uint32_t>(DataFile::Cards)], cfg)) return false;
+    // **skills가 cards보다 먼저다.** 고유 각인이 "어느 스킬에 붙는지"를 스킬 id로
+    // 적어 두므로, cards를 읽을 때 그 목록이 이미 있어야 인덱스로 바꿀 수 있다.
     if (!loadSkills(docs.d[static_cast<uint32_t>(DataFile::Skills)], cfg)) return false;
+    if (!loadCards(docs.d[static_cast<uint32_t>(DataFile::Cards)], cfg)) return false;
     if (!loadItems(docs.d[static_cast<uint32_t>(DataFile::Items)], cfg, recipes, meta)) return false;
 
     cfg->dataHash = hash_;
@@ -504,6 +511,23 @@ inline bool ConfigLoader::loadCards(const json::Doc& d, SimConfig* cfg) {
                             "unique_engravings");
             }
         }
+        // **각 각인을 스킬에 묶는다.** 이름 → 인덱스는 데이터가 정한다.
+        for (uint32_t i = 0; i < ue.size() && i < 6; ++i) {
+            const json::Value want = ue.at(i)["skill"];
+            uint32_t found = skillIdCount_;
+            for (uint32_t k = 0; k < skillIdCount_; ++k) {
+                if (want.strSame(skillIds_[k])) { found = k; break; }
+            }
+            // **모르는 스킬 id를 조용히 넘기지 않는다.** 오타 하나면 그 각인이
+            // 어느 스킬에도 붙지 않는데, 증상은 "전설이 약하다"뿐이라 안 보인다.
+            if (found == skillIdCount_) {
+                return fail(DataFile::Cards, "고유 각인이 모르는 스킬을 가리킨다",
+                            "skill");
+            }
+            cfg->uniqueSkill[i] = static_cast<int32_t>(found);
+            feed(found);
+        }
+
         const json::Value ex = ue.at(0);
         cfg->executeThresholdPermille = take32(ex["threshold_permille"]);
         cfg->executeAllAttacks        = ex["scope"].strEquals("all_attacks");
@@ -558,7 +582,9 @@ inline bool ConfigLoader::loadSkills(const json::Doc& d, SimConfig* cfg) {
         cfg->skills[i].weight = take32(s["weight_permille"]);
         cfg->skills[i].aoe    = s["aoe"].asBool();
         feed(cfg->skills[i].aoe ? 1 : 0);
+        skillIds_[i] = s["id"];      // loadCards가 고유 각인을 여기에 묶는다
     }
+    skillIdCount_ = ss.size();
     return sweep(DataFile::Skills, d);
 }
 

@@ -358,6 +358,44 @@ int main() {
         CHECK_EQU(r.checksum(), untouched);
     }
 
+    dctest::section("드라이버가 실제 조합 사다리를 탄다");
+    {
+        // **회귀 테스트.** 드라이버가 인벤토리를 축소 테이블(조합식 12개)로
+        // 초기화하고 입력에는 실제 테이블을 넘기던 시절, 해시가 달라
+        // `Inventory::matches`가 걸러내 **아이템 뽑기 카드 선택이 전부 조용히
+        // 거부됐다.** 게다가 축소 테이블에는 특별함 이상 조합식이 없어
+        // 사다리가 2단에서 막혀 있었다 (실측 등급 분포 0:53 · 1:79 · 2~4: 0).
+        //
+        // 증상이 크래시가 아니라 "고급 아이템이 안 나온다"라서, 체크섬이
+        // 일치하는 동안에는 아무도 모른다.
+        World w;
+        w.init(1);
+        dev::runScript(w, 1200);
+
+        const RecipeTable& table = dev::data().table;
+        const SimConfig&   cfg   = dev::data().cfg;
+        const ItemMeta&    meta  = dev::data().meta;
+
+        // 인벤토리가 **실제** 테이블을 들고 있어야 입력이 받아들여진다
+        CHECK(w.inventory.matches(table));
+
+        int32_t total = 0;
+        int32_t aboveCommon = 0, topTier = 0;
+        for (uint32_t i = 0; i < cfg.itemTypeCount; ++i) {
+            const int32_t c = w.inventory.count(static_cast<ItemId>(i));
+            if (c <= 0) continue;
+            total += c;
+            if (meta.tier[i] > 0) aboveCommon += c;
+            if (meta.tier[i] > topTier) topTier = meta.tier[i];
+        }
+        CHECK(total > 0);
+        CHECK(aboveCommon > 0);          // 조합이 실제로 일어났다
+        // **사다리 끝까지 올라간다.** 축소 테이블 시절엔 1단이 상한이었다.
+        CHECK_EQ(topTier, static_cast<int32_t>(meta.tierCount) - 1);
+        printf("    1200틱 후 %d개 보유 · 최고 등급 %d/%d · 흔함 초과 %d개\n",
+               total, topTier, meta.tierCount - 1, aboveCommon);
+    }
+
     dctest::section("**고정 체크섬** — 시뮬 결과를 말없이 바꾸지 못하게 못 박는다");
     {
         // 설정 원천을 손으로 옮겨 적은 표(`dev_data.h`)에서 실제 JSON 로더로
@@ -377,12 +415,16 @@ int main() {
         // **서버-클라 데이터 불일치 검사가 실제로 켜져 있는지**도 함께 지킨다 —
         // 지문을 체크섬에서 빼면 여기가 바로 빨간불이 된다.
         //
+        // 두 번째로 이 절이 값을 바꾸게 만든 것은 드라이버의 축소 조합
+        // 테이블을 걷어낸 변경이다 — 사다리가 2단에서 막혀 있던 것이 풀리면서
+        // 보유 아이템이 달라졌다. 위 "조합 사다리" 절이 그 결과를 따로 못 박는다.
+        //
         // 이 값이 깨지면 시뮬이 바뀐 것이다. **갱신하기 전에 왜 움직였는지
         // 답할 수 있어야 한다.**
         struct Golden { uint64_t seed; int32_t ticks; uint64_t total; };
         constexpr Golden kGolden[] = {
-            {1u,        1200, 7828624481488076003ull},
-            {20250918u, 1200, 4504038242511919536ull},
+            {1u,        1200, 10016807016178002919ull},
+            {20250918u, 1200, 2536415252906709173ull},
         };
         for (const Golden& g : kGolden) {
             World w;

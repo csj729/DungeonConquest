@@ -145,8 +145,8 @@ inline bool acceptsAxis(Policy p, uint8_t axis) {
     return true;
 }
 
-inline int32_t chooseCraft(Policy p, const ItemMeta& meta, const Inventory& inv,
-                           const RecipeTable& table, Rng& rng) {
+inline int32_t chooseCraft(Policy p, const SimConfig& cfg, const ItemMeta& meta,
+                           const Inventory& inv, const RecipeTable& table, Rng& rng) {
     int32_t best = -1;
     int32_t bestScore = -1;
     uint32_t ties = 0;
@@ -159,7 +159,7 @@ inline int32_t chooseCraft(Policy p, const ItemMeta& meta, const Inventory& inv,
         // 받아들인 축 안에서는 등급이 전부다 — 사다리가 등급당 2.5배다.
         const int32_t score = p == Policy::Random
             ? 0
-            : meta.tier[result] * 10 + axisPreference(p, axis);
+            : cfg.itemTier[result] * 10 + axisPreference(p, axis);
         if (score > bestScore) { bestScore = score; best = static_cast<int32_t>(r); ties = 1; }
         else if (score == bestScore) {
             // **동점은 난수로 가른다** — 인덱스 순으로 고정하면 조합식 정의 순서가

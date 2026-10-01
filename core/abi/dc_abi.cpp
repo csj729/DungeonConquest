@@ -157,7 +157,7 @@ extern "C" int32_t dc_step(DcWorld* w, int32_t ticks) noexcept {
             // 런이 끝났으면 더 전진하지 않는다. 호출자가 결과를 읽기 전에
             // 상태가 더 움직이면 "어느 틱에 끝났는가"가 흐려진다.
             if (h.world.run.over()) break;
-            stepWorld(h.world, h.cfg, h.scratch);
+            stepWorld(h.world, h.cfg, h.table, h.scratch);
         }
         return DC_OK;
     } catch (...) {

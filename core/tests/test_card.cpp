@@ -216,7 +216,7 @@ int main() {
                     InputEvent e;
                     while (log.next(w.tickCount(), &e)) (void)applyInput(w, cfg, dev::data().table, e);
                 }
-                stepWorld(w, cfg, sc);
+                stepWorld(w, cfg, dev::data().table, sc);
             }
             struct R { uint64_t sum; int32_t level; };
             return R{w.checksum(), w.hero.level};
@@ -509,7 +509,7 @@ int main() {
 
             // **구간이 넘어가면 리셋된다** — 그게 "구간 후반에 가장 강하다"의 조건이다
             w.run.clearPoints = cfg.segmentStartPoints[1];
-            progressRun(w, cfg);
+            progressRun(w, cfg, dev::data().table);
             CHECK_EQ(w.run.segmentStartTick, w.tickCount());
             CHECK_EQ(heroPowerMult(w, cfg).raw, Fixed::one().raw);
             printf("    R_TIDE 0.3%%/초: 30초에 %.2f배 · 구간 전환에 리셋\n",
@@ -670,7 +670,7 @@ int main() {
             // 해석을 흐리는 요인이라 테스트로 사실을 박아둔다.
             CHECK_EQ(cfg.legendPoolSize, 9u);
             CHECK_EQ(legendIndexOf(LegendId::UniqueFirst), 3u);
-            printf("    전설 풀 %u칸 중 효과 구현 2칸(ECHO·STORM) · FORGE와 고유 각인 6칸은 미구현\n",
+            printf("    전설 풀 %u칸 중 효과 구현 3칸(ECHO·STORM·FORGE) · 고유 각인 6칸은 미구현\n",
                    cfg.legendPoolSize);
         }
     }
@@ -708,7 +708,7 @@ int main() {
                         break;
                     }
                 }
-                stepWorld(w, cfg, sc);
+                stepWorld(w, cfg, dev::data().table, sc);
             }
             return w;
         };
@@ -732,7 +732,7 @@ int main() {
         for (int32_t i = 0; i < 4000; ++i) {
             InputEvent e;
             while (log.next(replay.tickCount(), &e)) (void)applyInput(replay, cfg, table, e);
-            stepWorld(replay, cfg, rsc);
+            stepWorld(replay, cfg, dev::data().table, rsc);
         }
         CHECK_EQU(replay.checksum(), live.checksum());
 

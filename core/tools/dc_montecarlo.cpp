@@ -79,7 +79,7 @@ static RunResult runOnce(const SimConfig& cfg, uint64_t seed, dev::Policy policy
         // **조합은 언제든** (§5). 플레이어가 상시 인벤토리를 보고 있다고 보고,
         // 만들 수 있으면 바로 만든다 — 재료를 쌓아둘 이유가 없다(사다리가 항상 이득).
         for (;;) {
-            const int32_t r = dev::chooseCraft(policy, dev::data().meta, w.inventory, dev::data().table,
+            const int32_t r = dev::chooseCraft(policy, cfg, dev::data().meta, w.inventory, dev::data().table,
                                                choiceRng);
             if (r < 0) break;
             InputEvent ce;
@@ -89,7 +89,7 @@ static RunResult runOnce(const SimConfig& cfg, uint64_t seed, dev::Policy policy
             if (!applyInput(w, cfg, dev::data().table, ce)) break;
         }
 
-        stepWorld(w, cfg, scratch);
+        stepWorld(w, cfg, dev::data().table, scratch);
 
         if (!r.reachedCheckpoint && w.tickCount() >= checkpointTick) {
             r.reachedCheckpoint = true;
@@ -197,7 +197,7 @@ int main(int argc, char** argv) {
                static_cast<double>(cleared) * 100.0 / cnt);
     }
     printf("  ※ **이 상관은 아직 교란돼 있다.** 전설 풀 9칸 중 효과가 붙은 것은\n");
-    printf("     RL_ECHO·RL_STORM 둘뿐이고 RL_FORGE와 고유 각인 6칸은 미구현이다.\n");
+    printf("     전설 유물 3종(RL_ECHO·RL_STORM·RL_FORGE)뿐이고 고유 각인 6칸은 미구현이다.\n");
     printf("     게다가 오래 버틴 판이 레벨을 더 올려 전설을 더 뽑으므로 **역인과**가\n");
     printf("     섞인다 — 위 숫자를 전설의 힘으로 읽으면 안 된다. 풀이 다 차고 나서\n");
     printf("     레벨을 통제해 다시 재야 의미가 생긴다\n\n");

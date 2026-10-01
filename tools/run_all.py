@@ -31,7 +31,7 @@ MODULES = [
     ("verify_duplicate_rules", "중복 규칙 4목표"),
     ("verify_crit_axis", "치명타 축 구조"),
     ("verify_item_tree", "조합 트리 규칙"),
-    ("verify_item_values", "아이템 수치 사다리 4목표"),
+    ("verify_item_values", "아이템 수치 사다리 5목표"),
     # 회복이 한 줄도 구현되지 않은 채 13개가 전부 PASS했던 것이 이 도구가 생긴
     # 이유다. 한동안 의도적으로 FAIL이었고(기저 정화 21%), 지금은 통과한다 —
     # 빼서 초록으로 만들지 말 것.

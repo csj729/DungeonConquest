@@ -77,6 +77,10 @@ dc_add_test(test_inventory  tests/test_inventory.cpp)
 dc_add_test(test_systems    tests/test_systems.cpp)
 dc_add_test(test_qte        tests/test_qte.cpp)
 dc_add_test(test_card       tests/test_card.cpp)
+# 물량 부하 **정상성** — 512/1024마리 경로를 ASan·UBSan 빌드에서 실제로 실행한다.
+# 성능 숫자는 도구(dc_load)가 Release에서 잰다. 일반 구간 30~60마리에서는 절대
+# 밟지 않는 배열 넘침·Fixed 오버플로가 여기서만 드러난다.
+dc_add_test(test_load      tests/test_load.cpp)
 
 # ── C ABI 공유 라이브러리 ───────────────────────────────────────────────
 # Unity(C#)와 검증 서버(C#)가 P/Invoke로 부르는 단 하나의 표면.
@@ -132,6 +136,12 @@ target_link_libraries(dc_field PRIVATE dc_core)
 add_executable(dc_montecarlo tools/dc_montecarlo.cpp)
 target_link_libraries(dc_montecarlo PRIVATE dc_core)
 
+# 물량 부하 측정 (§14-12). 시뮬 틱 비용만 잰다 — 렌더 비용은 Unity 몫이고
+# 섞으면 둘 다 못 고친다. 시스템별 분해는 스냅샷 복원으로 하며(복사는 타이머
+# 밖), 부분합이 총합과 어긋나면 잔차로 드러난다.
+add_executable(dc_load tools/dc_load.cpp)
+target_link_libraries(dc_load PRIVATE dc_core)
+
 # 보스전 실측 하네스. verify_recovery.py 목표 6의 상수를 만든다 —
 # 보스 등장 틱에 월드를 복제해 유입·구슬·흡혈을 갈라 잰다.
 add_executable(dc_boss tools/dc_boss.cpp)
@@ -144,4 +154,5 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(dc_recipe_bench PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_field PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_montecarlo PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(dc_load PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()

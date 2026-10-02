@@ -17,7 +17,7 @@ import math
 ## 축이 둘이다 — 피해가 게이트, 클리어율은 기록
 
 **피해 예산이 판정하고 클리어율은 판정하지 않는다.** 둘을 한 밴드로 묶으면 각인
-하나를 고칠 때마다 1000시드(25분)를 돌려야 하고, 클리어율 3σ가 4.8%p라 그보다
+하나를 고칠 때마다 1000시드(14분)를 돌려야 하고, 클리어율 3σ가 약 4%p라 그보다
 촘촘한 조정은 측정으로 분간되지도 않는다. 그래서 **피해 예산을 게이트로 두고**
 (`run_all.py` 3초) 클리어율은 **지배 빌드 감시용 기록**으로 나란히 적는다.
 
@@ -152,8 +152,27 @@ LEGEND_MEASURED = {
 # 전설을 하나만 강제하므로, 전설 × 전설은 어느 쪽에서도 보이지 않는다. 짝 하나만
 # 게이트에 넣으면 나머지를 안 보는 것이 더 또렷해지므로 넣지 않았다 — 조합 전반은
 # dc_montecarlo(§14-10) 몫이다.
-# 클리어율 차이의 3σ (p≈0.15, n=1000). 이보다 작은 차이는 결론이 아니다.
-LEGEND_CLEAR_3SIGMA = 4.8
+# 측정에 쓴 시드 수. 3σ가 여기서 나온다.
+LEGEND_SEEDS = 1000
+
+
+def clear_3sigma(p_base, p_var, n=LEGEND_SEEDS):
+    """두 클리어율 차이의 3σ(%p). **고정 상수로 두면 안 된다.**
+
+    전에는 `LEGEND_CLEAR_3SIGMA = 4.8`을 박아 뒀는데 그건 p≈0.15에서 계산한
+    값이다. 원심력 상한을 내린 뒤 실제 비율이 9.3~13.8%로 내려가면서 **임계값이
+    너무 보수적**이 됐고, 도구가 "유의한 각인 0종"이라고 찍었다 — 실제 3σ는
+    3.95~4.28%p이고 여진(+4.5%p)은 3.15σ로 유의하다.
+
+    이항 비율의 분산은 p(1−p)라 **p에 따라 움직인다.** 임계값을 상수로 박으면
+    수치를 고칠 때마다 조용히 틀어진다. 그래서 측정값에서 매번 계산한다.
+
+    같은 시드 집합을 쓰므로(공통 난수) 실제 분산은 이보다 **작다** — 독립 표본
+    가정이라 보수적인 쪽이다. 런이 틱 0 이후 갈라지므로 상관이 완전하지는 않아
+    짝지은 분산을 쓰지 않는다. 보수적인 쪽으로 틀리는 편을 고른다.
+    """
+    a, b = p_base / 100.0, p_var / 100.0
+    return 3.0 * math.sqrt(a * (1 - a) / n + b * (1 - b) / n) * 100.0
 
 # **측정이 어느 수치에서 나왔는지 함께 못 박는다.**
 #
@@ -194,14 +213,17 @@ def _measurement_is_current():
 # **지배 빌드 감시** — 클리어율에서 판정하는 유일한 것이다 (나머지는 기록).
 #
 # "1위 ÷ 2위"로 재려 했는데 **2위가 3σ 아래라 분모가 노이즈다** — 지금 2위는
-# +4.3%p이고 3σ가 4.8%p이므로 기준선과 구분되지 않는다. 흔들리는 분모로 나눈
+# +3.6%p이고 3σ가 약 4.2%p이므로 기준선과 구분되지 않는다. 흔들리는 분모로 나눈
 # 비율은 지표가 아니다.
 #
 # 그래서 **3σ를 눈금으로 쓴다**: 유의한 각인이 하나뿐이고 그 Δ클리어가 3σ의 이
 # 배수를 넘으면 지배다. 분모가 측정의 해상도라 흔들리지 않는다.
 #
-# 원심력 상한을 내린 뒤로는 **유의한 각인이 0종**이다(1위 여진 +4.5%p < 3σ 4.8%p).
-# 그래서 이 게이트는 지금 아무것도 막지 않는다 — PASS를 '좋다'로 읽지 말 것.
+# 현재 유의한 각인은 **여진 1종**(z = 3.16)이고 지배도는 1.1배로 상한 아래다.
+#
+# **유의하지 않은 것과 약한 것을 섞지 말 것.** 처형 +39% · 원심력 +37% · 소용돌이
+# +27%는 3σ에 못 미쳐도 상대로 큰 변화다(기준선 9.3%). 절대 %p는 측정의 해상도이고
+# 설계 판단은 상대로 한다 — 진짜 약한 쪽은 충격파(+9%)와 균열(+6%) 둘이다.
 DOMINANT_SIGMA_MAX = 3.0
 
 # 피해 + 잠식 보정 합계의 천장. **현재 1위는 소용돌이 169%다** — 못 박아 두어
@@ -621,35 +643,66 @@ def report():
         print("     `./build/release/core/dc_legend 1000`을 다시 돌려")
         print("     LEGEND_MEASURED와 LEGEND_MEASURED_PARAMS를 **같이** 고칠 것")
 
-    # ── 지배 빌드 감시 (클리어율에서 판정하는 유일한 것) ──
+    # ── 클리어율 — 유의 판정과 지배 빌드 ──
     #
+    # **절대 %p와 상대 변화를 같이 본다.** 기준선이 9.3%라 +4.5%p는 상대로 +48%다.
+    # 절대만 보면 "작다"로 읽히는데 플레이어가 느끼는 쪽은 상대다. 판정(3σ)은
+    # 측정의 해상도라 절대로 하고, **설계 판단은 상대로 한다.**
+    print()
+    print(f"  {'전설':<14} {'Δ%p':>6} {'상대':>7} {'3σ':>6} {'z':>6}  유의")
+    print("  " + "-" * 52)
+    # **두 값을 섞지 말 것.** `z = Δ / σ`가 유의 판정(z > 3)이고, 지배도는
+    # `Δ / 3σ`다. 한때 둘을 같은 열에 찍어 유의 판정이 z > 9가 됐다.
+    sigma = {}
+    for uid in clears:
+        _sec, clear = LEGEND_MEASURED[uid]
+        s3 = clear_3sigma(LEGEND_BASE_CLEAR, clear)      # 3σ (%p)
+        z  = 3.0 * clears[uid] / s3 if s3 > 0 else 0.0   # Δ ÷ σ
+        sigma[uid] = (clears[uid], z, s3)
+    for uid, (d, z, s3) in sorted(sigma.items(), key=lambda kv: -kv[1][0]):
+        rel = d / LEGEND_BASE_CLEAR if LEGEND_BASE_CLEAR > 0 else 0.0
+        print(f"  {UNIQUE[uid]['name']:<14} {d:>+6.1f} {rel:>+7.0%} "
+              f"{s3:>6.2f} {z:>5.2f}σ  {'유의' if z > 3.0 else '  —'}")
+    print("  ※ 3σ는 **측정값에서 계산한다.** 상수로 박으면 비율이 움직일 때 조용히")
+    print("     틀어진다 — 전에 4.8%p(p≈0.15)로 박아 둬서 '유의 0종'이 나왔는데")
+    print("     실제 비율이 9.3~13.8%로 내려가 실제 3σ는 3.95~4.28%p였다")
+    # **옛 상수가 틀렸던 게 아니다 — p가 움직였다.** 같은 공식에 p=15%를 넣으면
+    # 4.79%p가 나와 상수와 일치한다. 이 한 줄이 공식 자체의 검산이고, 동시에
+    # "상수를 박는 방식"이 왜 위험한지를 보여준다: 유도는 맞았고 전제가 낡았다.
+    chk = clear_3sigma(15.0, 15.0)
+    chk_ok = abs(chk - 4.79) < 0.02
+    ok &= chk_ok
+    print(f"  ※ 검산: p=15%를 넣으면 {chk:.2f}%p — 옛 상수 4.8과 일치  "
+          f"{'PASS' if chk_ok else 'FAIL'}")
+    print("     상수의 유도가 틀린 게 아니라 **전제(p)가 낡았다.** 그래서 계산으로 옮긴다")
+
     # **분모는 3σ다. 2위가 아니다.** 2위가 유의하지 않으면 비율이 노이즈로 나뉜다.
-    ranked = sorted(clears.values(), reverse=True)
-    sig = [v for v in ranked if v > LEGEND_CLEAR_3SIGMA]
-    top = ranked[0] if ranked else 0.0
-    dom = top / LEGEND_CLEAR_3SIGMA if LEGEND_CLEAR_3SIGMA > 0 else 0.0
+    sig = [uid for uid, (_d, z, _s) in sigma.items() if z > 3.0]
+    top_uid = max(sigma, key=lambda u: sigma[u][0]) if sigma else None
+    # 지배도는 **3σ를 눈금으로** 쓴다 — 유의 판정(z)과 분모가 다르다
+    dom = (sigma[top_uid][0] / sigma[top_uid][2]) if top_uid else 0.0
     good = dom <= DOMINANT_SIGMA_MAX
     ok &= good
-    # 대기 행이 있으면 이 판정은 **그 행을 빼고** 낸 값이다. 그대로 "0종"이라고
-    # 찍으면 거짓 안심이 된다 — 지배 후보가 빠진 채 "지배 없음"으로 읽힌다.
+    # 대기 행이 있으면 이 판정은 **그 행을 빼고** 낸 값이다. 그대로 찍으면 지배
+    # 후보가 빠진 채 "지배 없음"으로 읽힌다.
     note = f"  ← {len(pending)}종 대기 중이라 **결론이 아니다**" if pending else ""
-    print(f"  지배 빌드: 1위 {top:+.1f}%p ÷ 3σ {LEGEND_CLEAR_3SIGMA:.1f}%p = "
-          f"{dom:.1f}σ (상한 {DOMINANT_SIGMA_MAX:.1f})  "
-          f"{'PASS' if good else 'FAIL'}{note}")
-    if not sig and not pending:
-        # **0종은 통과가 아니라 발견이다.** 이 지표는 "유의한 각인이 하나뿐일 때
-        # 그게 얼마나 튀는가"를 재도록 만들었다. 하나도 없으면 분자가 유의하지
-        # 않은 값이라 비율 자체가 의미가 없고, PASS를 "밸런스가 좋다"로 읽으면
-        # 안 된다 — 여섯 종 **다 체감되지 않는다**는 뜻이다.
-        print(f"  ※ **유의한 각인이 0종이다.** 지배 빌드는 없지만 위 PASS는"
-              f" '좋다'가 아니다 —")
-        print(f"     1위도 3σ 아래라 여섯 종 전부 기준선과 구분되지 않는다."
-              f" 다음 밸런스 작업의 입력이다")
-    else:
-        print(f"  유의한 각인 {len(sig)}종 / {len(UNIQUE) - len(pending)}"
-              f" — 나머지는 기준선과 구분되지 않는다")
-    print(f"  ※ Δ클리어 차이의 3σ는 {LEGEND_CLEAR_3SIGMA:.1f}%p다 —"
-          f" 그보다 작은 차이는 결론이 아니다\n")
+    name = UNIQUE[top_uid]["name"] if top_uid else "—"
+    tops3 = sigma[top_uid][2] if top_uid else 0.0
+    topd  = sigma[top_uid][0] if top_uid else 0.0
+    print(f"\n  지배 빌드: 1위 {name} {topd:+.1f}%p ÷ 3σ {tops3:.2f}%p = {dom:.1f}배"
+          f" (상한 {DOMINANT_SIGMA_MAX:.1f}배)  {'PASS' if good else 'FAIL'}{note}")
+    print(f"  유의한 각인 {len(sig)}종 / {len(UNIQUE) - len(pending)}")
+    if not pending:
+        weak = [uid for uid, (d, _m, _s) in sigma.items()
+                if LEGEND_BASE_CLEAR > 0 and d / LEGEND_BASE_CLEAR < 0.15]
+        if weak:
+            # **유의하지 않은 것과 약한 것은 다르다.** 상대 +27~39%는 3σ에 못 미쳐도
+            # 설계상 충분하다. 상대 +15% 아래가 진짜 약한 쪽이고, 여기 이름이 뜨는
+            # 카드가 밸런스 작업의 대상이다.
+            print(f"  ※ **상대 +15% 아래 — 진짜 약한 쪽**: "
+                  f"{', '.join(UNIQUE[u]['name'] for u in weak)}")
+            print("     나머지는 3σ에 못 미쳐도 상대로 +27% 이상이라 설계상 충분하다")
+    print()
     for uid, e in UNIQUE.items():
         key = next((k for k in e if k.endswith("_permille")), None)
         v = _pm(e[key]) if key else 0.0

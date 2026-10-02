@@ -111,15 +111,14 @@ int main(int argc, char** argv) {
     printf("=== 고유 각인별 실측 (시드 %d · QTE 항상 완벽) ===\n", N);
     printf("클리어 = 도달 × 도달 후 생존. **도달 후 생존은 품질이 아니다** —\n");
     printf("도달률이 오르면 약한 빌드가 보스전 모집단에 섞여 내려간다.\n\n");
-    printf("%-12s %8s %11s %10s %10s %11s %10s %10s\n",
-           "전설", "도달률", "도달후생존", "클리어율", "Δ클리어",
+    printf("%-12s %8s %11s %10s %10s %9s %11s %10s %10s\n",
+           "전설", "도달률", "도달후생존", "클리어율", "Δ클리어", "런 길이",
            "도달시잠식", "잡몹처치", "기절틱(E)");
     printf("  %s\n", "-------------------------------------------------------"
-                     "--------------------------------");
+                     "------------------------------------------");
 
     const double sed = 100.0 * std::sqrt(2 * 0.15 * 0.85 / N);   // 차이의 표준오차
     double baseClear = 0;
-    bool ok = true;
     for (const Variant& v : kVariants) {
         double sec = 0;
         long tr = 0, el = 0, ce = 0, arrive = 0;
@@ -133,9 +132,13 @@ int main(int argc, char** argv) {
         const double clear = 100.0 * cl / n;
         if (v.legend < 0) baseClear = clear;
         const bool sig = v.legend >= 0 && std::fabs(clear - baseClear) > 3 * sed;
-        printf("%-12s %7.1f%% %10.1f%% %9.1f%% %+8.1f%%p%s %9.0f %10.1f %10.0f\n",
+        // **런 길이를 같이 찍는다.** 빨리 끝나면 경험치가 덜 쌓여 보스 앞에서
+        // 레벨이 낮다 — "도달은 늘었는데 생존이 줄었다"가 모집단 효과인지
+        // 성장 부족인지 가리는 열이다.
+        printf("%-12s %7.1f%% %10.1f%% %9.1f%% %+8.1f%%p%s %8.1fs %10.0f %10.1f %10.0f\n",
                v.name, 100.0 * re / n, re > 0 ? 100.0 * cl / re : 0.0, clear,
                v.legend < 0 ? 0.0 : clear - baseClear, sig ? " *" : "  ",
+               sec / n,
                arriveN > 0 ? static_cast<double>(arrive) / arriveN / Fixed::ONE_RAW : 0.0,
                static_cast<double>(tr) / n, static_cast<double>(ce) / n);
         (void)el;
@@ -143,5 +146,5 @@ int main(int argc, char** argv) {
     printf("\n  * = 기준선과의 차이가 3σ(%.1f%%p)를 넘는다. 그 아래는 결론이 아니다.\n", 3 * sed);
     printf("  전설 풀 %u칸 중 고유 각인 6칸만 본다 — 유물 3종은 dc_boss·dc_montecarlo 몫이다.\n",
            cfg.legendPoolSize);
-    return ok ? 0 : 1;
+    return 0;
 }

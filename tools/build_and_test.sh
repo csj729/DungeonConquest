@@ -16,6 +16,25 @@ build() {   # build <dir> <build-type> <sanitizer>
     cmake --build "build/$1" -j >/dev/null || return 1
 }
 
+# **clang 축이 있다.** `-Wunused-but-set-variable` 같은 경고를 gcc는 놓치고 clang은
+# 잡는다. 전에 두 번 CI에서만 빨간불이 났다 — dc_boss의 arriveSecSum, dc_legend의
+# sec. 둘 다 "열을 지우고 누적만 남긴" 같은 모양이라 로컬에서도 보게 한다.
+#
+# clang은 **빌드만** 한다. 테스트 실행은 gcc 네 설정이 이미 덮으므로 중복이고,
+# 여기서 보려는 것은 컴파일러가 다르면 다른 것을 잡는다는 사실뿐이다.
+if command -v clang++ >/dev/null 2>&1; then
+    printf '== clang 빌드 (경고 축이 gcc와 다르다)\n'
+    if cmake -S . -B build/clang -DCMAKE_BUILD_TYPE=Release -DDC_SANITIZE=none \
+             -DCMAKE_CXX_COMPILER=clang++ >/dev/null \
+       && cmake --build build/clang -j >/dev/null; then
+        echo "   통과"
+    else
+        echo "   빌드 실패 — CI의 clang 잡이 여기서 먼저 걸렸다"; FAILED=1
+    fi
+else
+    echo "== clang 없음 — 건너뜀 (CI가 본다)"
+fi
+
 for cfg in "release Release none" "debug Debug none" "ubsan Debug undefined" "asan Debug address"; do
     set -- $cfg
     printf '== %s (%s / sanitize=%s)\n' "$1" "$2" "$3"

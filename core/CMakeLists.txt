@@ -140,6 +140,11 @@ target_link_libraries(dc_field PRIVATE dc_core)
 add_executable(dc_montecarlo tools/dc_montecarlo.cpp)
 target_link_libraries(dc_montecarlo PRIVATE dc_core)
 
+# 전설 각인별 실측. **클리어율을 "도달 × 생존"으로 분해한다** — DPS 예산비가
+# 같은 각인들이 클리어율에서 전혀 다르게 나오는 격차를 재는 도구다.
+add_executable(dc_legend tools/dc_legend.cpp)
+target_link_libraries(dc_legend PRIVATE dc_core)
+
 # 물량 부하 측정 (§14-12). 시뮬 틱 비용만 잰다 — 렌더 비용은 Unity 몫이고
 # 섞으면 둘 다 못 고친다. 시스템별 분해는 스냅샷 복원으로 하며(복사는 타이머
 # 밖), 부분합이 총합과 어긋나면 잔차로 드러난다.
@@ -159,4 +164,5 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(dc_field PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_montecarlo PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(dc_load PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(dc_legend PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()

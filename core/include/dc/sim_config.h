@@ -35,6 +35,12 @@ struct SkillConfig {
     Fixed   mult{};          // 기본 공격 대비 배율
     int32_t weight = 0;      // 추첨 가중치(permille)
     bool    aoe    = false;
+    // CC 적용량 — **기준 게이지(`ccGaugeMax`) 대비 permille**이다.
+    // `qtePerfectCcGainPermille`과 같은 단위다 (둘 다 "CC 효과 1회").
+    //
+    // **"대지 가르기가 CC 스킬"을 코드에 박지 않으려고 스킬 속성으로 둔다.**
+    // 0이면 CC를 적용하지 않는다 — 분기가 데이터 쪽에 있다.
+    int32_t ccGainPermille = 0;
 };
 
 // 몬스터 한 종류의 전투 데이터 (§9 "몬스터 전투 데이터").

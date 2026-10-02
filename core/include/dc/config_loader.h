@@ -582,6 +582,7 @@ inline bool ConfigLoader::loadSkills(const json::Doc& d, SimConfig* cfg) {
         cfg->skills[i].weight = take32(s["weight_permille"]);
         cfg->skills[i].aoe    = s["aoe"].asBool();
         feed(cfg->skills[i].aoe ? 1 : 0);
+        cfg->skills[i].ccGainPermille = take32(s["cc_gain_permille"]);
         skillIds_[i] = s["id"];      // loadCards가 고유 각인을 여기에 묶는다
     }
     skillIdCount_ = ss.size();

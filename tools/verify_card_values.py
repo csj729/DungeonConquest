@@ -226,6 +226,27 @@ def _measurement_is_current():
 # 설계 판단은 상대로 한다 — 진짜 약한 쪽은 충격파(+9%)와 균열(+6%) 둘이다.
 DOMINANT_SIGMA_MAX = 3.0
 
+# ── 전설은 평균이 아니라 바닥과 상한으로 본다 ──────────────────
+#
+# 전설을 동일성(가중평균)에서 뺐다. 1.5% 확률에 10배 분산인 등급을 평균 기반
+# 페이싱 식에 넣는 것은 모델링 오류다 — 전설은 페이싱이 아니라 스파이크다.
+# 게다가 그 식은 **선언 예산**으로 돌아서 유물이 3~5배인 것을 한 번도 보지 않았다.
+#
+# 빼고 보면 문제의 성격이 드러난다. 평균이 아니라 둘이다:
+#
+#   · **바닥** — 전설 0회 판(약 6.6%)은 비전설만 받으므로 곡선의 88%다.
+#     전설 풀이 곡선을 떠받치는 구조이고, §4 불변조건("전설 0회 판도 클리어
+#     가능해야 한다")이 걸리는 자리가 여기다.
+#   · **상한** — 전설이 뜨면 곡선이 남겨 둔 몫의 1.59배를 공급한다.
+#
+# 아래 둘은 **유도한 값이 아니라 못 박은 값이다**(LEGEND_RELIC_OVER와 같은 방식).
+# 지금 상태를 고정해서 더 나빠지면 걸리게 하는 것이 목적이다.
+NONLEGEND_FLOOR_MIN = 0.80   # 전설 0회 판이 곡선의 이 비율 이상을 받아야 한다
+LEGEND_SUPPLY_MAX   = 2.00   # 전설이 공급하는 몫 ÷ 곡선이 남겨 둔 몫
+# 전설 풀 내부 격차(최대 ÷ 최소). 현재 5.39 ÷ 0.54 = 10.0배다. **이 결정이
+# 격차를 해소하지는 않는다** — 회계를 정리하고 격차를 보이게 만들 뿐이다.
+LEGEND_SPREAD_MAX   = 12.0
+
 # 피해 + 잠식 보정 합계의 천장. **현재 1위는 소용돌이 169%다** — 못 박아 두어
 # 더 나빠지면 걸리게 한다 (LEGEND_RELIC_OVER와 같은 방식).
 #
@@ -497,12 +518,28 @@ def report():
     for g in GRADE_BUDGET:
         print(f"  {g:>4} {GRADE_UNIT[g]*unit:>7.1%} {GRADE_BUDGET[g]:>7.1%} "
               f"{total*GRADE_BUDGET[g]:>10.2f}")
-    got = sum(RATES[g] * GRADE_BUDGET[g] for g in GRADE_BUDGET)
-    good = abs(got - CARD_POWER_PER_LEVELUP) / CARD_POWER_PER_LEVELUP < 0.05
+    # ── 동일성은 **비전설만** 본다 ──
+    #
+    # 전에는 전설까지 넣어 가중평균을 냈다. 그런데 그 합은 **선언 예산**(15%)으로
+    # 돌았고 전설 카드의 실제 값은 들어오지 않았다 — 유물이 3~5배인 것이 평균에
+    # 전혀 반영되지 않았다. 실제 값을 넣으면 2.25%로 허용 5%를 넘는다.
+    #
+    # 그래서 전설을 평균에서 뺀다. **1.5% 확률에 10배 분산인 등급을 평균 기반
+    # 페이싱 식에 넣는 것이 모델링 오류다** — 전설은 페이싱이 아니라 스파이크다.
+    # 빼고 보면 문제의 성격이 평균이 아니라 **바닥과 상한**이라는 게 드러난다.
+    nonl_rate   = sum(RATES[g] for g in GRADE_BUDGET if g != "전설")
+    nonl_got    = sum(RATES[g] * GRADE_BUDGET[g] for g in GRADE_BUDGET if g != "전설")
+    legend_need = CARD_POWER_PER_LEVELUP - nonl_got     # 곡선이 전설에 남겨 둔 몫
+    good = abs(nonl_got - (CARD_POWER_PER_LEVELUP
+                           - RATES["전설"] * GRADE_BUDGET["전설"])) \
+           / CARD_POWER_PER_LEVELUP < 0.05
     ok &= good
-    print(f"  확정값 가중평균 {got:.2%} vs 카드 몫 {CARD_POWER_PER_LEVELUP:.2%}  "
+    print(f"  비전설 가중평균 {nonl_got:.3%} (확률 {nonl_rate:.1%})"
+          f" vs 곡선이 비전설에 남겨 둔 몫 "
+          f"{CARD_POWER_PER_LEVELUP - RATES['전설']*GRADE_BUDGET['전설']:.3%}  "
           f"{'PASS' if good else 'FAIL'}")
-    print("  ※ 이 한 줄이 경험치 곡선과 카드 수치를 잇는다. 곡선을 바꾸면 표 전체가 움직인다\n")
+    print("  ※ 이 한 줄이 경험치 곡선과 **비전설** 카드 수치를 잇는다.")
+    print("     전설은 여기 없다 — 아래 '전설은 평균이 아니라 바닥과 상한'이 본다\n")
 
     budget = total * GRADE_BUDGET["고급"]
     print(f"=== 기준선 ===")
@@ -731,6 +768,39 @@ def report():
     print(f"     {basic/total:.0%}이므로 그대로 +{basic/total:.0%}다 — 예산의 5.4배다.")
     print("  ※ RL_FORGE만 예산 **아래**다(0.5배). 구간마다 반복되므로 누적이 본체이고,")
     print("     그래서 획득 시점에 민감하다 — verify_item_values.py 목표 5가 따로 본다\n")
+
+    print("=== 전설은 평균이 아니라 **바닥과 상한**이다 ===")
+    print("  전설을 동일성에서 뺐다. 1.5% 확률에 10배 분산인 등급은 페이싱이 아니라")
+    print("  스파이크이고, 평균에 넣으면 선언 예산으로만 돌아 유물 초과가 안 보인다.")
+    nonl_got = sum(RATES[g] * GRADE_BUDGET[g] for g in GRADE_BUDGET if g != "전설")
+    need     = CARD_POWER_PER_LEVELUP - nonl_got
+    mults    = [unique_delta(u) / legend_budget for u in UNIQUE
+                if unique_delta(u) is not None]
+    mults   += [legend_relic_delta(r) / legend_budget for r in LEGEND_RELIC_OVER]
+    pool     = sum(mults) / len(mults)
+    supply   = RATES["전설"] * GRADE_BUDGET["전설"] * pool
+    floor    = nonl_got / CARD_POWER_PER_LEVELUP
+    spread   = max(mults) / min(mults) if min(mults) > 0 else float("inf")
+    zero_run = (1 - RATES["전설"]) ** 180        # 레벨업 60회 × 3장
+
+    f_ok = floor >= NONLEGEND_FLOOR_MIN
+    s_ok = supply / need <= LEGEND_SUPPLY_MAX
+    p_ok = spread <= LEGEND_SPREAD_MAX
+    ok &= f_ok and s_ok and p_ok
+    print(f"  바닥 — 전설 0회 판({zero_run:.1%})이 받는 몫 {nonl_got:.3%}"
+          f" = 곡선의 **{floor:.0%}**  (하한 {NONLEGEND_FLOOR_MIN:.0%})"
+          f"  {'PASS' if f_ok else 'FAIL'}")
+    print(f"  상한 — 전설이 공급하는 몫 {supply:.3%} ÷ 곡선이 남겨 둔 {need:.3%}"
+          f" = **{supply/need:.2f}배**  (상한 {LEGEND_SUPPLY_MAX:.2f}배)"
+          f"  {'PASS' if s_ok else 'FAIL'}")
+    print(f"  격차 — 풀 {len(mults)}칸 최대 {max(mults):.2f}배 ÷ 최소 {min(mults):.2f}배"
+          f" = **{spread:.1f}배**  (상한 {LEGEND_SPREAD_MAX:.1f}배)"
+          f"  {'PASS' if p_ok else 'FAIL'}")
+    print("  ※ 세 값은 **유도가 아니라 못 박은 것**이다. 지금을 고정해 더 나빠지면")
+    print("     걸리게 하는 목적이고, 격차 10배 자체는 이 결정이 해소하지 않는다 —")
+    print("     회계를 정리하고 격차를 **보이게** 만들었을 뿐이다")
+    print("  ※ 바닥이 하한을 깨면 '전설이 없으면 클리어가 안 된다'는 뜻이고, 그건")
+    print("     §4 불변조건 위반이다. 전설 수치를 올릴 때 여기가 먼저 걸린다\n")
 
     print("=== 빌드 종속 각인 — 무엇이 값을 움직이는가 ===")
     for eid, (axis, points) in BUILD_SCALED.items():

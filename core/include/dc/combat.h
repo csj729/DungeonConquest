@@ -91,6 +91,10 @@ inline void movementRun(World& w, const SimConfig& cfg) {
     for (uint32_t i = 0; i < n; ++i) {
         if (w.entities.deadAt(i)) continue;
         if (w.entities.approachSpeed[i].raw <= 0) continue;
+        // **그로기는 행동 불가다** (§3) — 공격만 막고 이동을 허용하면 기절한 적이
+        // 계속 걸어와 "묶었다"는 체감이 생기지 않는다. 전에는 공격 루프에서만
+        // 막고 있었다.
+        if (w.entities.groggyLeft[i] > 0) continue;
         (void)stepToward(&w.entities.posX[i], &w.entities.posY[i],
                          w.hero.posX, w.hero.posY,
                          (w.entities.approachSpeed[i] * slowMult(w, cfg, i)) / cfg.tickHz,
@@ -288,8 +292,11 @@ inline Fixed slowMult(const World& w, const SimConfig& cfg, uint32_t i) {
 
 // 관통은 스킬 경로에서도 쓰이므로 선언을 앞에 둔다 (정의는 아래).
 inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
+// CC 효과 1회. 정의는 아래 (ccThreshold 뒤) — 스킬 경로와 QTE 경로가 공유한다.
+inline bool applyCc(World& w, const SimConfig& cfg, uint32_t i, int32_t gainPermille);
 inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
-inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool grow);
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool grow,
+                          int32_t ccGain);
 
 // E_DECAY(부식) — 타격한 적에게 도트를 건다.
 // **갱신이지 중첩이 아니다.** 다시 맞으면 지속이 새로 시작되고 틱당 피해는 큰 쪽이
@@ -458,13 +465,18 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
 
     Fixed dealt{};
     for (int32_t pass = 0; pass < hits; ++pass) {
+        // **CC는 캐스트당 1회다.** E_CHAIN(연타)이 2타로 나누면 타격은 두 번이지만
+        // CC 효과는 한 번이어야 한다 — 연타의 설계는 "총 피해를 2회로 나눈다"이고,
+        // 두 번 걸면 피해 각인이 CC 축을 공짜로 두 배 사게 된다.
+        const int32_t ccGain = pass == 0 ? sk.ccGainPermille : 0;
         if (sk.aoe) {
             // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
-            dealt += applyAoeHits(w, cfg, dmg, hasCentri);
+            dealt += applyAoeHits(w, cfg, dmg, hasCentri, ccGain);
         } else {
             const int32_t d = w.entities.denseOf(w.hero.target);
             if (d >= 0) {
                 dealt += applySkillHit(w, cfg, static_cast<uint32_t>(d), dmg);
+                (void)applyCc(w, cfg, static_cast<uint32_t>(d), ccGain);
                 applyPierce(w, cfg, static_cast<uint32_t>(d), dmg);
                 // W_SHOCKWAVE(충격파) — **단일기가 직선 관통이 된다.** 고유 각인 4번
                 if (hasShock) {
@@ -578,6 +590,44 @@ inline Fixed ccThreshold(const EntityStore& e, const SimConfig& cfg, uint32_t i)
     return e.ccGaugeMax[i] * mult;
 }
 
+// CC 효과 1회를 적용한다 (§4 CC 스태거 게이지). **두 경로가 이걸 공유한다** —
+// 위기 회피 완벽 판정과 CC 스킬(대지 가르기). 게이지 규칙이 두 벌로 갈리면
+// 한쪽만 고치는 사고가 난다.
+//
+// ## 잡몹은 게이지를 거치지 않는다
+//
+// `ccGaugeMax`가 0이면 **즉시 기절**이다. 이것이 "일반 몹에게는 무조건 걸리고
+// 엘리트·보스는 게이지를 채워야 한다"(§4)가 데이터로 성립하는 방식이다 —
+// archetype 분기가 아니라 게이지 유무가 가른다.
+//
+// ## 충전량은 **기준** 임계치의 비율이다
+//
+// 오른 임계치가 아니다. 오른 값에 비례하면 저항 상승이 무의미해진다(항상 같은
+// 횟수에 발동한다). 보스는 발동마다 임계치가 오르므로 n번째 발동에 n회분이 든다.
+//
+// 기절했으면 true.
+inline bool applyCc(World& w, const SimConfig& cfg, uint32_t i, int32_t gainPermille) {
+    if (gainPermille <= 0 || w.entities.deadAt(i)) return false;
+    if (cfg.groggyTicks <= 0) return false;
+
+    // 게이지가 없는 대상(잡몹) — 즉시 기절
+    if (w.entities.ccGaugeMax[i].raw <= 0) {
+        w.entities.groggyLeft[i] = cfg.groggyTicks;
+        w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i] | EntityFlag::Groggy);
+        return true;
+    }
+
+    w.entities.ccGauge[i] += w.entities.ccGaugeMax[i] * Fixed::fromPermille(gainPermille);
+    const Fixed threshold = ccThreshold(w.entities, cfg, i);
+    if (threshold.raw <= 0 || w.entities.ccGauge[i].raw < threshold.raw) return false;
+
+    w.entities.ccGauge[i] = Fixed{};
+    ++w.entities.ccTriggerCount[i];
+    w.entities.groggyLeft[i] = cfg.groggyTicks;
+    w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i] | EntityFlag::Groggy);
+    return true;
+}
+
 inline void qteRun(World& w, const SimConfig& cfg) {
     if (w.hero.qteCooldown > 0) --w.hero.qteCooldown;
     if (!w.hero.qte.open()) return;
@@ -611,18 +661,8 @@ inline void qteRun(World& w, const SimConfig& cfg) {
     // 실효 체력이 커서 반격 피해로는 체감이 없고, 게이지는 CC 스탯 없는 빌드에도
     // 보스를 무력화할 경로를 열어주기 때문이다 (§3).
     //
-    // **충전량은 기준 임계치의 비율이다** — 오른 임계치가 아니라. 그래야 저항
-    // 상승이 실제로 작동한다(오른 값에 비례하면 항상 같은 횟수에 발동한다).
-    const Fixed gain = w.entities.ccGaugeMax[i]
-                     * Fixed::fromPermille(cfg.qtePerfectCcGainPermille);
-    w.entities.ccGauge[i] += gain;
-    const Fixed threshold = ccThreshold(w.entities, cfg, i);
-    if (threshold.raw > 0 && w.entities.ccGauge[i].raw >= threshold.raw) {
-        w.entities.ccGauge[i] = Fixed{};
-        ++w.entities.ccTriggerCount[i];
-        w.entities.groggyLeft[i] = cfg.groggyTicks;
-        w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i] | EntityFlag::Groggy);
-    }
+    // 규칙 자체는 `applyCc`가 들고 있다 — CC 스킬(대지 가르기)과 같은 경로다.
+    (void)applyCc(w, cfg, i, cfg.qtePerfectCcGainPermille);
 }
 
 // 지역 효과 (고유 각인 소용돌이 · 여진 · 균열) — **도트 계열과 같은 자리다.**
@@ -893,7 +933,8 @@ inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fix
 // 새로 맞은 적이 없거나 중첩 상한에 닿으면 멈춘다. 상한이 10이고 패스마다
 // 최소 1중첩이 쌓이므로 **최대 11패스**다 — 512마리에서 11 × O(N)이고,
 // dc_load 실측으로 광역 발동은 12.4초마다 한 번이라 비용이 묻힌다.
-inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool centrifuge) {
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool centrifuge,
+                          int32_t ccGain) {
     const Fixed base = wideRadius(w, aoeRadiusOf(w));
     uint32_t hit[config::MAX_ENTITIES];
 
@@ -906,7 +947,12 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool cen
         const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY, base,
                                            hit, config::MAX_ENTITIES);
         Fixed dealt{};
-        for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], damage);
+        for (uint32_t k = 0; k < n; ++k) {
+            dealt += applySkillHit(w, cfg, hit[k], damage);
+            // **CC는 피해 뒤다.** 먼저 걸면 그 타격으로 죽는 적에게도 기절이 붙어
+            // 게이지·발동 횟수가 헛돌고, 보스 임계치 상승이 한 칸 앞서 간다.
+            (void)applyCc(w, cfg, hit[k], ccGain);
+        }
         return dealt;
     }
 
@@ -923,6 +969,8 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool cen
             struck[hit[k]] = 1;
             ++fresh;
             dealt += applySkillHit(w, cfg, hit[k], damage);
+            (void)applyCc(w, cfg, hit[k], ccGain);
+        
         }
         if (fresh == 0 || stacks >= cfg.centrifugeMaxStacks) break;
         stacks += fresh;
@@ -990,6 +1038,26 @@ inline void combatRun(World& w, const SimConfig& cfg) {
     for (uint32_t i = 0; i < n; ++i) {
         if (w.entities.deadAt(i)) continue;
 
+        // ── 그로기 — 행동 불가다 (§3). 공격도 이동도 멈춘다 ──
+        //
+        // **사거리 검사보다 먼저다.** 전에는 `if (d2 > r2) continue` 뒤에 있어서
+        // 사거리 밖의 적은 카운트다운이 돌지 않았다. 이동이 허용돼 있던 동안에는
+        // 걸어 들어와 범위 안에서 풀렸으므로 증상이 없었는데, 그로기가 이동까지
+        // 막자 **멀리서 기절한 적이 영구히 얼어붙었다** — 걸어올 수 없으니
+        // 카운트다운도 시작되지 않는 교착이다. 테스트가 이걸 잡았다.
+        //
+        // **플래그도 여기서 내린다.** 전에는 올리기만 하고 내리지 않아서, 한 번
+        // 기절한 적은 `groggyLeft`가 0으로 돌아간 뒤에도 영원히 Groggy로 표시됐다.
+        // 아무도 플래그를 읽지 않아 증상이 없었지만 **체크섬에는 들어가는 상태**라
+        // 거짓을 들고 다닌 것이고, 연출이 플래그를 읽기 시작하면 바로 드러난다.
+        if (w.entities.groggyLeft[i] > 0) {
+            if (--w.entities.groggyLeft[i] == 0) {
+                w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i]
+                                                           & ~EntityFlag::Groggy);
+            }
+            continue;
+        }
+
         // 이동은 movementRun이 이미 했다. 여기서는 사거리 안인지만 본다.
         const Fixed dx = w.hero.posX - w.entities.posX[i];
         const Fixed dy = w.hero.posY - w.entities.posY[i];
@@ -997,9 +1065,6 @@ inline void combatRun(World& w, const SimConfig& cfg) {
         const int64_t r2 = static_cast<int64_t>(w.entities.attackRange[i].raw)
                          * static_cast<int64_t>(w.entities.attackRange[i].raw);
         if (d2 > r2) continue;
-
-        // 그로기 — QTE 완벽 판정의 보상. 행동 불가다 (§3).
-        if (w.entities.groggyLeft[i] > 0) { --w.entities.groggyLeft[i]; continue; }
         // 텔레그래프 진행 중이면 QTE 창이 열려 있다. 해결은 qteRun이 한다.
         if (w.entities.windupLeft[i] > 0) { --w.entities.windupLeft[i]; continue; }
         if (w.entities.attackCooldown[i] > 0) { --w.entities.attackCooldown[i]; continue; }

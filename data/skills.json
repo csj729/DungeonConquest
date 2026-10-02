@@ -1,26 +1,30 @@
 {
   "_": "전사 액티브 3종. mult_permille은 기본 공격 대비 배율, weight_permille은 추첨 가중치.",
+  "_cc_gain": "**CC 적용량을 스킬 속성으로 둔다.** '대지 가르기가 CC 스킬'을 코드에 박으면 다른 직업에 CC 스킬을 줄 때마다 코어를 고쳐야 한다 (CLAUDE.md: 하드코딩 분기 금지).\\n단위는 **기준 게이지(ccGaugeMax) 대비 permille**이고, hero.json의 qte_perfect_cc_gain_permille(1000)과 **같은 단위**다 — 둘 다 'CC 효과 1회'이므로 같은 눈금을 써야 두 경로가 비교된다.\\n1000은 그 앵커에서 그대로 왔다. 엘리트는 임계치가 고정이라 1회 발동 = 1회 기절이고, 보스는 임계치가 발동마다 1000permille씩 올라 2번째는 2회분이 필요하다 (monsters_vertical_slice.md §4).\\n**잡몹은 ccGaugeMax가 0이라 게이지를 거치지 않고 즉시 기절한다** — '일반 몹에게는 무조건 걸린다'가 데이터로 성립한다.",
   "skills": [
     {
       "id": "W_SMASH",
       "name": "분쇄 강타",
       "mult_permille": 3000,
       "weight_permille": 400,
-      "aoe": false
+      "aoe": false,
+      "cc_gain_permille": 0
     },
     {
       "id": "W_WHIRL",
       "name": "회전 베기",
       "mult_permille": 2500,
       "weight_permille": 350,
-      "aoe": true
+      "aoe": true,
+      "cc_gain_permille": 0
     },
     {
       "id": "W_CLEAVE",
       "name": "대지 가르기",
       "mult_permille": 2000,
       "weight_permille": 250,
-      "aoe": true
+      "aoe": true,
+      "cc_gain_permille": 1000
     }
   ]
 }

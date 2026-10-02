@@ -20,6 +20,9 @@ static World makeWorld(uint64_t seed = 1) {
     return w;
 }
 
+// **hp는 Fixed(20.12) 범위 안이어야 한다** (±524,287). 1000000을 쓰면 UBSan이
+// `1000000 * 4096`에서 부호 있는 오버플로를 잡는다 — "안 죽는 샌드백"을 원해서
+// 큰 값을 적고 싶어지는 자리다.
 static SpawnDesc mob(Archetype a, int32_t hp, int32_t windup, int32_t dmg) {
     SpawnDesc d;
     d.posX = Fixed(1);
@@ -140,7 +143,24 @@ int main() {
         CHECK(perfect.corruption < miss.corruption);
         // 완벽 → CC 게이지 만충 → 그로기 (§3 완벽 판정의 보상)
         CHECK(perfect.cc > 0);
-        CHECK_EQ(success.cc, 0);
+        // **"성공은 CC를 올리지 않는다"를 여기서 0으로 볼 수 없게 됐다.** CC 출처가
+        // 둘이 되면서(위기 회피 완벽 + CC 스킬) 400틱 안에 대지 가르기가 끼어든다.
+        // 등급 차이만 보려면 **완벽이 성공보다 더 올린다**를 봐야 한다 — QTE 경로
+        // 자체는 아래 전용 절이 격리해서 본다.
+        CHECK(perfect.cc > success.cc);
+    }
+
+    dctest::section("등급별 CC — **성공은 올리지 않고 완벽만 올린다** (스킬 격리)");
+    {
+        // 위 절은 전투를 통째로 돌리므로 CC 스킬이 섞인다. 여기서는 `qteRun`이
+        // 쓰는 경로만 직접 불러 등급 규칙을 격리한다.
+        for (QteGrade g : {QteGrade::Miss, QteGrade::Success, QteGrade::Perfect}) {
+            World w = makeWorld(10);
+            const EntityId e = w.entities.spawn(mob(Archetype::Elite, 100000, 0, 167), 0, 10);
+            const uint32_t d = static_cast<uint32_t>(w.entities.denseOf(e));
+            (void)applyCc(w, cfg, d, g == QteGrade::Perfect ? cfg.qtePerfectCcGainPermille : 0);
+            CHECK_EQ(w.entities.ccTriggerCount[d], g == QteGrade::Perfect ? 1 : 0);
+        }
     }
 
     dctest::section("쿨다운 — 위기 회피는 막지 않는다");
@@ -175,6 +195,144 @@ int main() {
         CHECK_EQ(w.hero.corruption.raw, before);   // 그로기 동안 때리지 못한다
         for (int i = 0; i < 60; ++i) stepWorld(w, cfg, dev::data().table, sc);
         CHECK(w.hero.corruption.raw > before);     // 풀리면 다시 때린다
+    }
+
+    dctest::section("그로기 — **플래그가 내려간다** · 이동도 멈춘다");
+    {
+        // 전에는 플래그를 올리기만 하고 내리지 않아서, 한 번 기절한 적이
+        // `groggyLeft`가 0으로 돌아간 뒤에도 영원히 Groggy로 표시됐다. 아무도
+        // 플래그를 읽지 않아 증상이 없었지만 **체크섬에 들어가는 상태**였다.
+        World w = makeWorld(6);
+        const EntityId e = w.entities.spawn(mob(Archetype::Elite, 100000, 0, 167), 0, 6);
+        const uint32_t d = static_cast<uint32_t>(w.entities.denseOf(e));
+        w.entities.groggyLeft[d] = 5;
+        w.entities.flags[d] = static_cast<uint8_t>(w.entities.flags[d] | EntityFlag::Groggy);
+        w.hero.target = e;
+        SimScratch sc;
+
+        // **멈춤 거리 밖에 놓는다.** mob()의 기본 위치(1.0타일)는 사거리 2.0에서
+        // 접근 여유를 뺀 1.6보다 안쪽이라 그로기와 무관하게 움직이지 않는다 —
+        // 그 상태로는 "이동이 멈췄다"를 증명하지 못한다.
+        w.entities.posX[d] = Fixed(8);
+        // mob()은 approachSpeed를 세우지 않는다 (0이면 movementRun이 건너뛴다).
+        // 이동이 멈추는 것을 보려면 먼저 **움직일 수 있어야** 한다.
+        w.entities.approachSpeed[d] = Fixed(2);
+        const int32_t x0 = w.entities.posX[d].raw;
+        for (int i = 0; i < 4; ++i) stepWorld(w, cfg, dev::data().table, sc);
+        CHECK_EQ(w.entities.posX[d].raw, x0);
+        CHECK((w.entities.flags[d] & EntityFlag::Groggy) != 0);
+
+        stepWorld(w, cfg, dev::data().table, sc);          // 마지막 틱에 풀린다
+        CHECK_EQ(w.entities.groggyLeft[d], 0);
+        CHECK((w.entities.flags[d] & EntityFlag::Groggy) == 0);
+        // 풀리면 다시 움직인다
+        for (int i = 0; i < 5; ++i) stepWorld(w, cfg, dev::data().table, sc);
+        CHECK(w.entities.posX[d].raw != x0);
+    }
+
+    dctest::section("CC 스킬 — **잡몹은 즉시, 엘리트는 게이지**");
+    {
+        // 분기는 archetype이 아니라 **게이지 유무**다 (§4). 그래야 "일반 몹에게는
+        // 무조건 걸린다"가 데이터로 성립하고, 게이지를 가진 잡몹을 나중에
+        // 만들어도 코어를 고치지 않는다.
+        World w = makeWorld(7);
+        SpawnDesc t = mob(Archetype::Trash, 100000, 0, 5);
+        t.ccGaugeMax = Fixed{};                 // 잡몹은 게이지가 없다
+        const EntityId tr = w.entities.spawn(t, 0, 7);
+        const EntityId el = w.entities.spawn(mob(Archetype::Elite, 100000, 0, 167), 0, 7);
+        const uint32_t ti = static_cast<uint32_t>(w.entities.denseOf(tr));
+        const uint32_t ei = static_cast<uint32_t>(w.entities.denseOf(el));
+
+        // 잡몹 — 1회로 즉시 기절. 게이지는 건드리지 않는다
+        CHECK(applyCc(w, cfg, ti, 1000));
+        CHECK_EQ(w.entities.groggyLeft[ti], cfg.groggyTicks);
+        CHECK_EQ(w.entities.ccGauge[ti].raw, 0);
+
+        // 엘리트 — 절반만 채우면 아직 아니다
+        CHECK(!applyCc(w, cfg, ei, 500));
+        CHECK_EQ(w.entities.groggyLeft[ei], 0);
+        CHECK(w.entities.ccGauge[ei].raw > 0);
+        // 남은 절반이 들어오면 발동하고 리셋된다
+        CHECK(applyCc(w, cfg, ei, 500));
+        CHECK_EQ(w.entities.groggyLeft[ei], cfg.groggyTicks);
+        CHECK_EQ(w.entities.ccGauge[ei].raw, 0);
+        CHECK_EQ(w.entities.ccTriggerCount[ei], 1);
+        printf("    잡몹 즉시 · 엘리트 1000‰ 누적에 발동 (기준 게이지 %d)\n",
+               toInt(w.entities.ccGaugeMax[ei]));
+    }
+
+    dctest::section("CC 스킬 — **엘리트는 고정 임계, 보스는 상승**");
+    {
+        // 엘리트는 CC 빌드로 계속 묶어둘 수 있는 중간 위협이고, 보스는 초반엔
+        // 먹히다가 후반엔 안 먹혀 결국 화력으로 승부해야 한다 (§4).
+        World w = makeWorld(8);
+        const EntityId el = w.entities.spawn(mob(Archetype::Elite, 100000, 0, 167), 0, 8);
+        SpawnDesc b = mob(Archetype::Boss, 100000, 0, 300);
+        b.archetype = Archetype::Boss;
+        const EntityId bs = w.entities.spawn(b, 0, 8);
+        const uint32_t ei = static_cast<uint32_t>(w.entities.denseOf(el));
+        const uint32_t bi = static_cast<uint32_t>(w.entities.denseOf(bs));
+
+        // 엘리트 — 매번 1000‰에 발동한다
+        for (int32_t k = 1; k <= 3; ++k) {
+            CHECK(applyCc(w, cfg, ei, 1000));
+            CHECK_EQ(w.entities.ccTriggerCount[ei], k);
+        }
+        // 보스 — 저항 상승 1000‰이면 n번째 발동에 n회분이 든다 → 누적 1·3·6
+        int32_t applied = 0, triggers = 0;
+        for (int32_t k = 0; k < 6; ++k) {
+            ++applied;
+            if (applyCc(w, cfg, bi, 1000)) ++triggers;
+        }
+        CHECK_EQ(applied, 6);
+        CHECK_EQ(triggers, 3);                       // 1·3·6회째
+        CHECK_EQ(w.entities.ccTriggerCount[bi], 3);
+        printf("    엘리트 3/3회 발동 · 보스 6회 적용에 %d회 발동 (누적 1·3·6)\n",
+               triggers);
+    }
+
+    dctest::section("CC 스킬 — 대지 가르기가 **데이터로** CC 스킬이다");
+    {
+        // 코어는 "어느 스킬이 CC인지" 모른다. cc_gain_permille > 0인 스킬이 CC다.
+        int32_t ccSkills = 0;
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            if (cfg.skills[k].ccGainPermille > 0) ++ccSkills;
+        }
+        CHECK_EQ(ccSkills, 1);                       // 전사는 대지 가르기 하나
+        // 그 스킬은 광역기이고, QTE 완벽 판정과 **같은 단위**를 쓴다
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            if (cfg.skills[k].ccGainPermille <= 0) continue;
+            CHECK(cfg.skills[k].aoe);
+            CHECK_EQ(cfg.skills[k].ccGainPermille, cfg.qtePerfectCcGainPermille);
+        }
+
+        // 실제로 스킬을 쏘면 범위 안 적이 기절한다
+        World w = makeWorld(9);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        uint32_t cleave = 0;
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            if (cfg.skills[k].ccGainPermille > 0) { cleave = k; break; }
+        }
+        SpawnDesc t = mob(Archetype::Trash, 100000, 0, 5);
+        t.posX = Fixed::fromPermille(500);
+        t.ccGaugeMax = Fixed{};
+        const EntityId tr = w.entities.spawn(t, 0, 9);
+        const uint32_t ti = static_cast<uint32_t>(w.entities.denseOf(tr));
+        executeSkill(w, cfg, cleave, QteGrade::Miss);
+        CHECK_EQ(w.entities.groggyLeft[ti], cfg.groggyTicks);
+
+        // 다른 스킬은 기절시키지 않는다
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            if (k == cleave) continue;
+            World w2 = makeWorld(9);
+            w2.hero.posX = Fixed{}; w2.hero.posY = Fixed{};
+            const EntityId t2 = w2.entities.spawn(t, 0, 9);
+            const uint32_t i2 = static_cast<uint32_t>(w2.entities.denseOf(t2));
+            w2.hero.target = t2;
+            executeSkill(w2, cfg, k, QteGrade::Miss);
+            CHECK_EQ(w2.entities.groggyLeft[i2], 0);
+        }
+        printf("    대지 가르기만 기절시킨다 (CC 스킬 %d종)\n", ccSkills);
     }
 
     dctest::section("입력 로그 — 모든 입력이 한 형식");

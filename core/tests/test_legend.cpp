@@ -241,7 +241,8 @@ int main() {
         const uint32_t a = static_cast<uint32_t>(w.entities.denseOf(in));
         const uint32_t b = static_cast<uint32_t>(w.entities.denseOf(out));
 
-        CHECK(applyAoeHits(w, cfg, Fixed(100), /*centrifuge=*/false, /*ccGain=*/0).raw > 0);
+        CHECK(applyAoeHits(w, cfg, w.hero.posX, w.hero.posY, wideRadius(w, aoeRadiusOf(w)),
+                           Fixed(100), /*centrifuge=*/false, /*ccGain=*/0).raw > 0);
         CHECK(w.entities.damageTaken[a].raw > 0);
         CHECK_EQ(w.entities.damageTaken[b].raw, 0);      // 밖은 안 맞는다
     }
@@ -278,8 +279,10 @@ int main() {
             mob(base * Fixed::fromPermille(1250), Fixed{}, 10000), 0, 11);
         const uint32_t fo = static_cast<uint32_t>(off.entities.denseOf(farOff));
 
-        applyAoeHits(w, cfg, Fixed(100), /*centrifuge=*/true, /*ccGain=*/0);
-        applyAoeHits(off, cfg, Fixed(100), /*centrifuge=*/false, /*ccGain=*/0);
+        applyAoeHits(w, cfg, w.hero.posX, w.hero.posY, wideRadius(w, aoeRadiusOf(w)),
+                     Fixed(100), /*centrifuge=*/true, /*ccGain=*/0);
+        applyAoeHits(off, cfg, off.hero.posX, off.hero.posY, wideRadius(off, aoeRadiusOf(off)),
+                     Fixed(100), /*centrifuge=*/false, /*ccGain=*/0);
         CHECK(w.entities.damageTaken[fi].raw > 0);       // 확장이 닿았다
         CHECK_EQ(off.entities.damageTaken[fo].raw, 0);   // 확장이 없으면 못 닿는다
         printf("    기본 반경의 1.25배 거리: 원심력 %d raw · 없으면 %d raw\n",
@@ -303,7 +306,8 @@ int main() {
         }
 
         const Fixed one = Fixed(100);
-        applyAoeHits(w, cfg, one, /*centrifuge=*/true, /*ccGain=*/0);
+        applyAoeHits(w, cfg, w.hero.posX, w.hero.posY, wideRadius(w, aoeRadiusOf(w)),
+                     one, /*centrifuge=*/true, /*ccGain=*/0);
         // armor 0이라 감쇠가 없다 → 한 번 맞았으면 정확히 one이다
         CHECK_EQ(w.entities.damageTaken[ii].raw, one.raw);
     }
@@ -319,7 +323,8 @@ int main() {
         for (int32_t k = 1; k <= 60; ++k) {
             w.entities.spawn(mob(base * Fixed::fromPermille(200 * k), Fixed{}, 100000), 0, 13);
         }
-        applyAoeHits(w, cfg, Fixed(100), /*centrifuge=*/true, /*ccGain=*/0);
+        applyAoeHits(w, cfg, w.hero.posX, w.hero.posY, wideRadius(w, aoeRadiusOf(w)),
+                     Fixed(100), /*centrifuge=*/true, /*ccGain=*/0);
 
         // 최대 반경 = base × (1 + step×상한). 그 밖의 적은 **한 대도 안 맞아야 한다**
         const Fixed maxR = base * (Fixed::one()

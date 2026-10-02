@@ -1,5 +1,6 @@
 {
   "_": "전사 액티브 3종. mult_permille은 기본 공격 대비 배율, weight_permille은 추첨 가중치.",
+  "_aoe_center": "**광역기의 중심이 스킬마다 다르다.** heroes_vertical_slice.md §2가 회전 베기를 '주변 전방위 타격', 대지 가르기를 '**전방** 범위 타격'으로 적어 두었는데 코어는 둘 다 영웅 중심으로 돌렸다.\\n그 결과 대지 가르기가 **자기 타겟을 때릴 수 없었다** — 영웅은 타겟에서 2.6타일(사거리 3.0 − 접근 여유 0.4) 앞에 멈추고 반경은 1.5타일이다. 실측으로 392,109틱 동안 광역 반경에 들어온 엘리트·보스가 0마리였고, 그래서 §4의 CC 게이지가 위기 회피 QTE로만 채워졌다.\\n**고친 것은 반경이 아니라 중심이다.** 반경을 올리면 제대로 구현된 회전 베기까지 같이 세지고 AOE_TARGET_SHARE 가정과 아이템 광역 축이 전부 움직인다.\\nforward의 중심은 **영웅에서 타겟 방향으로 반경만큼 앞**이다. 그래서 닿는 거리가 2 × 반경 = 3.0타일 = 영웅 사거리와 같아진다 — E_PIERCE의 길이를 사거리와 맞춰 '보이는 만큼 뚫는다'로 만든 것과 같은 규칙이다.\\n타겟이 없으면 hero로 되돌아간다 (방향을 정할 수 없으므로).",
   "_cc_gain": "**CC 적용량을 스킬 속성으로 둔다.** '대지 가르기가 CC 스킬'을 코드에 박으면 다른 직업에 CC 스킬을 줄 때마다 코어를 고쳐야 한다 (CLAUDE.md: 하드코딩 분기 금지).\\n단위는 **기준 게이지(ccGaugeMax) 대비 permille**이고, hero.json의 qte_perfect_cc_gain_permille(1000)과 **같은 단위**다 — 둘 다 'CC 효과 1회'이므로 같은 눈금을 써야 두 경로가 비교된다.\\n1000은 그 앵커에서 그대로 왔다. 엘리트는 임계치가 고정이라 1회 발동 = 1회 기절이고, 보스는 임계치가 발동마다 1000permille씩 올라 2번째는 2회분이 필요하다 (monsters_vertical_slice.md §4).\\n**잡몹은 ccGaugeMax가 0이라 게이지를 거치지 않고 즉시 기절한다** — '일반 몹에게는 무조건 걸린다'가 데이터로 성립한다.",
   "skills": [
     {
@@ -8,7 +9,8 @@
       "mult_permille": 3000,
       "weight_permille": 400,
       "aoe": false,
-      "cc_gain_permille": 0
+      "cc_gain_permille": 0,
+      "aoe_center": "hero"
     },
     {
       "id": "W_WHIRL",
@@ -16,7 +18,8 @@
       "mult_permille": 2500,
       "weight_permille": 350,
       "aoe": true,
-      "cc_gain_permille": 0
+      "cc_gain_permille": 0,
+      "aoe_center": "hero"
     },
     {
       "id": "W_CLEAVE",
@@ -24,7 +27,8 @@
       "mult_permille": 2000,
       "weight_permille": 250,
       "aoe": true,
-      "cc_gain_permille": 1000
+      "cc_gain_permille": 1000,
+      "aoe_center": "forward"
     }
   ]
 }

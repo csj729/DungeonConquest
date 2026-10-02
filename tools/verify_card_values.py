@@ -69,7 +69,13 @@ FORGE_FIRST_GAIN = 1.64 * _pm(_ITEMS["tier_power_permille"][0])
 # 예산 환산에 쓰는 가정. 전부 여기 모아둔다 — 흩어지면 검산이 안 된다.
 PIERCE_TARGETS = 2.0       # 관통이 뒤로 추가로 맞히는 평균 적 수
 SWARM_DENSITY = 5.0        # 주변 적 평균 수
-AOE_TARGETS = 3.0          # 광역기 기본 타격 대상 수 (balance_baseline 목표 3과 동일)
+# 광역기 기본 타격 대상 수 (balance_baseline의 AOE_TARGETS_MIN과 같은 하한).
+#
+# **실측은 이보다 높다** — 광역 중심이 스킬마다 달라진 뒤 `aoeCenterOf` 기준으로
+# 재면 회전 베기(hero) 4.17마리 · 대지 가르기(forward) 잡몹 3.45 + 엘리트 0.38이다.
+# 3.0은 보수적인 하한으로 남긴다: 올리면 광역 각인 예산이 전부 내려가는데 실측값은
+# 구간·물량에 따라 흔들리므로 하한 쪽이 안전하다.
+AOE_TARGETS = 3.0
 DECAY_SEC = 4.0            # 부식 지속
 RAGE_UPTIME = 0.5          # 분노 토템 최대 중첩 가동률
 BOLT_PERIOD = 6.0          # 뇌전 주기(초)

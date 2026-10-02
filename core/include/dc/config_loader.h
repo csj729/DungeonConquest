@@ -583,6 +583,16 @@ inline bool ConfigLoader::loadSkills(const json::Doc& d, SimConfig* cfg) {
         cfg->skills[i].aoe    = s["aoe"].asBool();
         feed(cfg->skills[i].aoe ? 1 : 0);
         cfg->skills[i].ccGainPermille = take32(s["cc_gain_permille"]);
+        // 광역 중심 — **어휘는 데이터가 정한다.** 모르는 값을 조용히 hero로
+        // 떨어뜨리면 오타 하나가 "전방 범위가 영웅 중심이 된다"로 통과하는데,
+        // 그게 바로 이번에 고친 버그의 모양이다.
+        {
+            const json::Value c = s["aoe_center"];
+            if (c.strEquals("hero"))         cfg->skills[i].center = AoeCenter::Hero;
+            else if (c.strEquals("forward")) cfg->skills[i].center = AoeCenter::Forward;
+            else return fail(DataFile::Skills, "모르는 광역 중심 이름", "aoe_center");
+            feed(static_cast<int64_t>(cfg->skills[i].center));
+        }
         skillIds_[i] = s["id"];      // loadCards가 고유 각인을 여기에 묶는다
     }
     skillIdCount_ = ss.size();

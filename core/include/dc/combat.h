@@ -207,6 +207,45 @@ inline Fixed wideRadius(const World& w, Fixed base) {
     return base * (Fixed::one() + engraveValue(w, EngraveId::Wide));
 }
 
+// 광역기의 중심 (§2 스킬 동작). **스킬마다 다르다.**
+//
+//   Hero    — 영웅 중심. "주변 전방위 타격" (회전 베기)
+//   Forward — 영웅에서 타겟 방향으로 **반경만큼** 앞. "전방 범위 타격" (대지 가르기)
+//
+// ## 전방 오프셋이 반경과 같은 이유
+//
+// 그러면 닿는 거리가 `2 × 반경`이 된다 — 기준값 1.5타일에서 3.0타일이고, 이는
+// 영웅 사거리와 같다. `E_PIERCE`의 길이를 사거리에 맞춰 "보이는 만큼 뚫는다"로
+// 만든 것과 같은 규칙이고, 그래서 **영웅이 때릴 수 있는 적은 전방 광역도 닿는다.**
+//
+// 영웅은 타겟에서 `사거리 − 접근 여유` = 2.6타일 앞에 멈추므로, 영웅 중심
+// 1.5타일로는 자기 타겟을 영영 때리지 못했다 (실측 392,109틱 동안 0마리).
+//
+// ## 타겟이 없으면 Hero로 되돌아간다
+//
+// 방향을 정할 수 없다. 조용히 영웅 앞 어딘가를 고르면 그 선택이 곧 숨은 규칙이 된다.
+//
+// `radius`는 **E_WIDE까지 반영된 최종 반경**을 넘긴다 — 넓어지면 닿는 거리도
+// 같이 늘어야 "보이는 만큼"이 유지된다. 원심력이 패스마다 반경을 키울 때는
+// 중심을 다시 계산하지 않는다 (중심이 미끄러지면 장판이 영웅에게서 떠난다).
+inline void aoeCenterOf(const World& w, const SkillConfig& sk, Fixed radius,
+                        Fixed* outX, Fixed* outY) {
+    *outX = w.hero.posX;
+    *outY = w.hero.posY;
+    if (sk.center != AoeCenter::Forward) return;
+
+    const int32_t d = w.entities.denseOf(w.hero.target);
+    if (d < 0) return;
+    const uint32_t i = static_cast<uint32_t>(d);
+    const int64_t dx = static_cast<int64_t>(w.entities.posX[i].raw) - w.hero.posX.raw;
+    const int64_t dy = static_cast<int64_t>(w.entities.posY[i].raw) - w.hero.posY.raw;
+    const int64_t len = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(dx * dx + dy * dy)));
+    if (len <= 0) return;      // 겹쳐 있으면 방향이 없다 → 영웅 중심
+
+    outX->raw = static_cast<int32_t>(w.hero.posX.raw + (dx * radius.raw) / len);
+    outY->raw = static_cast<int32_t>(w.hero.posY.raw + (dy * radius.raw) / len);
+}
+
 // ── 유물 효과 (§4 유물) ──────────────────────────────────────────
 //
 // **각인이 스킬의 성질을 바꾼다면 유물은 전장에 규칙을 하나 더한다.**
@@ -295,8 +334,8 @@ inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed d
 // CC 효과 1회. 정의는 아래 (ccThreshold 뒤) — 스킬 경로와 QTE 경로가 공유한다.
 inline bool applyCc(World& w, const SimConfig& cfg, uint32_t i, int32_t gainPermille);
 inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fixed damage);
-inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool grow,
-                          int32_t ccGain);
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
+                          Fixed base, Fixed damage, bool grow, int32_t ccGain);
 
 // E_DECAY(부식) — 타격한 적에게 도트를 건다.
 // **갱신이지 중첩이 아니다.** 다시 맞으면 지속이 새로 시작되고 틱당 피해는 큰 쪽이
@@ -440,6 +479,13 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
                         && w.cards.legendHas(legendIndexOf(LegendId::Vortex))
                         && cfg.vortexDurationTicks > 0 && cfg.tickHz > 0;
 
+    // **광역 중심을 한 번만 계산한다.** 타격과 지역 효과(장판·폭발·균열)가 같은
+    // 점을 써야 "거기를 베었다"가 일관된다 — 둘이 갈리면 장판이 때린 곳과 다른
+    // 데 깔린다.
+    const Fixed aoeR = wideRadius(w, aoeRadiusOf(w));
+    Fixed ccx{}, ccy{};
+    aoeCenterOf(w, sk, aoeR, &ccx, &ccy);
+
     // W_VORTEX(소용돌이) — **즉발을 대체한다.** 타격 루프를 아예 타지 않는다.
     //
     // 수치가 큰(초당 공격력의 96.5%) 이유가 여기 있다 — 잃은 즉발분까지 메워야
@@ -454,8 +500,7 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
                             * Fixed::fromPermille(cfg.vortexDpsPermille)
                             * qteAmplify(cfg, g) * swarmMult(w, cfg) * heroPowerMult(w, cfg)
                             / cfg.tickHz;
-        w.zones.push(ZoneKind::Vortex, w.hero.posX, w.hero.posY,
-                     wideRadius(w, aoeRadiusOf(w)), perTick,
+        w.zones.push(ZoneKind::Vortex, ccx, ccy, aoeR, perTick,
                      w.tickCount() + cfg.vortexDurationTicks);
         // **E_CHAIN(연타)은 소용돌이에 붙지 않는다.** 장판을 두 개 깔면 지속이
         // 겹쳐 2배가 되는데, 연타의 설계는 "총 피해를 2회로 나눈다"이지
@@ -471,7 +516,7 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
         const int32_t ccGain = pass == 0 ? sk.ccGainPermille : 0;
         if (sk.aoe) {
             // 광역기는 우선순위가 없다 — 범위 안의 모든 적을 때린다 (§3).
-            dealt += applyAoeHits(w, cfg, dmg, hasCentri, ccGain);
+            dealt += applyAoeHits(w, cfg, ccx, ccy, aoeR, dmg, hasCentri, ccGain);
         } else {
             const int32_t d = w.entities.denseOf(w.hero.target);
             if (d >= 0) {
@@ -512,11 +557,10 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
 
     // ── W_AFTERSHOCK(여진) · W_FISSURE(균열) — 둘 다 **가산이다** ──
     //
-    // 설계가 "기절 지점"이라고 쓴 자리를 **캐스트 중심(영웅 위치)** 으로 잡는다.
-    // 대지 가르기는 영웅 중심 광역이라 두 점이 같고, `W_CLEAVE`의 기절 자체가
-    // 아직 코어에 없다 (heroes_vertical_slice.md §2가 약속했지만 미구현이다 —
-    // 지금 대지 가르기는 회전 베기보다 약한 광역기일 뿐이다). 기절이 붙어도
-    // 중심은 변하지 않으므로 이 선택은 그때도 유효하다.
+    // 설계가 "기절 지점"이라고 쓴 자리를 **캐스트 중심**으로 잡는다 — 위에서
+    // `aoeCenterOf`가 고른 그 점이고, 대지 가르기는 전방 중심이므로 영웅이 아니라
+    // **베인 자리**다. 타격과 같은 점을 쓰므로 "거기를 베었고 거기가 터진다"가
+    // 일관된다.
     //
     // 균열은 초안의 "기절 대신"이 아니라 **기절을 유지하고 둔화를 더한다** —
     // 그러지 않으면 보스 CC 게이지가 대지 가르기로 차지 않아 "CC 스탯 없는
@@ -528,14 +572,13 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
         const Fixed boom = w.hero.stats.value(Stat::AttackPower)
                          * Fixed::fromPermille(cfg.aftershockDamagePermille)
                          * qteAmplify(cfg, g) * swarmMult(w, cfg) * heroPowerMult(w, cfg);
-        w.zones.push(ZoneKind::Aftershock, w.hero.posX, w.hero.posY,
-                     wideRadius(w, aoeRadiusOf(w)), boom,
+        w.zones.push(ZoneKind::Aftershock, ccx, ccy, aoeR, boom,
                      w.tickCount() + cfg.aftershockFuseTicks);
     }
     if (cfg.uniqueOnSkill(legendIndexOf(LegendId::Fissure), skillIndex)
         && w.cards.legendHas(legendIndexOf(LegendId::Fissure))
         && cfg.fissureSlowPermille > 0) {
-        w.zones.push(ZoneKind::Fissure, w.hero.posX, w.hero.posY,
+        w.zones.push(ZoneKind::Fissure, ccx, ccy,
                      cfg.fissureRadius, Fixed::fromPermille(cfg.fissureSlowPermille),
                      w.tickCount() + cfg.fissureDurationTicks);
     }
@@ -933,9 +976,8 @@ inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fix
 // 새로 맞은 적이 없거나 중첩 상한에 닿으면 멈춘다. 상한이 10이고 패스마다
 // 최소 1중첩이 쌓이므로 **최대 11패스**다 — 512마리에서 11 × O(N)이고,
 // dc_load 실측으로 광역 발동은 12.4초마다 한 번이라 비용이 묻힌다.
-inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool centrifuge,
-                          int32_t ccGain) {
-    const Fixed base = wideRadius(w, aoeRadiusOf(w));
+inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
+                          Fixed base, Fixed damage, bool centrifuge, int32_t ccGain) {
     uint32_t hit[config::MAX_ENTITIES];
 
     // **각인 소지 판정은 호출자가 한다** — 어느 스킬에 붙는지는 `executeSkill`이
@@ -944,7 +986,7 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool cen
     const bool grow = centrifuge && cfg.centrifugeStepPermille > 0
                    && cfg.centrifugeMaxStacks > 0;
     if (!grow) {
-        const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY, base,
+        const uint32_t n = collectInRadius(w.entities, cx, cy, base,
                                            hit, config::MAX_ENTITIES);
         Fixed dealt{};
         for (uint32_t k = 0; k < n; ++k) {
@@ -961,7 +1003,7 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed damage, bool cen
     Fixed   dealt{};
     int32_t stacks = 0;
     for (;;) {
-        const uint32_t n = collectInRadius(w.entities, w.hero.posX, w.hero.posY, radius,
+        const uint32_t n = collectInRadius(w.entities, cx, cy, radius,
                                            hit, config::MAX_ENTITIES);
         int32_t fresh = 0;
         for (uint32_t k = 0; k < n; ++k) {

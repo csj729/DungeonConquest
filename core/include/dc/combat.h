@@ -438,6 +438,35 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
     return dealt;
 }
 
+// W_CENTRIFUGE(원심력)가 **때리지 않고** 최종 반경만 계산한다 — 소용돌이 장판용.
+//
+// ## 왜 `applyAoeHits`와 따로 도는가
+//
+// 즉발 타격은 **링 순서를 지켜야 한다.** `applySkillHit`이 잡몹을 처치할 때마다
+// `rngItems`를 한 번 굴리므로(드랍 여부와 무관하게 — 소비 횟수를 처치 수만의
+// 함수로 두는 규칙), 타격 **순서**가 바뀌면 어느 처치가 어느 굴림을 받는지가
+// 바뀌어 구슬 드랍 위치가 달라진다. 그래서 두 함수를 "반경을 먼저 구하고 한 번
+// 훑는다"로 합칠 수 없다 — 합치면 dense 순서가 되어 결정론 결과가 움직인다.
+//
+// **대신 성장 규칙이 두 곳에 살게 되므로**, `test_legend`가 둘이 같은 반경에
+// 이르는지 교차 검사한다. 한쪽만 고치면 그 테스트가 깨진다.
+inline Fixed centrifugeRadius(const World& w, const SimConfig& cfg,
+                              Fixed cx, Fixed cy, Fixed base) {
+    if (cfg.centrifugeStepPermille <= 0 || cfg.centrifugeMaxStacks <= 0) return base;
+    Fixed   r = base;
+    int32_t stacks = 0, reached = 0;
+    for (;;) {
+        const int32_t n = countInRadius(w.entities, cx, cy, r);
+        const int32_t fresh = n - reached;
+        reached = n;
+        if (fresh <= 0 || stacks >= cfg.centrifugeMaxStacks) return r;
+        stacks += fresh;
+        if (stacks > cfg.centrifugeMaxStacks) stacks = cfg.centrifugeMaxStacks;
+        r = base * (Fixed::one()
+                  + Fixed::fromPermille(cfg.centrifugeStepPermille * stacks));
+    }
+}
+
 // 스킬 실행. QTE 창이 열렸으면 등급 배율이 붙고, 못 열렸으면 기본 위력이다.
 inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, QteGrade g);
 
@@ -500,7 +529,17 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
                             * Fixed::fromPermille(cfg.vortexDpsPermille)
                             * qteAmplify(cfg, g) * swarmMult(w, cfg) * heroPowerMult(w, cfg)
                             / cfg.tickHz;
-        w.zones.push(ZoneKind::Vortex, ccx, ccy, aoeR, perTick,
+        // **원심력은 장판 반경을 키운다.** 전에는 이 `return` 때문에 타격 루프를
+        // 타지 않아 원심력이 **아무 일도 하지 않았다** — 둘 다 회전 베기에 붙는데
+        // 같이 뽑으면 한쪽이 죽는 조합이었다. 크래시도 편차도 없어서 예산 검증과
+        // dc_legend 둘 다 보지 못했다(dc_legend는 전설을 하나만 강제한다).
+        //
+        // 즉발이 없으니 "벤 수"가 없다. 그래서 **캐스트 시점에 기본 반경 안에
+        // 있던 적 수**로 센다 — 회전 베기가 즉발이었다면 베었을 적들이다.
+        // 지속 중의 변화는 따르지 않는다: 장판 피해를 캐스트 시점에 고정하는
+        // 규칙(E_DECAY의 decayPerTick)과 같은 이유다.
+        const Fixed zoneR = hasCentri ? centrifugeRadius(w, cfg, ccx, ccy, aoeR) : aoeR;
+        w.zones.push(ZoneKind::Vortex, ccx, ccy, zoneR, perTick,
                      w.tickCount() + cfg.vortexDurationTicks);
         // **E_CHAIN(연타)은 소용돌이에 붙지 않는다.** 장판을 두 개 깔면 지속이
         // 겹쳐 2배가 되는데, 연타의 설계는 "총 피해를 2회로 나눈다"이지

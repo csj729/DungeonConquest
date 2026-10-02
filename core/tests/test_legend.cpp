@@ -336,6 +336,65 @@ int main() {
                outerN + 1, w.entities.damageTaken[ii].raw);
     }
 
+    dctest::section("원심력 — **최종 반경이 성장 규칙과 일치한다** (사양 못 박기)");
+    {
+        // 이 절은 구현을 바꿔도 결과가 같아야 하는 **사양**이다. 기대 반경을
+        // 거리에서 독립적으로 다시 계산하므로 동어반복이 아니다.
+        //
+        // 상한 3 · step 7%에서 패스가 네 번 돌게 배치한다:
+        //   패스0 기본 반경 안 1마리 → 중첩 1 → ×1.07
+        //   패스1 ×1.05 1마리       → 중첩 2 → ×1.14
+        //   패스2 ×1.12 1마리       → 중첩 3 → ×1.21
+        //   패스3 ×1.19 1마리 때리고 상한에서 멈춘다 → ×1.30, ×1.50은 못 맞는다
+        World w = makeWorld(14);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        w.cards.legendTake(CENTRI);
+        const Fixed base = w.hero.stats.value(Stat::AoeRadius);
+        const int32_t at[] = {250, 1050, 1120, 1190, 1300, 1500};
+        const uint32_t n = sizeof(at) / sizeof(at[0]);
+        uint32_t di[n];
+        for (uint32_t k = 0; k < n; ++k) {
+            const EntityId e = w.entities.spawn(
+                mob(base * Fixed::fromPermille(at[k]), Fixed{}, 100000), 0, 14);
+            di[k] = static_cast<uint32_t>(w.entities.denseOf(e));
+        }
+
+        // **기대 최종 반경을 거리에서 다시 센다.** 구현을 보지 않고 규칙만 쓴다.
+        Fixed want = wideRadius(w, aoeRadiusOf(w));
+        int32_t stacks = 0, reached = 0;
+        for (;;) {
+            int32_t inside = 0;
+            for (uint32_t k = 0; k < n; ++k) {
+                if (Fixed::fromPermille(at[k]).raw * base.raw <= want.raw * Fixed::ONE_RAW)
+                    ++inside;
+            }
+            const int32_t fresh = inside - reached;
+            reached = inside;
+            if (fresh == 0 || stacks >= cfg.centrifugeMaxStacks) break;
+            stacks += fresh;
+            if (stacks > cfg.centrifugeMaxStacks) stacks = cfg.centrifugeMaxStacks;
+            want = base * (Fixed::one()
+                 + Fixed::fromPermille(cfg.centrifugeStepPermille * stacks));
+        }
+
+        const Fixed one = Fixed(100);
+        applyAoeHits(w, cfg, w.hero.posX, w.hero.posY, wideRadius(w, aoeRadiusOf(w)),
+                     one, /*centrifuge=*/true, /*ccGain=*/0);
+
+        // ① 맞은 집합이 **최종 반경 안 집합과 정확히 같다**
+        // ② 맞았으면 **정확히 한 번** (armor 0이라 감쇠가 없다)
+        int32_t hit = 0;
+        for (uint32_t k = 0; k < n; ++k) {
+            const bool inside =
+                Fixed::fromPermille(at[k]).raw * base.raw <= want.raw * Fixed::ONE_RAW;
+            CHECK_EQ(w.entities.damageTaken[di[k]].raw, inside ? one.raw : 0);
+            if (inside) ++hit;
+        }
+        CHECK_EQ(hit, 4);     // 전제가 깨지면 이 절이 아무것도 안 보게 된다
+        printf("    최종 반경 ×%d‰ · %d/%d마리 피격 · 중첩 %d\n",
+               want.raw * 1000 / base.raw, hit, n, stacks);
+    }
+
     dctest::section("원심력 — 중첩 상한에서 멈춘다 (무한 확장 금지)");
     {
         // 상한이 없으면 물량↑ → 반경↑ → 더 많이 벰 → 반경↑ 이 끝나지 않는다.
@@ -450,6 +509,88 @@ int main() {
         CHECK_EQ(w.entities.damageTaken[i].raw, w.zones.value[0].raw);
         printf("    즉발 0 → 장판 1개(%d raw/틱) · 지속 %d틱\n",
                w.zones.value[0].raw, cfg.vortexDurationTicks);
+    }
+
+    dctest::section("소용돌이 + 원심력 — **죽은 조합이었다** (장판 반경이 커진다)");
+    {
+        // 소용돌이 분기가 `return`으로 타격 루프를 건너뛰므로 원심력이 한 번도
+        // 호출되지 않았다. 둘 다 회전 베기에 붙는데 같이 뽑으면 한쪽이 무효였고,
+        // **크래시도 편차도 없어서** 예산 검증과 dc_legend 둘 다 보지 못했다
+        // (dc_legend는 전설을 하나만 강제한다).
+        const uint32_t whirl =
+            static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Vortex) - 3]);
+        CHECK_EQ(cfg.uniqueSkill[legendIndexOf(LegendId::Vortex) - 3],
+                 cfg.uniqueSkill[CENTRI - 3]);      // 전제: 같은 스킬이다
+
+        Fixed radius[2]{};
+        for (int32_t k = 0; k < 2; ++k) {
+            World w = makeWorld(31);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            w.cards.legendTake(legendIndexOf(LegendId::Vortex));
+            if (k == 1) w.cards.legendTake(CENTRI);
+            const Fixed base = w.hero.stats.value(Stat::AoeRadius);
+            // 기본 반경 안에 넉넉히 넣어 중첩이 상한까지 차게 한다
+            for (int32_t m = 0; m < 6; ++m) {
+                w.entities.spawn(mob(base / Fixed(4) + Fixed::fromRaw(m * 64), Fixed{},
+                                     100000), 0, 31);
+            }
+            executeSkill(w, cfg, whirl, QteGrade::Miss);
+            CHECK_EQ(w.zones.count, 1u);       // 둘 다 장판 하나다 (가산이 아니다)
+            radius[k] = w.zones.radius[0];
+        }
+        CHECK(radius[1].raw > radius[0].raw);   // 원심력이 실제로 키운다
+        // 상한 3에서 ×1.21이다 — 규칙에서 도출해 단정한다
+        const Fixed want = radius[0] * (Fixed::one()
+            + Fixed::fromPermille(cfg.centrifugeStepPermille * cfg.centrifugeMaxStacks));
+        CHECK_EQ(radius[1].raw, want.raw);
+        printf("    장판 반경: 소용돌이만 %d raw → 원심력까지 %d raw (×%d‰)\n",
+               radius[0].raw, radius[1].raw, radius[1].raw * 1000 / radius[0].raw);
+    }
+
+    dctest::section("원심력 — **즉발 경로와 장판 경로가 같은 반경에 이른다**");
+    {
+        // 성장 규칙이 두 곳에 산다(`applyAoeHits`는 링 순서를 지켜야 해서 합칠 수
+        // 없다 — 처치마다 rngItems를 굴리므로 순서가 구슬 드랍 위치를 정한다).
+        // **그래서 둘이 어긋나는지 여기서 본다.** 한쪽만 고치면 이 절이 깨진다.
+        //
+        // 배치를 여러 밀도로 돌려 한 경우만 맞는 우연을 배제한다.
+        for (int32_t dens = 1; dens <= 6; ++dens) {
+            World w = makeWorld(32);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            w.cards.legendTake(CENTRI);
+            const Fixed base = w.hero.stats.value(Stat::AoeRadius);
+            for (int32_t m = 0; m < dens; ++m) {
+                w.entities.spawn(mob(base / Fixed(4) + Fixed::fromRaw(m * 64), Fixed{},
+                                     100000), 0, 32);
+            }
+            // 링마다 하나씩 — 두 경로가 패스를 똑같이 밟아야 같은 값이 된다
+            for (int32_t j = 1; j <= cfg.centrifugeMaxStacks; ++j) {
+                const int32_t at = 1000 + cfg.centrifugeStepPermille * j
+                                 - cfg.centrifugeStepPermille / 3;
+                w.entities.spawn(mob(base * Fixed::fromPermille(at), Fixed{}, 100000), 0, 32);
+            }
+            // **최대 반경 밖에도 탐침을 둔다.** 이게 없으면 장판 쪽 반경이 *커지는*
+            // 방향의 어긋남을 잡지 못한다 — 사이에 적이 없어서 두 집합이 같아진다.
+            // (실제로 음성 테스트에서 step ×2가 이 절을 통과했다.)
+            const int32_t maxAt = 1000 + cfg.centrifugeStepPermille
+                                       * cfg.centrifugeMaxStacks;
+            for (int32_t mul = 1; mul <= 4; ++mul) {
+                w.entities.spawn(mob(base * Fixed::fromPermille(maxAt + 60 * mul),
+                                     Fixed{}, 100000), 0, 32);
+            }
+
+            const Fixed want = centrifugeRadius(w, cfg, w.hero.posX, w.hero.posY, base);
+            applyAoeHits(w, cfg, w.hero.posX, w.hero.posY, base,
+                         Fixed(100), /*centrifuge=*/true, /*ccGain=*/0);
+            // 맞은 집합이 `centrifugeRadius` 안 집합과 **정확히 같아야 한다**
+            const int64_t r2 = static_cast<int64_t>(want.raw) * want.raw;
+            for (uint32_t i = 0; i < w.entities.count(); ++i) {
+                const int64_t d2 = distanceSq(w.entities.posX[i], w.entities.posY[i],
+                                              w.hero.posX, w.hero.posY);
+                CHECK_EQ(w.entities.damageTaken[i].raw > 0, d2 <= r2);
+            }
+        }
+        printf("    밀도 1~6에서 두 경로의 최종 반경이 일치\n");
     }
 
     dctest::section("소용돌이 — 지속이 끝나면 **사라지고 피해도 멈춘다**");

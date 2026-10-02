@@ -118,6 +118,20 @@ inline uint32_t collectInRadius(const EntityStore& e, Fixed heroX, Fixed heroY,
     return n;
 }
 
+// 반경 안 살아있는 적 수. `collectInRadius`와 같은 판정이지만 목록을 만들지 않는다 —
+// 원심력이 소용돌이 장판의 반경을 정할 때 수만 필요하고, 거기서 MAX_ENTITIES 크기
+// 스택 배열을 또 잡을 이유가 없다.
+inline int32_t countInRadius(const EntityStore& e, Fixed cx, Fixed cy, Fixed radius) {
+    const int64_t r2 = static_cast<int64_t>(radius.raw) * static_cast<int64_t>(radius.raw);
+    int32_t n = 0;
+    const uint32_t cnt = e.count();
+    for (uint32_t i = 0; i < cnt; ++i) {
+        if (e.deadAt(i)) continue;
+        if (distanceSq(e.posX[i], e.posY[i], cx, cy) <= r2) ++n;
+    }
+    return n;
+}
+
 }  // namespace dc
 
 #endif  // DC_TARGETING_H

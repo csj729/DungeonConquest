@@ -129,12 +129,52 @@ LEGEND_MEASURED = {
     "W_EXECUTE":    (330.4, 13.7),
     "W_SHOCKWAVE":  (344.0, 10.1),
     "W_VORTEX":     (321.2, 11.8),
-    "W_CENTRIFUGE": (306.9, 23.0),
+    # 상한 10 → 3으로 내린 직후다. 옛 측정(306.9초 · 23.0%)은 **상한 10의 것**이라
+    # 쓰면 안 된다 — 그대로 두면 런 길이가 바뀐 줄 모르고 잠식 보정이 계산된다.
+    # `None`은 "재측정 대기"이고 아래가 FAIL로 만든다. 숫자를 지우는 쪽이 낡은
+    # 숫자를 남기는 쪽보다 안전하다.
+    "W_CENTRIFUGE": None,
     "W_AFTERSHOCK": (344.5, 13.9),
     "W_FISSURE":    (354.6, 10.1),
 }
 # 클리어율 차이의 3σ (p≈0.15, n=1000). 이보다 작은 차이는 결론이 아니다.
 LEGEND_CLEAR_3SIGMA = 4.8
+
+# **측정이 어느 수치에서 나왔는지 함께 못 박는다.**
+#
+# 위 표는 손으로 붙인다. 그래서 각인 수치를 고치면 표가 **조용히 낡는다** — 원심력
+# 상한을 10 → 3으로 내렸을 때 실제로 그랬다. 런 길이가 바뀌었는데 잠식 보정은
+# 옛 런 길이로 계산되고, 그래도 전부 PASS였다.
+#
+# 아래 지문이 데이터와 어긋나면 FAIL이고, 메시지가 "다시 재라"를 직접 말한다.
+# 측정을 다시 하면 두 곳을 같이 고치게 되므로 한쪽만 고치는 사고가 막힌다.
+LEGEND_MEASURED_PARAMS = {
+    "W_EXECUTE":    {"threshold_permille": 400},
+    "W_SHOCKWAVE":  {"width_millitile": 350},
+    "W_VORTEX":     {"dps_permille": 965, "duration_ticks": 80},
+    "W_CENTRIFUGE": {"max_stacks": 3, "radius_step_permille": 70},
+    "W_AFTERSHOCK": {"damage_permille": 1700, "fuse_ticks": 20},
+    "W_FISSURE":    {"duration_ticks": 80, "radius_millitile": 4000,
+                     "slow_permille": 500},
+}
+
+
+def _measurement_is_current():
+    """`LEGEND_MEASURED`가 현재 데이터에서 나온 값인지. (어긋난 키, 설명) 목록."""
+    bad = []
+    for uid, pinned in LEGEND_MEASURED_PARAMS.items():
+        live = UNIQUE[uid]
+        for key, want in sorted(pinned.items()):
+            got = live.get(key)
+            if got != want:
+                bad.append((uid, key, want, got))
+    # 데이터에 새 수치가 생겼는데 지문에 없으면 그것도 어긋남이다
+    for uid in LEGEND_MEASURED_PARAMS:
+        for key, v in sorted(UNIQUE[uid].items()):
+            if isinstance(v, int) and not isinstance(v, bool) \
+                    and key not in LEGEND_MEASURED_PARAMS[uid]:
+                bad.append((uid, key, None, v))
+    return bad
 
 # **지배 빌드 감시** — 클리어율에서 판정하는 유일한 것이다 (나머지는 기록).
 #
@@ -287,6 +327,36 @@ def _exec_saving(threshold, rate, ttk):
     return (win - (1 - math.exp(-rate * win)) / rate) / ttk
 
 
+def centrifuge_targets(e, density):
+    """원심력 한 발동이 최종적으로 때리는 적 수. `applyAoeHits`를 그대로 옮긴다.
+
+    **패스를 한 번만 세면 이 카드는 게이트에 보이지 않는다.** 코어는 벤 수만큼
+    반경을 키워 다시 훑으므로 중첩이 누적되고, 상한(`max_stacks`)에 닿을 때까지
+    면적이 복리로 커진다. 이전 식은 `min(AOE_TARGETS, max_stacks)` 한 번이라
+    상한 10을 **한 번도 세지 않았다** — 밀도 3에서 4.39마리로 읽었는데 실제는
+    6.12마리였고, 그 차이(2.2배)가 PR #17의 '잠식 보정 +108%'로 새어 나왔다.
+    보정이 잡아낸 것은 다른 축이 아니라 **잘못 매긴 이 게이트**였다.
+
+    대상 수는 반경²에 비례한다고 본다. `dc_field` 실측(반경 1.5타일 4마리 →
+    2.5타일 13마리)은 이보다 **더 급하므로** 이 가정은 보수적이다.
+
+    상한이 밀도에 따라 다른 패스에서 물기 때문에 `max_stacks <= density`면
+    첫 패스에서 바로 물고, 그러면 결과가 밀도와 무관한 고정 배율이 된다.
+    그 경계(현재 밀도 3 / 4)를 넘나들면 값이 튄다 — 그래서 루프로 재야 한다.
+    """
+    step, cap = _pm(e["radius_step_permille"]), e["max_stacks"]
+    hit, stacks, r = 0.0, 0.0, 1.0
+    for _ in range(64):                 # 코어는 `fresh == 0`에서 멈춘다
+        reach = density * r * r
+        fresh = reach - hit
+        hit = reach
+        if fresh <= 1e-6 or stacks >= cap:
+            break
+        stacks = min(stacks + fresh, cap)
+        r = 1 + step * stacks
+    return hit
+
+
 def unique_delta(uid):
     """고유 각인 1장이 기준선 총 DPS에 더하는 양. 없으면 None (UNPRICED)."""
     e = UNIQUE[uid]
@@ -325,10 +395,10 @@ def unique_delta(uid):
         return field - own_dps * AOE_TARGETS
 
     if uid == "W_CENTRIFUGE":
-        # 반경 +v/적 → 대상 수는 반경²에 비례 → 기준선 밀도에서의 이득
-        step = _pm(e["radius_step_permille"])
-        r = 1 + step * min(AOE_TARGETS, e["max_stacks"])
-        return own_dps * AOE_TARGETS * (r ** 2 - 1)
+        # **패스가 반복된다** — `applyAoeHits`는 벤 수만큼 반경을 키워 다시 훑는다.
+        # 예산식이 패스를 한 번만 세면 상한이 보이지 않는다 (아래 주석 참조).
+        extra = centrifuge_targets(e, AOE_TARGETS) - AOE_TARGETS
+        return own_dps * extra
 
     if uid == "W_AFTERSHOCK":
         return own_pps * HERO["attack_power"] * _pm(e["damage_permille"]) * AOE_TARGETS
@@ -347,8 +417,8 @@ def corruption_credit(uid):
 
     런이 **길어지는** 각인(균열)은 음수가 나온다. 자르지 않는다 — 부호가 곧 정보다.
     """
-    if uid not in LEGEND_MEASURED:
-        return 0.0
+    if LEGEND_MEASURED.get(uid) is None:
+        return None            # 미측정. 0.0으로 돌려주면 "보정 없음"과 구분되지 않는다
     sec, _clear = LEGEND_MEASURED[uid]
     dt = LEGEND_BASE_SEC - sec
     return MAP_INFLOW * dt / sec
@@ -468,12 +538,25 @@ def report():
     print("  " + "-" * 76)
     print("  (피해 = 게이트 · 잠식 보정 = 런 단축 환산 · Δ클리어 = 기록, 판정 안 함)")
     clears = {}
+    pending = []
     for uid, e in UNIQUE.items():
         d = unique_delta(uid)
+        credit = corruption_credit(uid)
+        if credit is None:
+            # **미측정이다.** 0으로 깔면 "보정이 없는 각인"과 구분되지 않고, 옛
+            # 숫자를 남기면 더 나쁘다 — 둘 다 조용히 통과하므로 여기서 세운다.
+            pending.append(uid)
+            ratio = d / legend_budget if d is not None else None
+            rs = f"{ratio:>5.0%}" if ratio is not None else f"{'—':>6}"
+            print(f"  {uid:<14} {e['name']:<5} "
+                  f"{d if d is None else round(d, 2):>7} {rs} "
+                  f"{'대기':>6} {'대기':>5}   {'—':>7} {'—':>8}  ← 재측정 대기")
+            if ratio is not None and abs(ratio - 1) > BUDGET_TOL:
+                ok = False
+            continue
         sec, clear = LEGEND_MEASURED.get(uid, (LEGEND_BASE_SEC, LEGEND_BASE_CLEAR))
         dclear = clear - LEGEND_BASE_CLEAR
         clears[uid] = dclear
-        credit = corruption_credit(uid)
         cr = credit / legend_budget
         if d is None:
             print(f"  {uid:<14} {e['name']:<5} {'—':>7} {'—':>6} "
@@ -498,6 +581,26 @@ def report():
     print(f"  ※ 합계 천장 {UNIQUE_TOTAL_MAX:.1f}배. 넘으면 FAIL —"
           f" **DPS만 보면 멀쩡해 보이는 각인을 잡는 자리다**")
 
+    if pending:
+        ok = False
+        print(f"  ← **{', '.join(pending)} 재측정 대기.** 수치를 바꿨으므로 런 길이가")
+        print("     달라졌다. `./build/release/core/dc_legend 1000`을 돌려")
+        print("     LEGEND_MEASURED를 채울 것 — 옛 값을 그대로 두면 잠식 보정이")
+        print("     **다른 수치의 런 길이로** 계산되고, 그래도 전부 PASS가 된다")
+
+    # ── 측정이 현재 데이터에서 나온 것인가 ──
+    stale = _measurement_is_current()
+    if stale:
+        ok = False
+        print("  ← **측정이 낡았다.** 런 길이·클리어율이 지금 수치의 것이 아니다:")
+        for uid, key, want, got in stale:
+            if want is None:
+                print(f"       {uid}.{key} = {got} — 지문에 없는 새 수치다")
+            else:
+                print(f"       {uid}.{key}: 측정 당시 {want} → 지금 {got}")
+        print("     `./build/release/core/dc_legend 1000`을 다시 돌려")
+        print("     LEGEND_MEASURED와 LEGEND_MEASURED_PARAMS를 **같이** 고칠 것")
+
     # ── 지배 빌드 감시 (클리어율에서 판정하는 유일한 것) ──
     #
     # **분모는 3σ다. 2위가 아니다.** 2위가 유의하지 않으면 비율이 노이즈로 나뉜다.
@@ -507,10 +610,14 @@ def report():
     dom = top / LEGEND_CLEAR_3SIGMA if LEGEND_CLEAR_3SIGMA > 0 else 0.0
     good = dom <= DOMINANT_SIGMA_MAX
     ok &= good
+    # 대기 행이 있으면 이 판정은 **그 행을 빼고** 낸 값이다. 그대로 "0종"이라고
+    # 찍으면 거짓 안심이 된다 — 지배 후보가 빠진 채 "지배 없음"으로 읽힌다.
+    note = f"  ← {len(pending)}종 대기 중이라 **결론이 아니다**" if pending else ""
     print(f"  지배 빌드: 1위 {top:+.1f}%p ÷ 3σ {LEGEND_CLEAR_3SIGMA:.1f}%p = "
           f"{dom:.1f}σ (상한 {DOMINANT_SIGMA_MAX:.1f})  "
-          f"{'PASS' if good else 'FAIL'}")
-    print(f"  유의한 각인 {len(sig)}종 / 6 — 나머지는 기준선과 구분되지 않는다")
+          f"{'PASS' if good else 'FAIL'}{note}")
+    print(f"  유의한 각인 {len(sig)}종 / {len(UNIQUE) - len(pending)}"
+          f" — 나머지는 기준선과 구분되지 않는다")
     print(f"  ※ Δ클리어 차이의 3σ는 {LEGEND_CLEAR_3SIGMA:.1f}%p다 —"
           f" 그보다 작은 차이는 결론이 아니다\n")
     for uid, e in UNIQUE.items():

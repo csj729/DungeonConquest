@@ -254,19 +254,23 @@ int main() {
         w.cards.legendTake(CENTRI);
         const Fixed base = w.hero.stats.value(Stat::AoeRadius);
 
-        // 기본 반경 안에 6마리를 넣으면 중첩 6 → 반경 ×(1 + 0.07×6) = ×1.42다.
-        // **상한(×1.70)이 아니라 실제로 쌓인 중첩이 반경을 정한다** — 바깥 적은
-        // 그 사이(×1.25)에 둔다. 상한까지 쌓으려면 바깥에 적이 더 있어야 하고,
-        // 그 경우는 아래 상한 절이 따로 본다.
-        const int32_t kInner = 6;
+        // **상한이 아니라 실제로 쌓인 중첩이 반경을 정한다.** 그걸 보려면 안쪽
+        // 적을 상한 **아래로** 둬야 한다 — 상한 3에서 6마리를 넣으면 첫 패스에
+        // 바로 물려 중첩과 상한을 구분할 수 없다. 2마리면 ×(1 + 0.07×2) = ×1.14다.
+        //
+        // 상한을 내리면 이 전제가 조용히 깨지므로 **코드에서 읽어 단정한다**.
+        const int32_t kInner = 2;
+        CHECK(kInner < cfg.centrifugeMaxStacks);   // 전제: 상한에 물리지 않는다
         for (int32_t k = 0; k < kInner; ++k) {
             w.entities.spawn(mob(base / Fixed(4) + Fixed::fromRaw(k * 64), Fixed{}, 10000), 0, 11);
         }
         const Fixed reach = Fixed::one()
             + Fixed::fromPermille(cfg.centrifugeStepPermille * kInner);
-        CHECK(reach.raw > Fixed::fromPermille(1250).raw);   // 전제: ×1.25는 닿는다
+        // 바깥 적은 기본 반경과 `reach` 사이에 둔다 — 확장 없이는 못 닿는 거리다
+        const int32_t farAt = 1000 + (reach.raw * 1000 / Fixed::ONE_RAW - 1000) / 2;
+        CHECK(farAt > 1000 && Fixed::fromPermille(farAt).raw < reach.raw);
         const EntityId far = w.entities.spawn(
-            mob(base * Fixed::fromPermille(1250), Fixed{}, 10000), 0, 11);
+            mob(base * Fixed::fromPermille(farAt), Fixed{}, 10000), 0, 11);
         const uint32_t fi = static_cast<uint32_t>(w.entities.denseOf(far));
 
         // 각인 없는 월드와 나란히 비교한다 — **차이가 각인에서 온다는 직접 증거**
@@ -276,7 +280,7 @@ int main() {
             off.entities.spawn(mob(base / Fixed(4) + Fixed::fromRaw(k * 64), Fixed{}, 10000), 0, 11);
         }
         const EntityId farOff = off.entities.spawn(
-            mob(base * Fixed::fromPermille(1250), Fixed{}, 10000), 0, 11);
+            mob(base * Fixed::fromPermille(farAt), Fixed{}, 10000), 0, 11);
         const uint32_t fo = static_cast<uint32_t>(off.entities.denseOf(farOff));
 
         applyAoeHits(w, cfg, w.hero.posX, w.hero.posY, wideRadius(w, aoeRadiusOf(w)),
@@ -285,7 +289,8 @@ int main() {
                      Fixed(100), /*centrifuge=*/false, /*ccGain=*/0);
         CHECK(w.entities.damageTaken[fi].raw > 0);       // 확장이 닿았다
         CHECK_EQ(off.entities.damageTaken[fo].raw, 0);   // 확장이 없으면 못 닿는다
-        printf("    기본 반경의 1.25배 거리: 원심력 %d raw · 없으면 %d raw\n",
+        printf("    중첩 %d → 반경 ×%d‰. 거리 ×%d‰: 원심력 %d raw · 없으면 %d raw\n",
+               kInner, reach.raw * 1000 / Fixed::ONE_RAW, farAt,
                w.entities.damageTaken[fi].raw, off.entities.damageTaken[fo].raw);
     }
 
@@ -299,10 +304,23 @@ int main() {
         const Fixed base = w.hero.stats.value(Stat::AoeRadius);
         const EntityId inner = w.entities.spawn(mob(base / Fixed(4), Fixed{}, 100000), 0, 12);
         const uint32_t ii = static_cast<uint32_t>(w.entities.denseOf(inner));
-        // 확장을 유발할 바깥 적 — 중첩이 실제로 쌓이게 한다
-        for (int32_t k = 0; k < 3; ++k) {
-            w.entities.spawn(mob(base * Fixed::fromPermille(1200 + k * 100), Fixed{},
-                                 100000), 0, 12);
+
+        // **바깥 적은 패스마다 딱 한 마리씩 새로 닿게 놓는다.** 중첩 j까지 쌓였을
+        // 때의 반경(1 + step×j)보다 조금 안쪽이다.
+        //
+        // 아무 데나 두면 안 된다 — 확장 반경 밖에 두면 2패스가 **아예 돌지 않고**
+        // 그래도 이 테스트는 통과한다(중복이 없으니까). 검사가 조용히 멈추는 것이다.
+        // 그래서 위치를 step에서 도출하고, 끝에서 **실제로 닿았는지** 단정한다.
+        const int32_t step = cfg.centrifugeStepPermille;
+        const int32_t outerN = cfg.centrifugeMaxStacks - 1;
+        CHECK(outerN >= 1);
+        uint32_t outer[16];
+        for (int32_t j = 1; j <= outerN && j <= 16; ++j) {
+            const int32_t at = 1000 + step * j - step / 3;   // 중첩 j의 반경 안쪽
+            CHECK(at > 1000 + step * (j - 1));               // 전제: 이전 패스엔 못 닿는다
+            const EntityId e = w.entities.spawn(
+                mob(base * Fixed::fromPermille(at), Fixed{}, 100000), 0, 12);
+            outer[j - 1] = static_cast<uint32_t>(w.entities.denseOf(e));
         }
 
         const Fixed one = Fixed(100);
@@ -310,6 +328,12 @@ int main() {
                      one, /*centrifuge=*/true, /*ccGain=*/0);
         // armor 0이라 감쇠가 없다 → 한 번 맞았으면 정확히 one이다
         CHECK_EQ(w.entities.damageTaken[ii].raw, one.raw);
+        // **패스가 실제로 돌았다는 증거.** 이게 없으면 위 단정이 공짜로 통과한다
+        for (int32_t j = 0; j < outerN && j < 16; ++j) {
+            CHECK_EQ(w.entities.damageTaken[outer[j]].raw, one.raw);
+        }
+        printf("    안쪽 1마리가 %d패스에 걸쳐 훑였고 피해는 %d raw 한 번뿐\n",
+               outerN + 1, w.entities.damageTaken[ii].raw);
     }
 
     dctest::section("원심력 — 중첩 상한에서 멈춘다 (무한 확장 금지)");
@@ -382,8 +406,15 @@ int main() {
                 w.entities.spawn(mob(base / Fixed(4) + Fixed::fromRaw(m * 64), Fixed{},
                                      100000), 0, 20);
             }
+            // 확장 최대 반경(1 + step×상한) **안쪽**이어야 한다. 상한을 내리면
+            // 1.25배 같은 고정값은 밖으로 밀려나고, 그러면 이 테스트는 "각인이
+            // 안 붙었다"가 아니라 "애초에 닿지 않는다"를 보게 된다.
+            const int32_t at = 1000 + cfg.centrifugeStepPermille
+                                    * cfg.centrifugeMaxStacks
+                             - cfg.centrifugeStepPermille / 3;
+            CHECK(at > 1000);
             const EntityId f = w.entities.spawn(
-                mob(base * Fixed::fromPermille(1250), Fixed{}, 100000), 0, 20);
+                mob(base * Fixed::fromPermille(at), Fixed{}, 100000), 0, 20);
             executeSkill(w, cfg, k == 0 ? whirl : cleave, QteGrade::Miss);
             far[k] = w.entities.damageTaken[static_cast<uint32_t>(w.entities.denseOf(f))].raw;
         }

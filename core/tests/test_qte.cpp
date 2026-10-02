@@ -179,7 +179,25 @@ int main() {
             if (w.hero.qte.kind == QteKind::SkillAmplify) sawSkill = true;
         }
         CHECK(sawCrisis);
-        CHECK(!sawSkill);      // 쿨다운이 계속 남아 스킬 증폭은 한 번도 안 열린다
+        (void)sawSkill;
+
+        // **`!sawSkill`을 보던 자리다. 규칙이 아니라 우연이었다** — 위기 회피가
+        // 열릴 때 쿨다운을 `qteCooldownTicks`(120)로 **되돌리므로**, 처음에 999를
+        // 꽂아도 400틱 안에 스킬 증폭이 열릴 수 있다. 전에는 그 시퀀스가 어쩌다
+        // 안 겹쳤을 뿐이고, 광역 중심이 바뀌어 전투 리듬이 흔들리자 깨졌다.
+        //
+        // 규칙 자체를 직접 본다: 쿨다운이 남아 있으면 스킬 증폭은 거부되고,
+        // 위기 회피는 그와 무관하게 열린다.
+        World w2 = makeWorld(31);
+        w2.hero.qteCooldown = 50;
+        CHECK(!openSkillQte(w2, cfg, 0));                  // 쿨다운 중 — 거부
+        CHECK(!w2.hero.qte.open());
+        w2.hero.qteCooldown = 0;
+        CHECK(openSkillQte(w2, cfg, 0));                   // 풀리면 열린다
+        CHECK_EQ(static_cast<int32_t>(w2.hero.qte.kind),
+                 static_cast<int32_t>(QteKind::SkillAmplify));
+        // 그리고 열자마자 쿨다운이 다시 채워진다 — 빈도 상한이 여기서 걸린다
+        CHECK_EQ(w2.hero.qteCooldown, cfg.qteCooldownTicks);
     }
 
     dctest::section("그로기 — 행동 불가");
@@ -333,6 +351,108 @@ int main() {
             CHECK_EQ(w2.entities.groggyLeft[i2], 0);
         }
         printf("    대지 가르기만 기절시킨다 (CC 스킬 %d종)\n", ccSkills);
+    }
+
+    dctest::section("광역 중심 — **전방 범위는 영웅 중심이 아니다**");
+    {
+        // 설계가 회전 베기를 "주변 전방위", 대지 가르기를 "전방 범위"로 정했는데
+        // 코어는 둘 다 영웅 중심으로 돌렸다. 그래서 대지 가르기가 자기 타겟을
+        // 때릴 수 없었다 — 영웅은 타겟에서 2.6타일 앞에 멈추고 반경은 1.5다.
+        World w = makeWorld(11);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        const Fixed r = Fixed::fromPermille(1500);
+
+        // 타겟을 +x 방향 멀리 둔다
+        SpawnDesc t = mob(Archetype::Elite, 100000, 0, 167);
+        t.posX = Fixed(4); t.posY = Fixed{};
+        const EntityId e = w.entities.spawn(t, 0, 11);
+        w.hero.target = e;
+
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            Fixed cx{}, cy{};
+            aoeCenterOf(w, cfg.skills[k], r, &cx, &cy);
+            if (cfg.skills[k].center == AoeCenter::Hero) {
+                CHECK_EQ(cx.raw, w.hero.posX.raw);
+                CHECK_EQ(cy.raw, w.hero.posY.raw);
+            } else {
+                // **타겟 방향으로 정확히 반경만큼** 앞 → 닿는 거리 2 × 반경
+                CHECK_EQ(cx.raw, r.raw);
+                CHECK_EQ(cy.raw, 0);
+            }
+        }
+
+        // 전방 중심을 쓰는 스킬이 정확히 하나이고, 그게 CC 스킬이다
+        uint32_t fwd = 0, fwdIdx = 0;
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            if (cfg.skills[k].center == AoeCenter::Forward) { ++fwd; fwdIdx = k; }
+        }
+        CHECK_EQ(fwd, 1u);
+        CHECK(cfg.skills[fwdIdx].aoe);                       // 전방 "범위"다
+        CHECK(cfg.skills[fwdIdx].ccGainPermille > 0);        // 그게 CC 스킬이다
+        printf("    전방 중심 1종 · 중심 오프셋 = 반경 %d raw → 닿는 거리 %d raw\n",
+               r.raw, r.raw * 2);
+    }
+
+    dctest::section("광역 중심 — 타겟이 없으면 **영웅 중심으로 되돌아간다**");
+    {
+        // 방향을 정할 수 없다. 조용히 영웅 앞 어딘가를 고르면 그게 숨은 규칙이 된다.
+        World w = makeWorld(12);
+        w.hero.posX = Fixed(5); w.hero.posY = Fixed(7);
+        const Fixed r = Fixed::fromPermille(1500);
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            Fixed cx{}, cy{};
+            aoeCenterOf(w, cfg.skills[k], r, &cx, &cy);   // 타겟 없음
+            CHECK_EQ(cx.raw, w.hero.posX.raw);
+            CHECK_EQ(cy.raw, w.hero.posY.raw);
+        }
+        // 타겟이 영웅과 겹쳐도 방향이 없다 → 영웅 중심
+        SpawnDesc t = mob(Archetype::Elite, 100000, 0, 167);
+        t.posX = w.hero.posX; t.posY = w.hero.posY;
+        const EntityId e = w.entities.spawn(t, 0, 12);
+        w.hero.target = e;
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            Fixed cx{}, cy{};
+            aoeCenterOf(w, cfg.skills[k], r, &cx, &cy);
+            CHECK_EQ(cx.raw, w.hero.posX.raw);
+            CHECK_EQ(cy.raw, w.hero.posY.raw);
+        }
+    }
+
+    dctest::section("광역 중심 — **전방 광역이 영웅의 타겟에 닿는다** (CC까지)");
+    {
+        // 이게 이번 변경의 요점이다. 영웅이 멈추는 거리(사거리 − 접근 여유)에 있는
+        // 타겟을 전방 광역이 때릴 수 있어야 한다.
+        const Fixed range = dev::data().hero.bases[static_cast<uint32_t>(Stat::Range)];
+        const Fixed stop = range - Fixed::fromPermille(cfg.approachMarginMilli);
+        const Fixed aoe = dev::data().hero.bases[static_cast<uint32_t>(Stat::AoeRadius)];
+        // 전제: 영웅 중심으로는 닿지 않고, 전방 중심(2 × 반경)으로는 닿는다
+        CHECK(stop.raw > aoe.raw);
+        CHECK(stop.raw <= aoe.raw * 2);
+
+        uint32_t cleave = 0;
+        for (uint32_t k = 0; k < cfg.skillCount; ++k) {
+            if (cfg.skills[k].center == AoeCenter::Forward) { cleave = k; break; }
+        }
+        int32_t hit[2] = {0, 0};
+        for (int32_t k = 0; k < 2; ++k) {
+            SimConfig c = cfg;
+            c.skills[cleave].center = k == 0 ? AoeCenter::Hero : AoeCenter::Forward;
+            World w = makeWorld(13);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            SpawnDesc t = mob(Archetype::Elite, 100000, 0, 167);
+            t.posX = stop; t.posY = Fixed{};
+            const EntityId e = w.entities.spawn(t, 0, 13);
+            const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(e));
+            w.hero.target = e;
+            executeSkill(w, c, cleave, QteGrade::Miss);
+            hit[k] = w.entities.damageTaken[i].raw;
+            // CC도 같이 간다 — 게이지가 찼으면 기절, 아니면 게이지만
+            if (k == 1) CHECK(w.entities.ccGauge[i].raw > 0 || w.entities.groggyLeft[i] > 0);
+        }
+        CHECK_EQ(hit[0], 0);        // 영웅 중심 — 멈춤 거리의 타겟에 닿지 않는다
+        CHECK(hit[1] > 0);          // 전방 중심 — 닿는다
+        printf("    멈춤 거리 %d raw 타겟: 영웅 중심 %d raw · 전방 중심 %d raw\n",
+               stop.raw, hit[0], hit[1]);
     }
 
     dctest::section("입력 로그 — 모든 입력이 한 형식");

@@ -33,7 +33,11 @@ static FieldStats measure(const SimConfig& cfg, Fixed moveSpeed,
     initWorld(w, seed, dev::data().cfg, dev::data().table, dev::data().hero);
     w.hero.stats.setBase(Stat::MoveSpeed, moveSpeed);
 
-    const Fixed aoeRadius = Fixed(3);        // §9 광역기 기준 반경
+    // **데이터에서 온다.** 전에는 `Fixed(3)`이 박혀 있었는데 실제 설정값은
+    // 1.5타일이라, 이 스윕의 광역 비율이 다른 반경을 재고 있었다. 아래 "광역
+    // 반경별" 절은 처음부터 설정값을 썼으므로 AOE_TARGET_SHARE 가정(0.13)은
+    // 멀쩡하다 — 어긋나 있던 것은 이 칸뿐이다.
+    const Fixed aoeRadius = cfg.aoeRadius;
     int64_t contactSum = 0, aliveSum = 0, aoeSum = 0;
     int64_t meleeSum = 0;
     int32_t maxContact = 0, samples = 0;

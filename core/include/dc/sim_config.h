@@ -30,6 +30,13 @@ constexpr uint32_t MAX_ELITE_SPAWNS = 32;   // 맵당 19마리 + 여유
 constexpr uint32_t MAX_BOSS_PATTERNS = 8;   // 페이즈 1은 3개, 페이즈 2 가산분 여유
 constexpr uint32_t MAX_ITEM_TIERS    = 8;   // 수직 슬라이스는 5등급
 
+// 광역기의 중심. **스킬마다 다르다** — `heroes_vertical_slice.md` §2가
+// 회전 베기를 "주변 전방위", 대지 가르기를 "**전방** 범위"로 정했다.
+enum class AoeCenter : uint8_t {
+    Hero    = 0,   // 영웅 중심 — 주변 전방위
+    Forward = 1,   // 영웅에서 타겟 방향으로 반경만큼 앞 → 닿는 거리 2 × 반경
+};
+
 // 고유 스킬 (§3). 발동은 통합 proc 1회, 어떤 스킬인지는 가중 추첨이다.
 struct SkillConfig {
     Fixed   mult{};          // 기본 공격 대비 배율
@@ -41,6 +48,11 @@ struct SkillConfig {
     // **"대지 가르기가 CC 스킬"을 코드에 박지 않으려고 스킬 속성으로 둔다.**
     // 0이면 CC를 적용하지 않는다 — 분기가 데이터 쪽에 있다.
     int32_t ccGainPermille = 0;
+    // 광역 중심. `aoe`가 false면 쓰이지 않는다.
+    //
+    // **반경이 아니라 중심을 고친 이유**: 반경을 올리면 제대로 구현된 회전 베기까지
+    // 같이 세지고 `AOE_TARGET_SHARE` 가정과 아이템 광역 축이 전부 움직인다.
+    AoeCenter center = AoeCenter::Hero;
 };
 
 // 몬스터 한 종류의 전투 데이터 (§9 "몬스터 전투 데이터").

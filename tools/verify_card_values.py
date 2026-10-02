@@ -14,15 +14,44 @@ import math
 기준선은 `balance_baseline.py`의 전사다. 각인은 스킬 하나에만 붙으므로
 **회전 베기**(가중치 0.35, 광역)를 기준 스킬로 삼는다.
 
+## 축이 둘이다 — 피해가 게이트, 클리어율은 기록
+
+**피해 예산이 판정하고 클리어율은 판정하지 않는다.** 둘을 한 밴드로 묶으면 각인
+하나를 고칠 때마다 1000시드(25분)를 돌려야 하고, 클리어율 3σ가 4.8%p라 그보다
+촘촘한 조정은 측정으로 분간되지도 않는다. 그래서 **피해 예산을 게이트로 두고**
+(`run_all.py` 3초) 클리어율은 **지배 빌드 감시용 기록**으로 나란히 적는다.
+
+그런데 피해 예산이 놓치는 항이 하나 **도출된다** — 잠식 되먹임이다.
+
+### 잠식 보정 — 런이 짧아지면 누적 잠식이 줄어든다
+
+잡몹을 빨리 치우면 클리어 게이지가 빨리 차고 런이 짧아진다. 동시 생존은 스폰이
+상한을 유지하므로 **줄지 않는다** — 줄어드는 것은 `유입률 × 시간`의 시간 쪽이다.
+회피한 잠식은 `회복 1 = 피해 1` 규약으로 피해에 환산한다 (`E_LEECH`가 이미 쓰는
+환산이다).
+
+**이 항이 작지 않다.** 실측 런 단축으로 환산하면 원심력에 예산의 +108%가 얹혀
+합계가 약 2배가 된다 — DPS만 보면 99%라 멀쩡해 보이는 각인이다.
+
+### 보정으로도 남는 잔차
+
+보정은 **최상위 사례를 설명하지만 순위를 맞추지는 못한다.** 소용돌이는 보정 +69%인데
+Δ클리어가 +2.2%p이고, 여진은 보정 +13%인데 +4.3%p다. 설명되지 않는 축이 최소 둘 더
+있다 (`heroes_vertical_slice.md` §4):
+
+- **성장 되먹임** — 런이 짧으면 경험치가 덜 쌓여 보스 앞에서 레벨이 낮다. 처형이
+  도달률을 99.2%로 올리고도 도달 후 생존이 내려가는 이유다. 런 단축이 **양쪽으로**
+  작용하므로 단일 계수로 담을 수 없다
+- **관문 비대칭** — 보스는 처형 면역이고 실효 체력이 커서 "잡몹을 빨리 치우는" 효과가
+  거기서는 값이 없다
+
+그래서 아래 표의 `Δ클리어`는 **밴드가 아니라 기록**이다. 걸리는 것은 지배 빌드
+하나뿐이다 — 한 각인이 나머지를 압도하면 선택이 사라진다.
+
 ## 이 도구가 재지 않는 축이 있다
 
-**여기 통과가 "밸런스가 맞다"를 뜻하지 않는다.** 이 도구는 기준선 DPS 대비 증분만
-재고, 잠식 유입 ↔ 살아 있는 잡몹 수 ↔ 클리어 게이지의 되먹임은 모델에 없다.
-
-실측(`core/tools/dc_legend` 1000시드)에서 고유 각인 6종은 **예산비가 95~100%로
-같은데 클리어율 기여가 +0.5 ~ +13.4%p로 27배 벌어진다.** 잡몹을 빨리 치우는 효과가
-게이지와 잠식 양쪽에 동시에 얹히기 때문이다. 어느 축을 예산의 정의로 삼을지는
-`heroes_vertical_slice.md` §4에 세 선택지로 적어 두었고 **미결이다.**
+**여기 통과가 "밸런스가 맞다"를 뜻하지 않는다.** 피해 예산 + 잠식 보정까지 맞아도
+위 잔차 두 축은 모델 밖이다.
 
 ## 전설 등급도 여기서 본다
 
@@ -47,6 +76,12 @@ from verify_card_rates import RATES
 # ── 등급별 파워 예산 ───────────────────────────────────────────
 import gamedata as gd
 from gamedata import CARDS as _CARDS, pm as _pm
+# **잠식 유입률은 verify_recovery의 실측에서 가중평균한다.** 여기 숫자를 다시
+# 적으면 두 곳에 사는 값이 되고, 한쪽만 고치는 사고가 난다.
+from verify_recovery import MEASURED as _RECOVERY_MEASURED
+
+MAP_INFLOW = (sum(i * s for i, s in _RECOVERY_MEASURED)
+              / sum(s for _, s in _RECOVERY_MEASURED))
 
 GRADE_UNIT = {g["name"]: _pm(g["value_unit_permille"]) for g in _CARDS["grades"]}
 GRADE_BUDGET = {g["name"]: _pm(g["power_budget_permille"]) for g in _CARDS["grades"]}
@@ -79,6 +114,43 @@ FORGE_FIRST_GAIN = 1.64 * _pm(_ITEMS["tier_power_permille"][0])
 # 예산 환산에 쓰는 가정. 전부 여기 모아둔다 — 흩어지면 검산이 안 된다.
 PIERCE_TARGETS = 2.0       # 관통이 뒤로 추가로 맞히는 평균 적 수
 SWARM_DENSITY = 5.0        # 주변 적 평균 수
+# ── 고유 각인 실측 (`core/tools/dc_legend` 1000시드 · QTE 항상 완벽) ──────
+#
+# **손으로 적은 값이 아니라 도구가 낸다.** 수치를 바꾸면 다시 잰다:
+#   `cmake --build build/release --target dc_legend && ./build/release/core/dc_legend 1000`
+#
+# 1000시드 아래로 내려가지 말 것 — 절대 클리어율이 시드 집합에 민감하다(같은
+# 설정에서 200시드 15.5% · 400시드 13.2% · 1000시드 9.6%). 한 실행 안의 Δ만
+# 비교할 수 있고 실행 사이 절대값은 비교할 수 없다.
+LEGEND_BASE_SEC   = 350.5   # 각인 없음 — 런 길이(초)
+LEGEND_BASE_CLEAR = 9.6     # 각인 없음 — 클리어율(%)
+LEGEND_MEASURED = {
+    # id            런 길이  클리어율
+    "W_EXECUTE":    (330.4, 13.7),
+    "W_SHOCKWAVE":  (344.0, 10.1),
+    "W_VORTEX":     (321.2, 11.8),
+    "W_CENTRIFUGE": (306.9, 23.0),
+    "W_AFTERSHOCK": (344.5, 13.9),
+    "W_FISSURE":    (354.6, 10.1),
+}
+# 클리어율 차이의 3σ (p≈0.15, n=1000). 이보다 작은 차이는 결론이 아니다.
+LEGEND_CLEAR_3SIGMA = 4.8
+
+# **지배 빌드 감시** — 클리어율에서 판정하는 유일한 것이다 (나머지는 기록).
+#
+# "1위 ÷ 2위"로 재려 했는데 **2위가 3σ 아래라 분모가 노이즈다** — 지금 2위는
+# +4.3%p이고 3σ가 4.8%p이므로 기준선과 구분되지 않는다. 흔들리는 분모로 나눈
+# 비율은 지표가 아니다.
+#
+# 그래서 **3σ를 눈금으로 쓴다**: 유의한 각인이 하나뿐이고 그 Δ클리어가 3σ의 이
+# 배수를 넘으면 지배다. 분모가 측정의 해상도라 흔들리지 않는다.
+# 현재 원심력 13.4 ÷ 4.8 = 2.8배로 그 아래다.
+DOMINANT_SIGMA_MAX = 3.0
+
+# 피해 + 잠식 보정 합계의 천장. **현재 원심력이 약 2배로 그 아래에 있다** —
+# 못 박아 두어 더 나빠지면 걸리게 한다 (LEGEND_RELIC_OVER와 같은 방식).
+UNIQUE_TOTAL_MAX = 2.5
+
 # 광역기 기본 타격 대상 수 (balance_baseline의 AOE_TARGETS_MIN과 같은 하한).
 #
 # **실측은 이보다 높다** — 광역 중심이 스킬마다 달라진 뒤 `aoeCenterOf` 기준으로
@@ -266,6 +338,22 @@ def unique_delta(uid):
     raise KeyError(uid)
 
 
+def corruption_credit(uid):
+    """런 단축이 회피하는 누적 잠식을 **DPS로 환산**한다.
+
+    잡몹을 빨리 치우면 게이지가 빨리 차고 런이 짧아진다. 동시 생존은 스폰이 상한을
+    유지하므로 줄지 않는다 — 줄어드는 것은 `유입률 × 시간`의 시간 쪽이다.
+    `회복 1 = 피해 1`은 `E_LEECH`가 이미 쓰는 환산이다.
+
+    런이 **길어지는** 각인(균열)은 음수가 나온다. 자르지 않는다 — 부호가 곧 정보다.
+    """
+    if uid not in LEGEND_MEASURED:
+        return 0.0
+    sec, _clear = LEGEND_MEASURED[uid]
+    dt = LEGEND_BASE_SEC - sec
+    return MAP_INFLOW * dt / sec
+
+
 # ── 전설 유물 3종 ───────────────────────────────────────────────
 def legend_relic_delta(rid):
     total, basic, _a = hero_dps()
@@ -375,25 +463,56 @@ def report():
         dps = pps * HERO["attack_power"] * mult * crit
         print(f"     {sname:<7} 주기 {1/pps:5.1f}s · 대상당 {dps:4.2f} DPS → 예산의 "
               f"{legend_budget/dps:.2f}배가 필요하다")
-    print(f"  {'ID':<14} {'이름':<5} {'스킬':<9} {'수치':>22} {'ΔDPS':>7} {'예산비':>7}")
-    print("  " + "-" * 78)
+    print(f"  {'ID':<14} {'이름':<5} {'ΔDPS':>7} {'피해':>6} "
+          f"{'잠식보정':>8} {'합계':>6}   {'런':>7} {'Δ클리어':>8}")
+    print("  " + "-" * 76)
+    print("  (피해 = 게이트 · 잠식 보정 = 런 단축 환산 · Δ클리어 = 기록, 판정 안 함)")
+    clears = {}
     for uid, e in UNIQUE.items():
         d = unique_delta(uid)
-        nums = " · ".join(f"{k.rsplit('_', 1)[0]} {v}"
-                          for k, v in e.items()
-                          if k.endswith(("_permille", "_ticks", "_millitile", "_stacks")))
+        sec, clear = LEGEND_MEASURED.get(uid, (LEGEND_BASE_SEC, LEGEND_BASE_CLEAR))
+        dclear = clear - LEGEND_BASE_CLEAR
+        clears[uid] = dclear
+        credit = corruption_credit(uid)
+        cr = credit / legend_budget
         if d is None:
-            print(f"  {uid:<14} {e['name']:<5} {e['skill']:<9} {nums:>22} "
-                  f"{'—':>7} {'—':>7}  ※ 상황 가치")
+            print(f"  {uid:<14} {e['name']:<5} {'—':>7} {'—':>6} "
+                  f"{cr:>7.0%} {'—':>6}   {sec:>6.1f}s {dclear:>+7.1f}p  ※ 상황 가치")
             continue
         ratio = d / legend_budget
+        total = ratio + cr
         flag = ""
         if abs(ratio - 1) > BUDGET_TOL:
-            flag = "  ← 편차"
+            flag = "  ← 피해 편차"
             ok = False
-        print(f"  {uid:<14} {e['name']:<5} {e['skill']:<9} {nums:>22} "
-              f"{d:>7.2f} {ratio:>6.0%}{flag}")
+        elif total > UNIQUE_TOTAL_MAX:
+            flag = "  ← 합계 천장 초과"
+            ok = False
+        elif total > 1.5:
+            flag = "  ← 합계가 예산의 1.5배 위"
+        print(f"  {uid:<14} {e['name']:<5} {d:>7.2f} {ratio:>5.0%} "
+              f"{cr:>+7.0%} {total:>5.0%}   {sec:>6.1f}s {dclear:>+7.1f}p{flag}")
     print()
+    print(f"  ※ 잠식 유입 {MAP_INFLOW:.1f}/초 (verify_recovery 실측의 가중평균) ·"
+          f" 전설 예산 {legend_budget:.2f} DPS")
+    print(f"  ※ 합계 천장 {UNIQUE_TOTAL_MAX:.1f}배. 넘으면 FAIL —"
+          f" **DPS만 보면 멀쩡해 보이는 각인을 잡는 자리다**")
+
+    # ── 지배 빌드 감시 (클리어율에서 판정하는 유일한 것) ──
+    #
+    # **분모는 3σ다. 2위가 아니다.** 2위가 유의하지 않으면 비율이 노이즈로 나뉜다.
+    ranked = sorted(clears.values(), reverse=True)
+    sig = [v for v in ranked if v > LEGEND_CLEAR_3SIGMA]
+    top = ranked[0] if ranked else 0.0
+    dom = top / LEGEND_CLEAR_3SIGMA if LEGEND_CLEAR_3SIGMA > 0 else 0.0
+    good = dom <= DOMINANT_SIGMA_MAX
+    ok &= good
+    print(f"  지배 빌드: 1위 {top:+.1f}%p ÷ 3σ {LEGEND_CLEAR_3SIGMA:.1f}%p = "
+          f"{dom:.1f}σ (상한 {DOMINANT_SIGMA_MAX:.1f})  "
+          f"{'PASS' if good else 'FAIL'}")
+    print(f"  유의한 각인 {len(sig)}종 / 6 — 나머지는 기준선과 구분되지 않는다")
+    print(f"  ※ Δ클리어 차이의 3σ는 {LEGEND_CLEAR_3SIGMA:.1f}%p다 —"
+          f" 그보다 작은 차이는 결론이 아니다\n")
     for uid, e in UNIQUE.items():
         key = next((k for k in e if k.endswith("_permille")), None)
         v = _pm(e[key]) if key else 0.0

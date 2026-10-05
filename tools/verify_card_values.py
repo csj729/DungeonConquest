@@ -104,7 +104,38 @@ LEGEND_OVER_TOL = 0.15      # ±15% 안에서만 움직일 수 있다
 EXEC_TTK = {"잡몹": None, "엘리트": 9.5, "보스": 70.0}   # 잡몹은 기준선 DPS에서 계산
 # 전투 시간 배분 — 엘리트·보스 안에서 보스 몫. 보스 70초 vs 엘리트 19마리×9.5초=180초
 BOSS_SHARE_IN_ELITE = 70.0 / (70.0 + 19 * 9.5)
-PIERCE_EXTRA_PER_WIDTH = 2.0 / 700      # E_PIERCE: 반폭 700에서 추가 2.0명 (선형 가정)
+# ── 직선 관통 추가 대상 수 — `core/tools/dc_field` 실측 ──────────
+#
+# **가정이 2.3배 틀려 있었다.** 전에는 `PIERCE_TARGETS = 2.0`(반폭 700)을 "기준선
+# 전투 가정"으로 두고 반폭에 선형 외삽했다. 실측하니 반폭 700에서 **0.86명**이다.
+#
+# 이유는 기하다. `collectInLine`은 타겟 **뒤쪽만** 센다 — 타겟에서 밖으로 3.0타일,
+# 반폭 안. 영웅은 사거리 근처(2.6타일)에서 멈추므로 그 뒤는 스폰 링 쪽이고, 거기
+# 밀도가 영웅 주변(광역 반경 안)과 같을 이유가 없었다.
+#
+# **선형 형태 자체는 맞았다** — 175~700 구간에서 반폭당 0.0012명/permille로 거의
+# 일정하다. 틀린 것은 기준점이다. 큰 반폭에서는 살짝 초선형이라(링을 더 많이
+# 걸친다) 표를 그대로 두고 보간한다.
+#
+# 재측정: `cmake --build build/release --target dc_field && ./build/release/core/dc_field`
+# (시드 24개 × 틱 표본 1999개 평균. 광역 반경 절은 단일 스냅샷이라 더 약하다)
+PIERCE_EXTRA_MEASURED = [
+    # 반폭(millitile), 추가 대상 수
+    (175, 0.20), (350, 0.42), (525, 0.63), (700, 0.86), (1050, 1.41), (1400, 2.16),
+]
+
+
+def pierce_extra(width_millitile):
+    """반폭에서 타겟 뒤로 추가로 맞는 평균 적 수. 실측표를 선형 보간한다."""
+    t = PIERCE_EXTRA_MEASURED
+    if width_millitile <= t[0][0]:
+        return t[0][1] * width_millitile / t[0][0]      # 원점에서 선형
+    for (w0, v0), (w1, v1) in zip(t, t[1:]):
+        if width_millitile <= w1:
+            return v0 + (v1 - v0) * (width_millitile - w0) / (w1 - w0)
+    w0, v0 = t[-2]
+    w1, v1 = t[-1]
+    return v1 + (v1 - v0) * (width_millitile - w1) / (w1 - w0)   # 바깥은 외삽
 
 # 보스 처형 면역은 **몬스터 데이터가 정한다** (각인이 "보스면 제외"를 알지 않는다)
 BOSS_EXECUTE_IMMUNE = bool(gd.load("monsters")["boss_execute_immune"])
@@ -117,7 +148,8 @@ FORGE_FIRST_GAIN = 1.64 * _pm(_ITEMS["tier_power_permille"][0])
 
 # ── 기준선 전투 가정 ───────────────────────────────────────────
 # 예산 환산에 쓰는 가정. 전부 여기 모아둔다 — 흩어지면 검산이 안 된다.
-PIERCE_TARGETS = 2.0       # 관통이 뒤로 추가로 맞히는 평균 적 수
+# 관통이 뒤로 추가로 맞히는 평균 적 수 — **데이터의 반폭에서 실측값을 읽는다**
+PIERCE_TARGETS = pierce_extra(_CARDS["pierce_width_millitile"])
 SWARM_DENSITY = 5.0        # 주변 적 평균 수
 # ── 고유 각인 실측 (`core/tools/dc_legend` 1000시드 · QTE 항상 완벽) ──────
 #
@@ -127,16 +159,16 @@ SWARM_DENSITY = 5.0        # 주변 적 평균 수
 # 1000시드 아래로 내려가지 말 것 — 절대 클리어율이 시드 집합에 민감하다(같은
 # 설정에서 200시드 15.5% · 400시드 13.2% · 1000시드 9.6%). 한 실행 안의 Δ만
 # 비교할 수 있고 실행 사이 절대값은 비교할 수 없다.
-LEGEND_BASE_SEC   = 350.6   # 각인 없음 — 런 길이(초)
-LEGEND_BASE_CLEAR = 9.3     # 각인 없음 — 클리어율(%)
+LEGEND_BASE_SEC   = 350.0   # 각인 없음 — 런 길이(초)
+LEGEND_BASE_CLEAR = 8.9     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
     # id            런 길이  클리어율
-    "W_EXECUTE":    (330.9, 12.9),
-    "W_SHOCKWAVE":  (344.1, 10.1),
-    "W_VORTEX":     (321.2, 11.8),
-    "W_CENTRIFUGE": (339.3, 12.7),
-    "W_AFTERSHOCK": (344.6, 13.8),
-    "W_FISSURE":    (354.9,  9.9),
+    "W_EXECUTE":    (328.3, 12.4),
+    "W_SHOCKWAVE":  (339.6, 10.1),
+    "W_VORTEX":     (319.5, 11.3),
+    "W_CENTRIFUGE": (339.5, 13.2),
+    "W_AFTERSHOCK": (343.0, 14.0),
+    "W_FISSURE":    (353.1, 10.7),
 }
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
@@ -182,9 +214,25 @@ def clear_3sigma(p_base, p_var, n=LEGEND_SEEDS):
 #
 # 아래 지문이 데이터와 어긋나면 FAIL이고, 메시지가 "다시 재라"를 직접 말한다.
 # 측정을 다시 하면 두 곳을 같이 고치게 되므로 한쪽만 고치는 사고가 막힌다.
+# **고유 각인 수치만으로는 부족하다.** E_PIERCE(공통 각인)를 75 → 165‰로 고쳤더니
+# 표 전체가 낡았는데, 아래 지문이 고유 각인만 보고 있어서 **조용히 통과했다**.
+# dc_legend는 게임 전체를 돌리므로 **어느 카드 수치든** 표를 무효화한다.
+ENGRAVINGS_RAW = {e["id"]: e["uncommon_permille"] for e in _CARDS["engravings"]}
+RELICS_RAW     = {r["id"]: r["uncommon_permille"] for r in _CARDS["relics"]}
+
+LEGEND_MEASURED_CARDS = {
+    "E_PIERCE": 165, "E_CHAIN": 135, "E_DECAY": 90,
+    "E_LEECH": 150, "E_SWARM": 27, "E_CRIT": 65,
+    "E_REND": 75, "E_WIDE": 60, "R_RAGE": 3,
+    "R_BOLT": 180, "R_FROST": 30, "R_BEACON": 45,
+    "R_TIDE": 1, "R_GREED": 113,
+    "pierce_width_millitile": 700, "pierce_length_millitile": 3000,
+    "storm_radius_millitile": 2000, "storm_dps_permille": 190,
+}
+
 LEGEND_MEASURED_PARAMS = {
     "W_EXECUTE":    {"threshold_permille": 400},
-    "W_SHOCKWAVE":  {"width_millitile": 350},
+    "W_SHOCKWAVE":  {"width_millitile": 800},
     "W_VORTEX":     {"dps_permille": 965, "duration_ticks": 80},
     "W_CENTRIFUGE": {"max_stacks": 3, "radius_step_permille": 70},
     "W_AFTERSHOCK": {"damage_permille": 1700, "fuse_ticks": 20},
@@ -202,6 +250,12 @@ def _measurement_is_current():
             got = live.get(key)
             if got != want:
                 bad.append((uid, key, want, got))
+    # 공통 각인·유물·관통 기하 — 어느 하나라도 움직이면 표가 낡는다
+    _live = dict(ENGRAVINGS_RAW, **RELICS_RAW)
+    for key, want in sorted(LEGEND_MEASURED_CARDS.items()):
+        got = _live.get(key, _CARDS.get(key))
+        if got != want:
+            bad.append((key, "uncommon_permille" if key in _live else "데이터", want, got))
     # 데이터에 새 수치가 생겼는데 지문에 없으면 그것도 어긋남이다
     for uid in LEGEND_MEASURED_PARAMS:
         for key, v in sorted(UNIQUE[uid].items()):
@@ -448,7 +502,7 @@ def unique_delta(uid):
 
     if uid == "W_SHOCKWAVE":
         # 전력 피해로 직선의 적을 추가로 맞힌다. 추가 대상 수는 반폭에 비례한다
-        extra = e["width_millitile"] * PIERCE_EXTRA_PER_WIDTH
+        extra = pierce_extra(e["width_millitile"])
         return own_dps * extra
 
     if uid == "W_VORTEX":
@@ -627,8 +681,8 @@ def report():
             pending.append(uid)
             ratio = d / legend_budget if d is not None else None
             rs = f"{ratio:>5.0%}" if ratio is not None else f"{'—':>6}"
-            print(f"  {uid:<14} {e['name']:<5} "
-                  f"{d if d is None else round(d, 2):>7} {rs} "
+            ds = f"{d:.2f}" if d is not None else "—"
+            print(f"  {uid:<14} {e['name']:<5} {ds:>7} {rs} "
                   f"{'대기':>6} {'대기':>5}   {'—':>7} {'—':>8}  ← 재측정 대기")
             if ratio is not None and abs(ratio - 1) > BUDGET_TOL:
                 ok = False
@@ -730,15 +784,22 @@ def report():
           f" (상한 {DOMINANT_SIGMA_MAX:.1f}배)  {'PASS' if good else 'FAIL'}{note}")
     print(f"  유의한 각인 {len(sig)}종 / {len(UNIQUE) - len(pending)}")
     if not pending:
-        weak = [uid for uid, (d, _m, _s) in sigma.items()
+        # **유의하지 않은 것과 약한 것은 다르다.** 다만 유의하지 않은 카드의
+        # 상대값도 확립된 값이 아니다 — 한때 이 줄이 상대 +15%를 기준으로
+        # "진짜 약한 쪽"을 분류했는데, 균열이 z = 1.35에서 상대 +20%라는 이유로
+        # 목록에서 빠졌다. **확립되지 않은 차이로 분류하고 있었다.**
+        #
+        # 그래서 둘을 분리해 찍는다: 유의한 것은 결론, 나머지는 **방향**이다.
+        weak = [uid for uid, (d, _z, _s) in sigma.items()
                 if LEGEND_BASE_CLEAR > 0 and d / LEGEND_BASE_CLEAR < 0.15]
         if weak:
-            # **유의하지 않은 것과 약한 것은 다르다.** 상대 +27~39%는 3σ에 못 미쳐도
-            # 설계상 충분하다. 상대 +15% 아래가 진짜 약한 쪽이고, 여기 이름이 뜨는
-            # 카드가 밸런스 작업의 대상이다.
-            print(f"  ※ **상대 +15% 아래 — 진짜 약한 쪽**: "
-                  f"{', '.join(UNIQUE[u]['name'] for u in weak)}")
-            print("     나머지는 3σ에 못 미쳐도 상대로 +27% 이상이라 설계상 충분하다")
+            names = ", ".join(f"{UNIQUE[u]['name']}(z={sigma[u][1]:.2f})" for u in weak)
+            print(f"  ※ 상대 +15% 아래: {names}")
+        print("  ※ **유의하지 않은 행의 상대값은 결론이 아니라 방향이다.** 위 목록도"
+              " 그렇다 —")
+        print("     n=1000에서 3σ를 넘지 못한 차이는 순위를 매길 근거가 되지 못한다."
+              " 방향을")
+        print("     좁히는 데만 쓰고, 수치를 고친 뒤에는 다시 잰다")
     print()
     for uid, e in UNIQUE.items():
         key = next((k for k in e if k.endswith("_permille")), None)

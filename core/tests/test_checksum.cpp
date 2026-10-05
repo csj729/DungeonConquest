@@ -427,6 +427,15 @@ int main() {
         // 때문이다. 발동 경로는 `test_systems`의 RL_FORGE 두 절이 직접 못 박는다.
         //
         // 일곱 번째는 **광역 중심**이다. 대지 가르기가 "전방 범위"라는 설계대로
+        // 여덟 번째는 직선 관통 기하 실측에 따른 수치 교정이다 — E_PIERCE
+        // 75 → 165‰, 충격파 반폭 350 → 800. **또 설정 지문뿐이다.**
+        // `dc_checksum`으로 영역별로 갈라 두 시드 모두 틱 0과 1200에서
+        // entities·hero·spawn·rng이 완전히 동일함을 확인했다.
+        //
+        // E_PIERCE는 **공통** 카드인데 값이 2.2배 올랐는데도 entities가 한 비트도
+        // 안 움직였다. 이 런이 그 카드를 집지 않기 때문이고, 아래에 단정으로
+        // 넣어 두었다 — 골든 커버리지의 구멍이 또 하나 드러난 자리다.
+        //
         // 일곱 번째는 원심력 상한 10 → 3이다. **또 설정 지문뿐이다.**
         // `dc_checksum <시드> 1200 1200`을 양쪽 데이터로 돌려 영역별로 갈라 봤고,
         // 두 시드 모두 틱 0과 1200에서 `entities`·`hero`·`spawn`·`rng`이
@@ -466,8 +475,8 @@ int main() {
         // 답할 수 있어야 한다.**
         struct Golden { uint64_t seed; int32_t ticks; uint64_t total; };
         constexpr Golden kGolden[] = {
-            {1u,        1200, 1486271795050013203ull},
-            {20250918u, 1200, 14891207316299478353ull},
+            {1u,        1200, 13214620715727119408ull},
+            {20250918u, 1200, 16921376727196702864ull},
         };
         for (const Golden& g : kGolden) {
             World w;
@@ -486,6 +495,13 @@ int main() {
                 CHECK(!w.cards.legendHas(u));
             }
             CHECK_EQ(w.zones.count, 0u);     // 장판이 한 번도 깔리지 않았다
+
+            // **E_PIERCE도 못 본다.** 값을 75 → 165‰로 2.2배 올렸는데 entities
+            // 체크섬이 한 비트도 안 움직였다(dc_checksum 영역별 대조). 추측으로
+            // 두지 않고 검사로 둔다 — 드라이버 정책이 바뀌어 이 카드를 집으면
+            // 여기가 깨지고, 그러면 체크섬이 움직인 이유를 지문이 아니라 **효과**
+            // 쪽에서 찾아야 한다는 신호가 된다.
+            CHECK_EQ(w.cards.engrave[engraveIndex(EngraveId::Pierce)].raw, 0);
         }
         printf("    시드 %zu개 고정값 일치 · 고유 각인 미획득 · 장판 0개\n",
                sizeof(kGolden) / sizeof(kGolden[0]));

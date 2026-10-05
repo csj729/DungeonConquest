@@ -155,6 +155,51 @@ int main(int argc, char** argv) {
             printf("%8.1f타일 %10d %10.3f\n", rp / 1000.0, hit,
                    alive ? static_cast<double>(hit) / alive : 0.0);
         }
+        printf("  ※ 이 절은 **단일 스냅샷**이다 (한 시드의 마지막 틱). 아래 직선\n");
+        printf("     스윕은 시드·틱 평균이라 더 믿을 수 있다\n");
+    }
+
+    // ── 직선 관통 반폭별 추가 대상 수 ────────────────────────────────
+    //
+    // `verify_card_values.py`의 PIERCE_TARGETS = 2.0(반폭 700)과
+    // PIERCE_EXTRA_PER_WIDTH(선형 가정)이 **측정된 적이 없다.** W_SHOCKWAVE(충격파)의
+    // 예산비 97%가 그 위에 서 있다.
+    //
+    // `collectInLine`을 그대로 쓴다 — 타겟 **뒤쪽**만, 타겟에서 pierceLength만큼,
+    // 반폭 안. 타겟은 영웅 사거리 근처에 서므로 그 뒤는 스폰 링 쪽이고, 거기
+    // 밀도가 광역 반경 안과 같을 이유가 없다.
+    printf("\n== 직선 관통 반폭별 추가 대상 수 (타겟 뒤, 길이 %.1f타일) ==\n",
+           cfg.pierceLength.raw / static_cast<double>(Fixed::ONE_RAW));
+    {
+        const int32_t kSeeds = 24;
+        const int32_t kFirst = 600;    // 전장이 찬 뒤부터
+        const int32_t kEvery = 40;
+        printf("%10s %12s %12s %10s\n", "반폭", "추가 대상", "선형 가정", "표본");
+        for (int32_t wp : {175, 350, 525, 700, 1050, 1400}) {
+            const Fixed halfw = Fixed::fromPermille(wp);
+            int64_t sum = 0;
+            int32_t samples = 0;
+            for (int32_t sd = 0; sd < kSeeds; ++sd) {
+                World w;
+                initWorld(w, 777 + static_cast<uint64_t>(sd) * 31,
+                          dev::data().cfg, dev::data().table, dev::data().hero);
+                static SimScratch sc2;
+                for (int32_t t = 0; t < ticks; ++t) {
+                    stepWorld(w, cfg, dev::data().table, sc2);
+                    if (t < kFirst || (t - kFirst) % kEvery != 0) continue;
+                    const int32_t td = w.entities.denseOf(w.hero.target);
+                    if (td < 0 || w.entities.deadAt(static_cast<uint32_t>(td))) continue;
+                    uint32_t buf[config::MAX_ENTITIES];
+                    sum += collectInLine(w, static_cast<uint32_t>(td), halfw,
+                                         cfg.pierceLength, buf, config::MAX_ENTITIES);
+                    ++samples;
+                }
+            }
+            const double got = samples ? static_cast<double>(sum) / samples : 0.0;
+            printf("%8.3f타일 %12.2f %12.2f %10d\n",
+                   wp / 1000.0, got, 2.0 * wp / 700.0, samples);
+        }
+        printf("  ※ 선형 가정 = PIERCE_TARGETS(2.0) × 반폭 / 700\n");
     }
     return 0;
 }

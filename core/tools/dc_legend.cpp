@@ -27,7 +27,8 @@
 // 동일하다** — 서로 비교가 깨끗하다. "없음"은 n이 9라 소비가 어긋나므로
 // **느슨한 기준선**으로만 읽는다.
 //
-// 표본: 클리어율 p≈0.15에서 n=1000이면 표준오차 1.1%p, 차이의 3σ가 4.8%p다.
+// 표본: n=1000. 차이의 3σ는 **행마다 계산한다** — 이항 분산이 p(1−p)라 p와 함께
+// 움직이므로 상수로 박으면 비율이 내려갈 때 유의한 차이를 놓친다.
 // 그 아래 차이는 결론이 아니다 — 한때 n=60에서 18.3% vs 13.3%를 보고 "전설이
 // 판을 나쁘게 만든다"로 읽었는데 n=200에서 전부 사라졌다.
 //
@@ -117,7 +118,15 @@ int main(int argc, char** argv) {
     printf("  %s\n", "-------------------------------------------------------"
                      "------------------------------------------");
 
-    const double sed = 100.0 * std::sqrt(2 * 0.15 * 0.85 / N);   // 차이의 표준오차
+    // 차이의 표준오차 — **p를 박지 말 것.** 이항 비율의 분산은 p(1−p)라 p와 함께
+    // 움직인다. 전에는 p = 0.15를 박아 3σ = 4.8%p로 찍었는데, 수치가 바뀌어 실제
+    // 비율이 9~14%로 내려간 뒤에는 임계값이 너무 보수적이어서 유의한 각인을
+    // 놓쳤다(verify_card_values.py의 clear_3sigma와 같은 고장이었다).
+    // 각 행의 비율로 계산한다.
+    const auto sigma3 = [N](double pa, double pb) {
+        const double a = pa / 100.0, b = pb / 100.0;
+        return 3.0 * 100.0 * std::sqrt(a * (1 - a) / N + b * (1 - b) / N);
+    };
     double baseClear = 0;
     for (const Variant& v : kVariants) {
         double sec = 0;
@@ -131,7 +140,8 @@ int main(int argc, char** argv) {
         }
         const double clear = 100.0 * cl / n;
         if (v.legend < 0) baseClear = clear;
-        const bool sig = v.legend >= 0 && std::fabs(clear - baseClear) > 3 * sed;
+        const bool sig = v.legend >= 0
+                      && std::fabs(clear - baseClear) > sigma3(baseClear, clear);
         // **런 길이를 같이 찍는다.** 빨리 끝나면 경험치가 덜 쌓여 보스 앞에서
         // 레벨이 낮다 — "도달은 늘었는데 생존이 줄었다"가 모집단 효과인지
         // 성장 부족인지 가리는 열이다.
@@ -143,7 +153,9 @@ int main(int argc, char** argv) {
                static_cast<double>(tr) / n, static_cast<double>(ce) / n);
         (void)el;
     }
-    printf("\n  * = 기준선과의 차이가 3σ(%.1f%%p)를 넘는다. 그 아래는 결론이 아니다.\n", 3 * sed);
+    printf("\n  * = 기준선과의 차이가 3σ를 넘는다 (행마다 계산 — 기준선 %.1f%%에서"
+           " 약 %.2f%%p). 그 아래는 결론이 아니다.\n",
+           baseClear, sigma3(baseClear, baseClear));
     printf("  전설 풀 %u칸 중 고유 각인 6칸만 본다 — 유물 3종은 dc_boss·dc_montecarlo 몫이다.\n",
            cfg.legendPoolSize);
     return 0;

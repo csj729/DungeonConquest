@@ -162,20 +162,21 @@ SWARM_DENSITY = 5.0        # 주변 적 평균 수
 LEGEND_BASE_SEC   = 350.0   # 각인 없음 — 런 길이(초)
 LEGEND_BASE_CLEAR = 8.9     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
-    # **균열에 지속 피해를 얹었다 → 표 전체가 낡았다.** 균열은 전설이라 다른
-    # 변종의 런에서도 뽑힐 수 있고 기준선도 그렇다 — 한 행만 다시 잴 수 없다.
-    #
-    # 지문(LEGEND_MEASURED_PARAMS)에는 새 값을 넣어 뒀으므로 **가드가 이 변경을
-    # 잡지 못한다.** 지문은 "측정 당시 수치"를 담는 자리인데 내가 새 수치를 넣어
-    # 입막음한 셈이고, 이번 세션에서 세 번째다. 그래서 여기를 비워 둔다 —
-    # `None`이면 아래가 FAIL로 세운다.
-    "W_EXECUTE":    None,
-    "W_SHOCKWAVE":  None,
-    "W_VORTEX":     None,
-    "W_CENTRIFUGE": None,
-    "W_AFTERSHOCK": None,
-    "W_FISSURE":    None,
+    # id            런 길이  클리어율
+    "W_EXECUTE":    (328.3, 12.4),
+    "W_SHOCKWAVE":  (339.6, 10.3),
+    "W_VORTEX":     (319.3, 11.5),
+    "W_CENTRIFUGE": (339.6, 13.1),
+    "W_AFTERSHOCK": (342.6, 14.0),
+    "W_FISSURE":    (345.2, 13.3),
 }
+# **이 지문과 위 표는 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
+#
+# 손으로 고른 키 목록을 지문으로 쓰다가 두 번 당했다 — 범위 구멍(고유 각인만 담아
+# E_PIERCE 변경을 놓쳤다)과 입막음(새 값을 지문에 넣어 가드를 껐다). 전체 데이터를
+# 해싱하면 **범위 구멍은 사라진다**. 입막음은 여전히 가능하지만, 지문이 손으로
+# 지어낼 수 없는 값이라 "측정 없이 갱신"이 눈에 띈다.
+LEGEND_MEASURED_FINGERPRINT = "79b1b6bfe3259240"
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
 # 때문이다. 그래서 한 행만 갈아 끼우면 안 되고 기준선까지 같이 다시 적는다.
@@ -212,63 +213,14 @@ def clear_3sigma(p_base, p_var, n=LEGEND_SEEDS):
     a, b = p_base / 100.0, p_var / 100.0
     return 3.0 * math.sqrt(a * (1 - a) / n + b * (1 - b) / n) * 100.0
 
-# **측정이 어느 수치에서 나왔는지 함께 못 박는다.**
-#
-# 위 표는 손으로 붙인다. 그래서 각인 수치를 고치면 표가 **조용히 낡는다** — 원심력
-# 상한을 10 → 3으로 내렸을 때 실제로 그랬다. 런 길이가 바뀌었는데 잠식 보정은
-# 옛 런 길이로 계산되고, 그래도 전부 PASS였다.
-#
-# 아래 지문이 데이터와 어긋나면 FAIL이고, 메시지가 "다시 재라"를 직접 말한다.
-# 측정을 다시 하면 두 곳을 같이 고치게 되므로 한쪽만 고치는 사고가 막힌다.
-# **고유 각인 수치만으로는 부족하다.** E_PIERCE(공통 각인)를 75 → 165‰로 고쳤더니
-# 표 전체가 낡았는데, 아래 지문이 고유 각인만 보고 있어서 **조용히 통과했다**.
-# dc_legend는 게임 전체를 돌리므로 **어느 카드 수치든** 표를 무효화한다.
-ENGRAVINGS_RAW = {e["id"]: e["uncommon_permille"] for e in _CARDS["engravings"]}
-RELICS_RAW     = {r["id"]: r["uncommon_permille"] for r in _CARDS["relics"]}
-
-LEGEND_MEASURED_CARDS = {
-    "E_PIERCE": 165, "E_CHAIN": 135, "E_DECAY": 90,
-    "E_LEECH": 150, "E_SWARM": 27, "E_CRIT": 65,
-    "E_REND": 75, "E_WIDE": 60, "R_RAGE": 3,
-    "R_BOLT": 180, "R_FROST": 30, "R_BEACON": 45,
-    "R_TIDE": 1, "R_GREED": 113,
-    "pierce_width_millitile": 700, "pierce_length_millitile": 3000,
-    "storm_radius_millitile": 2000, "storm_dps_permille": 190,
-}
-
-LEGEND_MEASURED_PARAMS = {
-    "W_EXECUTE":    {"threshold_permille": 400},
-    "W_SHOCKWAVE":  {"width_millitile": 800},
-    "W_VORTEX":     {"dps_permille": 965, "duration_ticks": 80},
-    "W_CENTRIFUGE": {"max_stacks": 3, "radius_step_permille": 70},
-    "W_AFTERSHOCK": {"damage_permille": 1700, "fuse_ticks": 20},
-    "W_FISSURE":    {"duration_ticks": 80, "radius_millitile": 4000,
-                     "slow_permille": 500, "dps_permille": 400},
-}
 
 
 def _measurement_is_current():
-    """`LEGEND_MEASURED`가 현재 데이터에서 나온 값인지. (어긋난 키, 설명) 목록."""
-    bad = []
-    for uid, pinned in LEGEND_MEASURED_PARAMS.items():
-        live = UNIQUE[uid]
-        for key, want in sorted(pinned.items()):
-            got = live.get(key)
-            if got != want:
-                bad.append((uid, key, want, got))
-    # 공통 각인·유물·관통 기하 — 어느 하나라도 움직이면 표가 낡는다
-    _live = dict(ENGRAVINGS_RAW, **RELICS_RAW)
-    for key, want in sorted(LEGEND_MEASURED_CARDS.items()):
-        got = _live.get(key, _CARDS.get(key))
-        if got != want:
-            bad.append((key, "uncommon_permille" if key in _live else "데이터", want, got))
-    # 데이터에 새 수치가 생겼는데 지문에 없으면 그것도 어긋남이다
-    for uid in LEGEND_MEASURED_PARAMS:
-        for key, v in sorted(UNIQUE[uid].items()):
-            if isinstance(v, int) and not isinstance(v, bool) \
-                    and key not in LEGEND_MEASURED_PARAMS[uid]:
-                bad.append((uid, key, None, v))
-    return bad
+    """`LEGEND_MEASURED`가 현재 데이터에서 나온 값인지. (어긋남, 설명) 목록."""
+    live = gd.fingerprint()
+    if live == LEGEND_MEASURED_FINGERPRINT:
+        return []
+    return [(live, LEGEND_MEASURED_FINGERPRINT)]
 
 # **지배 빌드 감시** — 클리어율에서 판정하는 유일한 것이다 (나머지는 기록).
 #
@@ -742,14 +694,13 @@ def report():
     stale = _measurement_is_current()
     if stale:
         ok = False
-        print("  ← **측정이 낡았다.** 런 길이·클리어율이 지금 수치의 것이 아니다:")
-        for uid, key, want, got in stale:
-            if want is None:
-                print(f"       {uid}.{key} = {got} — 지문에 없는 새 수치다")
-            else:
-                print(f"       {uid}.{key}: 측정 당시 {want} → 지금 {got}")
+        live, pinned = stale[0]
+        print("  ← **측정이 낡았다.** 런 길이·클리어율이 지금 데이터의 것이 아니다.")
+        print(f"       data/*.json 지문  측정 당시 {pinned} → 지금 {live}")
         print("     `./build/release/core/dc_legend 1000`을 다시 돌려")
-        print("     LEGEND_MEASURED와 LEGEND_MEASURED_PARAMS를 **같이** 고칠 것")
+        print("     LEGEND_MEASURED와 LEGEND_MEASURED_FINGERPRINT를 **같이** 고칠 것")
+        print("     ※ 지문은 data/*.json 전체의 해시다 — 어느 파일의 어느 수치든")
+        print("        측정을 무효화한다. 주석(`_` 키)은 빼므로 설명 수정은 괜찮다")
 
     # ── 클리어율 — 유의 판정과 지배 빌드 ──
     #

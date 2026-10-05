@@ -162,13 +162,19 @@ SWARM_DENSITY = 5.0        # 주변 적 평균 수
 LEGEND_BASE_SEC   = 350.0   # 각인 없음 — 런 길이(초)
 LEGEND_BASE_CLEAR = 8.9     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
-    # id            런 길이  클리어율
-    "W_EXECUTE":    (328.3, 12.4),
-    "W_SHOCKWAVE":  (339.6, 10.1),
-    "W_VORTEX":     (319.5, 11.3),
-    "W_CENTRIFUGE": (339.5, 13.2),
-    "W_AFTERSHOCK": (343.0, 14.0),
-    "W_FISSURE":    (353.1, 10.7),
+    # **균열에 지속 피해를 얹었다 → 표 전체가 낡았다.** 균열은 전설이라 다른
+    # 변종의 런에서도 뽑힐 수 있고 기준선도 그렇다 — 한 행만 다시 잴 수 없다.
+    #
+    # 지문(LEGEND_MEASURED_PARAMS)에는 새 값을 넣어 뒀으므로 **가드가 이 변경을
+    # 잡지 못한다.** 지문은 "측정 당시 수치"를 담는 자리인데 내가 새 수치를 넣어
+    # 입막음한 셈이고, 이번 세션에서 세 번째다. 그래서 여기를 비워 둔다 —
+    # `None`이면 아래가 FAIL로 세운다.
+    "W_EXECUTE":    None,
+    "W_SHOCKWAVE":  None,
+    "W_VORTEX":     None,
+    "W_CENTRIFUGE": None,
+    "W_AFTERSHOCK": None,
+    "W_FISSURE":    None,
 }
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
@@ -237,7 +243,7 @@ LEGEND_MEASURED_PARAMS = {
     "W_CENTRIFUGE": {"max_stacks": 3, "radius_step_permille": 70},
     "W_AFTERSHOCK": {"damage_permille": 1700, "fuse_ticks": 20},
     "W_FISSURE":    {"duration_ticks": 80, "radius_millitile": 4000,
-                     "slow_permille": 500},
+                     "slow_permille": 500, "dps_permille": 400},
 }
 
 
@@ -429,7 +435,10 @@ def relic_delta(rid, v):
 # ── 고유 각인 6종 ───────────────────────────────────────────────
 UNIQUE = {e["id"]: e for e in _CARDS["unique_engravings"]}
 UNIQUE_UNPRICED = {
-    "W_FISSURE": "둔화(접근 지연)는 R_FROST와 같은 이유로 DPS 환산 기준이 없다",
+    # 피해는 이제 환산한다. **둔화 쪽만** 상황 가치로 남는다
+    "W_FISSURE+둔화": "둔화(접근 지연)는 R_FROST와 같은 이유로 DPS 환산 기준이 없다."
+                      " 실측 처치율 0.850 vs 기준 0.851 — 잠식 유입이 생존 몹 수의"
+                      " 함수라 죽이지 않는 효과는 시계를 늦추지 못한다",
 }
 
 
@@ -521,7 +530,15 @@ def unique_delta(uid):
         return own_pps * HERO["attack_power"] * _pm(e["damage_permille"]) * AOE_TARGETS
 
     if uid == "W_FISSURE":
-        return None
+        # **피해만 환산한다.** 둔화는 그대로 환산 기준이 없다 (R_FROST와 같은 이유,
+        # 그리고 실측으로 처치율에 0이었다 — 잠식 유입이 생존 몹 수의 함수이고
+        # 스포너가 그 수를 상한에 유지하므로 "죽이지 않는 효과"는 시계를 늦추지
+        # 못한다). 그래서 지속 피해를 얹었고, 값매기는 것은 그 항이다.
+        #
+        # 소용돌이와 같은 식인데 **가산**이라 즉발분을 빼지 않는다 — 소용돌이는
+        # 즉발을 대체하므로 잃은 몫까지 메워야 해서 수치가 훨씬 크다(96.5%/초).
+        dur = e["duration_ticks"] / TICK_HZ
+        return own_pps * dur * HERO["attack_power"] * _pm(e["dps_permille"]) * AOE_TARGETS
     raise KeyError(uid)
 
 

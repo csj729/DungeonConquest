@@ -159,19 +159,16 @@ SWARM_DENSITY = 5.0        # 주변 적 평균 수
 # 1000시드 아래로 내려가지 말 것 — 절대 클리어율이 시드 집합에 민감하다(같은
 # 설정에서 200시드 15.5% · 400시드 13.2% · 1000시드 9.6%). 한 실행 안의 Δ만
 # 비교할 수 있고 실행 사이 절대값은 비교할 수 없다.
-LEGEND_BASE_SEC   = 350.6   # 각인 없음 — 런 길이(초)
-LEGEND_BASE_CLEAR = 9.3     # 각인 없음 — 클리어율(%)
+LEGEND_BASE_SEC   = 350.0   # 각인 없음 — 런 길이(초)
+LEGEND_BASE_CLEAR = 8.9     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
-    # **E_PIERCE 75 → 165‰이 표 전체를 무효화했다.** 공통 카드라 여섯 변종과
-    # 기준선 모두에 들어간다 — 한 행만 다시 잴 수 없다. 재측정 중이고, 그때까지
-    # `None`(대기)으로 둔다. 옛 값을 남기면 잠식 보정이 다른 수치의 런 길이로
-    # 계산되고 그래도 전부 PASS가 된다.
-    "W_EXECUTE":    None,
-    "W_SHOCKWAVE":  None,
-    "W_VORTEX":     None,
-    "W_CENTRIFUGE": None,
-    "W_AFTERSHOCK": None,
-    "W_FISSURE":    None,
+    # id            런 길이  클리어율
+    "W_EXECUTE":    (328.3, 12.4),
+    "W_SHOCKWAVE":  (339.6, 10.1),
+    "W_VORTEX":     (319.5, 11.3),
+    "W_CENTRIFUGE": (339.5, 13.2),
+    "W_AFTERSHOCK": (343.0, 14.0),
+    "W_FISSURE":    (353.1, 10.7),
 }
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
@@ -235,7 +232,7 @@ LEGEND_MEASURED_CARDS = {
 
 LEGEND_MEASURED_PARAMS = {
     "W_EXECUTE":    {"threshold_permille": 400},
-    "W_SHOCKWAVE":  {"width_millitile": 350},
+    "W_SHOCKWAVE":  {"width_millitile": 800},
     "W_VORTEX":     {"dps_permille": 965, "duration_ticks": 80},
     "W_CENTRIFUGE": {"max_stacks": 3, "radius_step_permille": 70},
     "W_AFTERSHOCK": {"damage_permille": 1700, "fuse_ticks": 20},
@@ -787,15 +784,22 @@ def report():
           f" (상한 {DOMINANT_SIGMA_MAX:.1f}배)  {'PASS' if good else 'FAIL'}{note}")
     print(f"  유의한 각인 {len(sig)}종 / {len(UNIQUE) - len(pending)}")
     if not pending:
-        weak = [uid for uid, (d, _m, _s) in sigma.items()
+        # **유의하지 않은 것과 약한 것은 다르다.** 다만 유의하지 않은 카드의
+        # 상대값도 확립된 값이 아니다 — 한때 이 줄이 상대 +15%를 기준으로
+        # "진짜 약한 쪽"을 분류했는데, 균열이 z = 1.35에서 상대 +20%라는 이유로
+        # 목록에서 빠졌다. **확립되지 않은 차이로 분류하고 있었다.**
+        #
+        # 그래서 둘을 분리해 찍는다: 유의한 것은 결론, 나머지는 **방향**이다.
+        weak = [uid for uid, (d, _z, _s) in sigma.items()
                 if LEGEND_BASE_CLEAR > 0 and d / LEGEND_BASE_CLEAR < 0.15]
         if weak:
-            # **유의하지 않은 것과 약한 것은 다르다.** 상대 +27~39%는 3σ에 못 미쳐도
-            # 설계상 충분하다. 상대 +15% 아래가 진짜 약한 쪽이고, 여기 이름이 뜨는
-            # 카드가 밸런스 작업의 대상이다.
-            print(f"  ※ **상대 +15% 아래 — 진짜 약한 쪽**: "
-                  f"{', '.join(UNIQUE[u]['name'] for u in weak)}")
-            print("     나머지는 3σ에 못 미쳐도 상대로 +27% 이상이라 설계상 충분하다")
+            names = ", ".join(f"{UNIQUE[u]['name']}(z={sigma[u][1]:.2f})" for u in weak)
+            print(f"  ※ 상대 +15% 아래: {names}")
+        print("  ※ **유의하지 않은 행의 상대값은 결론이 아니라 방향이다.** 위 목록도"
+              " 그렇다 —")
+        print("     n=1000에서 3σ를 넘지 못한 차이는 순위를 매길 근거가 되지 못한다."
+              " 방향을")
+        print("     좁히는 데만 쓰고, 수치를 고친 뒤에는 다시 잰다")
     print()
     for uid, e in UNIQUE.items():
         key = next((k for k in e if k.endswith("_permille")), None)

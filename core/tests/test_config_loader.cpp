@@ -220,10 +220,16 @@ int main() {
         // 보스 면역이 실제로 플래그로 들어왔다 — 없으면 페이즈 2의 80%가 생략된다
         CHECK((loaded.boss.flags & EntityFlag::ExecuteImmune) != 0);
 
-        // 충격파 — **E_PIERCE보다 좁아야 한다.** 같은 폭에 전력 피해면 예산의
-        // 194%가 된다. 길이는 pierceLength를 공유하므로 따로 없다.
+        // 충격파 — 전에는 "E_PIERCE보다 좁아야 한다"였다. **근거가 틀린 가정이었다.**
+        // "같은 폭에 전력 피해면 예산의 194%"는 반폭 700에서 추가 대상 2.0명이라는
+        // 가정에서 나왔는데, `dc_field` 실측은 0.86명이다 — 같은 700에서도 83%다.
+        // 그래서 충격파는 E_PIERCE(700)보다 **넓다**(800).
+        //
+        // 폭의 균형은 `verify_card_values.py`가 예산으로 본다. 여기서는 **구조적
+        // 한계**만 건다: 반폭이 길이를 넘으면 '직선 관통'이 아니라 사실상 부채꼴이
+        // 되어 기하가 뜻을 잃는다.
         CHECK(loaded.shockwaveWidth.raw > 0);
-        CHECK(loaded.shockwaveWidth.raw < loaded.pierceWidth.raw);
+        CHECK(loaded.shockwaveWidth.raw <= loaded.pierceLength.raw);
 
         // 원심력 — 상한이 0이면 효과가 없고, 없으면(= 매우 크면) 폭주한다
         CHECK(loaded.centrifugeStepPermille > 0);

@@ -786,6 +786,7 @@ inline void zoneRun(World& w, const SimConfig& cfg) {
     const int32_t now = w.tickCount();
 
     // ① 피해 — 인덱스 오름차순
+    Fixed dealt{};
     for (uint32_t z = 0; z < w.zones.count; ++z) {
         const ZoneKind k = w.zones.kind[z];
         if (k == ZoneKind::Fissure) continue;                  // 둔화는 이동이 읽는다
@@ -797,10 +798,35 @@ inline void zoneRun(World& w, const SimConfig& cfg) {
         const uint32_t n = collectInRadius(w.entities, w.zones.posX[z], w.zones.posY[z],
                                            w.zones.radius[z], hit, config::MAX_ENTITIES);
         for (uint32_t m = 0; m < n; ++m) {
-            // **hooks=false** — 장판·폭발은 영웅의 타격이 아니다. 처형도 도트
-            // 갱신도 붙지 않는다 (예산을 공속으로 환산했기 때문이다).
-            applySkillHit(w, cfg, hit[m], w.zones.value[z], false);
+            // **hooks=false** — 처형도 도트 갱신도 붙지 않는다. 그 둘은 **발동
+            // 빈도**에 값이 붙는 훅이라, 틱형 피해에 걸면 판정 횟수가 공속의
+            // 몇 배가 되어 예산을 넘는다 (예산을 공속 1.54/s로 환산했다).
+            dealt += applySkillHit(w, cfg, hit[m], w.zones.value[z], false);
         }
+    }
+
+    // **흡혈은 다르다 — 피해에 비례하므로 붙여야 한다.**
+    //
+    // `hooks` 플래그가 두 종류를 뭉쳐 놓고 있었다. 처형·도트는 **빈도**에 값이
+    // 붙어서 틱형 피해에 걸면 예산이 터지지만, `E_LEECH`는 "그 스킬 피해의 15%"
+    // 라서 **총 피해에 비례**한다 — 장판이 즉발을 대체하면 총 피해가 비슷하므로
+    // 흡혈량도 비슷하고, 빈도 인플레가 없다.
+    //
+    // 빠져 있어서 실제로 무슨 일이 났는가: **소용돌이가 그 스킬의 흡혈을 완전히
+    // 껐다.** 즉발을 대체하니 `executeSkill`의 흡혈 블록에 닿기 전에 `return`하고,
+    // 장판 피해도 여기서 흡혈하지 않았다. 5000시드 실측에서 소용돌이는 보스전
+    // 처치율 1위(+44%)인데도 **도달 시 잠식이 437로 기준선 404보다 높은** 유일한
+    // 카드였고, 짝 검정에서 하위 그룹(2.06σ)에 머물렀다.
+    //
+    // 균열은 **가산**이라 즉발 타격이 남아 흡혈이 작동했다 — 같은 `Burn` 장판을
+    // 쓰는 두 카드가 다른 그룹에 있던 이유가 이것이다.
+    //
+    // `verify_card_values.py`의 E_LEECH 예산(106%)도 "광역기가 5명을 때리면
+    // 5배로 들어온다"를 전제로 계산한 값이다. 즉 **모델은 처음부터 이쪽을
+    // 가정하고 있었고 구현만 빠져 있었다.**
+    {
+        const Fixed leech = w.cards.engrave[engraveIndex(EngraveId::Leech)];
+        if (leech.raw > 0 && dealt.raw > 0) w.purgeCorruption(dealt * leech);
     }
 
     // ② 만료 — 뒤에서 앞으로

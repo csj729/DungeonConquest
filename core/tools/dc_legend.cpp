@@ -304,6 +304,46 @@ int main(int argc, char** argv) {
             printf("     양쪽 다 깨거나 양쪽 다 죽은 시드는 카드 차이를 말해 주지\n");
             printf("     않으므로 분산에 넣지 않는다 — 독립 표본 SE보다 검정력이 높다.\n");
             printf("     * = 3σ 초과\n");
+
+            // ── 변종끼리 짝 비교 ────────────────────────────────────
+            //
+            // 기준선 대비만으로는 **그룹이 갈리는지** 알 수 없다. 균열(+8.0)과
+            // 소용돌이(+2.8)가 둘 다 기준선과 비교됐을 뿐, 서로 다른지는 따로
+            // 재야 한다. 같은 공통 창이므로 여기서도 짝 검정을 쓴다.
+            //
+            // **순위를 매기려는 것이 아니다.** 상위 둘(균열 8.0 · 원심력 7.8)을
+            // 가르려면 0.2%p를 분해해야 하고 그건 329만 시드다 — 측정의 한계가
+            // 아니라 두 카드가 실질적으로 같다는 뜻이다. 이 표가 답하는 것은
+            // "어느 쌍이 실제로 다른가"뿐이다.
+            printf("\n  변종끼리 짝 비교 (McNemar z · 행 − 열 · * = 3σ 초과)\n");
+            printf("  %-10s", "");
+            for (size_t cj = 1; cj < kVarCount; ++cj) {
+                printf("%9.9s", kVariants[cj].name);
+            }
+            printf("\n");
+            for (size_t ri = 1; ri < kVarCount; ++ri) {
+                printf("  %-10.10s", kVariants[ri].name);
+                for (size_t cj = 1; cj < kVarCount; ++cj) {
+                    if (cj <= ri) { printf("%9s", "·"); continue; }
+                    int32_t win = 0, lose = 0;
+                    for (int32_t i : common) {
+                        const int32_t a = rows[ri][static_cast<size_t>(i)].cleared;
+                        const int32_t b = rows[cj][static_cast<size_t>(i)].cleared;
+                        if (a && !b) ++win;
+                        if (!a && b) ++lose;
+                    }
+                    const int32_t disc = win + lose;
+                    const double z = disc > 0
+                        ? (win - lose) / std::sqrt(static_cast<double>(disc)) : 0.0;
+                    char cell[16];
+                    std::snprintf(cell, sizeof(cell), "%+.2f%s", z,
+                                  std::fabs(z) > 3.0 ? "*" : "");
+                    printf("%9s", cell);
+                }
+                printf("\n");
+            }
+            printf("  ※ 양수면 행이 더 많이 깼다. **3σ를 넘는 칸만 '다르다'고 말할 수\n");
+            printf("     있고**, 나머지는 구분되지 않는다 — 순위가 아니라 그룹이다\n");
         }
     }
     return 0;

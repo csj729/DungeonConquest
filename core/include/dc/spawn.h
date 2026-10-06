@@ -82,7 +82,8 @@ inline void progressRun(World& w, const SimConfig& cfg, const RecipeTable& table
     // 구간을 **몇 칸 건너뛰어도 한 칸당 한 번씩** 정화한다. 엘리트를 연달아 잡아
     // 게이지가 한 틱에 두 구간을 넘길 수 있으므로, 넘긴 칸 수로 곱해야 한다 —
     // 한 번만 주면 빨리 미는 빌드가 오히려 손해를 본다.
-    w.purgeCorruption(Fixed((seg - w.run.segmentIndex) * cfg.segmentClearPurge));
+    w.metrics.purgeSegment += w.purgeCorruption(
+        Fixed((seg - w.run.segmentIndex) * cfg.segmentClearPurge)).raw;
 
     // RL_FORGE(대장장이의 화로) — **넘긴 칸마다 한 개**다. 정화와 같은 이유로
     // 곱해야 한다. 한 번만 주면 엘리트를 연달아 잡아 두 구간을 한 틱에 넘기는

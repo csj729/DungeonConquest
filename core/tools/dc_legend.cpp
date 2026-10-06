@@ -67,7 +67,55 @@ struct Row {
     // 오르므로, 일찍 도달하면 같은 수라도 약한 웨이브에서 받은 것이다 —
     // 그 가설을 검사할 수 있는 유일한 열이다.
     int32_t arriveLevel = 0;
+
+    // ── 잠식 채널 (접근 구간) ──────────────────────────────────────
+    //
+    // **게이지 최종값만으로는 카드가 무엇을 했는지 모른다.** 유입이 세 곳에서
+    // 따로 들어오고(적의 공격 · 전장 물량 · 보스 장판) 정화도 세 곳이다
+    // (구슬 · 흡혈 · 구간 돌파). 충격파가 처치율을 +10% 올리면서 도달 시 잠식을
+    // 1도 못 움직인 것(404 대 기준 403)이 이 열들이 생긴 이유다 — 어느 채널에도
+    // 닿지 않았다는 가설을 **이 숫자 없이는 검사할 수 없다.**
+    //
+    // 보스 장판은 접근 구간에 없으므로 여기 열에 넣지 않는다.
+    int64_t corrAttacks = 0, corrMass = 0;
+    int64_t purgeOrbs = 0, purgeLeech = 0, purgeSegment = 0;
+    int64_t attacksTaken = 0;
+    // 평균 생존 적 수. **"물량 채널이 상한에 못 박혀 있는가"를 묻는 열이다** —
+    // 스폰이 처치를 즉시 메우면 처치율을 올려도 물량 유입이 움직이지 않는다.
+    double  aliveAvg = 0;
+    // 기하별 추가 타격 — **구간별로 본다.** 접근 구간 값과 런 전체 값을 따로
+    // 베껴서 차이를 보스전 몫으로 읽는다.
+    int64_t scA = 0, shA = 0, aoeA = 0, zoneA = 0;   // 접근 구간까지 누적
+    int64_t scT = 0, shT = 0, aoeT = 0, zoneT = 0;   // 런 전체 누적
+    // 기하 후보 탐침 — 띠별 적 수 (접근 / 런 전체)
+    int64_t bhA = 0, btA = 0, bkA = 0;
+    int64_t bhT = 0, btT = 0, bkT = 0;
+    int64_t perpA[dc::Metrics::PERP_BUCKETS] = {0};
+    int64_t perpT[dc::Metrics::PERP_BUCKETS] = {0};
 };
+
+// 접근 구간 끝(보스 등장 또는 사망)에서 계측을 베낀다.
+static void captureChannels(Row& r, const dc::World& w) {
+    r.corrAttacks  = w.metrics.corrAttacks;
+    r.corrMass     = w.metrics.corrMass;
+    r.purgeOrbs    = w.metrics.purgeOrbs;
+    r.purgeLeech   = w.metrics.purgeLeech;
+    r.purgeSegment = w.metrics.purgeSegment;
+    r.attacksTaken = w.metrics.attacksTaken;
+    r.aliveAvg     = w.metrics.aliveTicks > 0
+                   ? static_cast<double>(w.metrics.aliveSum) / w.metrics.aliveTicks
+                   : 0.0;
+    r.scA  = w.metrics.shockCalls;
+    r.shA  = w.metrics.shockHits;
+    r.aoeA = w.metrics.aoeExtraHits;
+    r.zoneA = w.metrics.zoneTickHits;
+    r.bhA = w.metrics.shockBehind;
+    r.btA = w.metrics.shockBetween;
+    r.bkA = w.metrics.shockBack;
+    for (int32_t b = 0; b < dc::Metrics::PERP_BUCKETS; ++b) {
+        r.perpA[b] = w.metrics.heroBandPerp[b];
+    }
+}
 
 // QTE는 항상 완벽, 카드는 무작위 — `dc_montecarlo`의 무입력 정책과 달리
 // **숙련 플레이**다. 전설의 값어치를 재는 데는 QTE를 치는 쪽이 기준이어야 한다
@@ -103,6 +151,7 @@ static Row runOne(uint64_t seed, int32_t legend) {
             r.approachSec   = static_cast<double>(w.tickCount()) / cfg.tickHz;
             r.approachKills = w.run.killedTrash + w.run.killedElite;
             r.arriveLevel   = w.hero.level;
+            captureChannels(r, w);
         }
 
         for (uint32_t i = 0; i < w.entities.count(); ++i) {
@@ -110,6 +159,16 @@ static Row runOne(uint64_t seed, int32_t legend) {
             if (w.entities.archetype[i] == Archetype::Trash) ++r.ccTrash;
             else ++r.ccElite;
         }
+    }
+    r.scT  = w.metrics.shockCalls;
+    r.shT  = w.metrics.shockHits;
+    r.aoeT = w.metrics.aoeExtraHits;
+    r.zoneT = w.metrics.zoneTickHits;
+    r.bhT = w.metrics.shockBehind;
+    r.btT = w.metrics.shockBetween;
+    r.bkT = w.metrics.shockBack;
+    for (int32_t b = 0; b < dc::Metrics::PERP_BUCKETS; ++b) {
+        r.perpT[b] = w.metrics.heroBandPerp[b];
     }
     r.sec     = static_cast<double>(w.tickCount()) / cfg.tickHz;
     r.reached = w.run.bossSpawned ? 1 : 0;
@@ -124,6 +183,7 @@ static Row runOne(uint64_t seed, int32_t legend) {
         // 도달한 런만의 값인지 전체인지 모르게 된다
         r.approachSec   = r.sec;
         r.approachKills = w.run.killedTrash + w.run.killedElite;
+        captureChannels(r, w);
     }
     return r;
 }
@@ -229,6 +289,169 @@ int main(int argc, char** argv) {
                aSec / n, static_cast<double>(aK) / n, static_cast<double>(lv) / n,
                bSec / n, bSec > 0 ? bK / bSec : 0.0);
     }
+    // ── 잠식 채널 분리 (접근 구간) ───────────────────────────────────
+    //
+    // **처치율은 클리어율의 대리 지표가 아니다**(§4). 그 이유를 짚으려면 잠식
+    // 시계의 입력을 쪼개야 한다. 충격파가 처치율 +10%에 도달 시 잠식 +0이라는
+    // 조합을 설명할 수 있는 것은 "어느 채널에도 닿지 않았다" 하나뿐인데,
+    // 채널을 나눠 찍지 않으면 그게 가설인지 사실인지 알 수 없다.
+    //
+    // 도달한 런만 센다 — 죽은 런은 접근 구간 길이가 사인(死因)에 딸려 있어
+    // 채널 비율이 "얼마나 버텼나"로 오염된다.
+    printf("\n== 잠식 채널 (접근 구간 · 도달한 런만 · 초당) ==\n");
+    printf("%-12s %9s %9s %9s %9s %9s %9s %9s\n",
+           "전설", "피격", "물량", "구슬", "흡혈", "구간", "피격/초", "평균 적");
+    printf("  %s\n", "------------------------------------------------------------------------------");
+    double baseAtk = 0, baseMass = 0;
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double atk = 0, mass = 0, orb = 0, lee = 0, segp = 0, sec = 0, alive = 0, hits = 0;
+        int32_t n = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.approachSec <= 0) continue;
+            atk  += static_cast<double>(r.corrAttacks)  / Fixed::ONE_RAW / r.approachSec;
+            mass += static_cast<double>(r.corrMass)     / Fixed::ONE_RAW / r.approachSec;
+            orb  += static_cast<double>(r.purgeOrbs)    / Fixed::ONE_RAW / r.approachSec;
+            lee  += static_cast<double>(r.purgeLeech)   / Fixed::ONE_RAW / r.approachSec;
+            segp += static_cast<double>(r.purgeSegment) / Fixed::ONE_RAW / r.approachSec;
+            hits += static_cast<double>(r.attacksTaken) / r.approachSec;
+            alive += r.aliveAvg;
+            sec  += r.approachSec;
+            ++n;
+        }
+        if (!n) continue;
+        if (kVariants[vi].legend < 0) { baseAtk = atk / n; baseMass = mass / n; }
+        printf("%-12s %9.2f %9.2f %9.2f %9.2f %9.2f %9.2f %9.1f\n", kVariants[vi].name,
+               atk / n, mass / n, orb / n, lee / n, segp / n, hits / n, alive / n);
+        (void)sec;
+    }
+    printf("  ※ 유입 둘(피격 · 물량)과 정화 셋(구슬 · 흡혈 · 구간)이다. 보스 장판은\n");
+    printf("     접근 구간에 없다. 기준선 피격 %.2f/초 · 물량 %.2f/초\n", baseAtk, baseMass);
+    printf("  ※ **물량 채널은 위치와 무관하다** — 전장의 생존 적 수만 본다. 그래서\n");
+    printf("     '멀리 있는 적을 죽였다'도 물량에는 똑같이 듣는다. 다만 스폰이 처치를\n");
+    printf("     메우면 '평균 적'이 움직이지 않고, 그때는 처치율을 올려도 유입이 그대로다\n");
+    // ── 기하별 추가 타격 — 구간별 ────────────────────────────────────
+    //
+    // **예산식의 입력을 그대로 측정한다.** 충격파 예산은 `발동 주기`와 `추가
+    // 대상 수` 둘로 환산되는데, 둘 다 게임 밖에서 잰 값이었다 — 주기는 설계
+    // 수치(10.8초), 대상 수는 dc_field의 기하 스윕(반폭 1150에서 1.62명)이다.
+    // 실제 런에서 그 둘이 얼마인지 보지 않았다.
+    //
+    // 직선(타겟 뒤)과 원형(영웅 주변)을 나란히 둔다. 보스전에 들어가면 영웅이
+    // 보스를 치므로 타겟 뒤는 스폰 링 바깥이다 — 같은 '추가 1.6명'이 거기서도
+    // 성립하는지는 재 봐야 안다.
+    printf("\n== 충격파 예산의 입력 (도달한 런만) ==\n");
+    printf("%-12s %9s %9s %9s %9s %9s %9s\n",
+           "전설", "발동/초(접)", "대상/발동(접)", "발동/초(보)", "대상/발동(보)",
+           "광역 대상/초", "장판 대상/초");
+    printf("  %s\n", "--------------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double ca = 0, ha = 0, cb = 0, hb = 0, aoe = 0, zone = 0;
+        int32_t n = 0, nb = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.approachSec <= 0 || r.bossSec <= 0) continue;
+            ca += static_cast<double>(r.scA) / r.approachSec;
+            aoe += static_cast<double>(r.aoeT - r.aoeA) / r.bossSec;
+            zone += static_cast<double>(r.zoneT - r.zoneA) / r.bossSec;
+            if (r.scA > 0) { ha += static_cast<double>(r.shA) / r.scA; ++nb; }
+            cb += static_cast<double>(r.scT - r.scA) / r.bossSec;
+            if (r.scT > r.scA) {
+                hb += static_cast<double>(r.shT - r.shA) / (r.scT - r.scA);
+            }
+            ++n;
+        }
+        if (!n) continue;
+        printf("%-12s %11.3f %13.2f %11.3f %13.2f %13.3f %13.2f\n", kVariants[vi].name,
+               ca / n, nb > 0 ? ha / nb : 0.0, cb / n, nb > 0 ? hb / nb : 0.0,
+               aoe / n, zone / n);
+    }
+    // ── 기하 후보 — 같은 발동에서 세 띠를 동시에 센다 ────────────────
+    //
+    // 충격파 행만 의미가 있다(다른 행은 발동이 거의 없다). 세 띠의 합이 "선을
+    // 어디까지 보느냐"의 선택지다 — 지금은 '뒤'만 때린다.
+    printf("\n  기하 후보 — 발동당 대상 수 (충격파 행만 읽는다)\n");
+    printf("  ※ 충격파가 때리는 띠는 **앞의 둘(타겟 뒤 + 영웅~타겟)**이다.\n");
+    printf("     '타겟 뒤'만 쓰던 시절 그 띠가 보스전에서 62%% 무너졌다\n");
+    printf("  %-12s %12s %12s %12s %12s\n",
+           "구간", "타겟 뒤(관통)", "영웅~타겟", "영웅 뒤", "셋 합");
+    printf("  %s\n", "--------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        if (kVariants[vi].legend != static_cast<int32_t>(dc::LegendId::Shockwave)) continue;
+        double ah = 0, at = 0, ab = 0, bh = 0, bt = 0, bb = 0;
+        int32_t na = 0, nb = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.bossSec <= 0) continue;
+            if (r.scA > 0) {
+                ah += static_cast<double>(r.bhA) / r.scA;
+                at += static_cast<double>(r.btA) / r.scA;
+                ab += static_cast<double>(r.bkA) / r.scA;
+                ++na;
+            }
+            if (r.scT > r.scA) {
+                const double d = static_cast<double>(r.scT - r.scA);
+                bh += static_cast<double>(r.bhT - r.bhA) / d;
+                bt += static_cast<double>(r.btT - r.btA) / d;
+                bb += static_cast<double>(r.bkT - r.bkA) / d;
+                ++nb;
+            }
+        }
+        if (na > 0) {
+            printf("  %-12s %12.2f %12.2f %12.2f %12.2f\n", "접근",
+                   ah / na, at / na, ab / na, (ah + at + ab) / na);
+        }
+        if (nb > 0) {
+            printf("  %-12s %12.2f %12.2f %12.2f %12.2f\n", "보스전",
+                   bh / nb, bt / nb, bb / nb, (bh + bt + bb) / nb);
+        }
+    }
+    // ── 반폭 → 대상 수 (영웅에서 시작하는 경로) ──────────────────────
+    //
+    // 폭은 **예산이 정한다.** 그런데 그 환산에 쓸 '반폭 → 대상 수' 곡선은
+    // dc_field가 **타겟 뒤 띠**에서 잰 것이라, 띠를 바꾸면 쓸 수 없다. 그래서
+    // 같은 런에서 수직 거리 히스토그램을 받아 누적합으로 곡선을 만든다.
+    printf("\n  반폭 → 발동당 대상 수 (영웅에서 시작하는 경로)\n");
+    printf("  %-10s", "반폭(타일)");
+    for (int32_t b = 0; b < dc::Metrics::PERP_BUCKETS; ++b) {
+        printf(" %6.1f", (b + 1) * dc::Metrics::PERP_BUCKET_MILLI / 1000.0);
+    }
+    printf("\n");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        if (kVariants[vi].legend != static_cast<int32_t>(dc::LegendId::Shockwave)) continue;
+        for (int32_t phase = 0; phase < 2; ++phase) {
+            double acc[dc::Metrics::PERP_BUCKETS] = {0};
+            int32_t n = 0;
+            for (const Row& r : rows[vi]) {
+                if (!r.reached || r.bossSec <= 0) continue;
+                const double calls = phase == 0 ? static_cast<double>(r.scA)
+                                                : static_cast<double>(r.scT - r.scA);
+                if (calls <= 0) continue;
+                int64_t run = 0;
+                for (int32_t b = 0; b < dc::Metrics::PERP_BUCKETS; ++b) {
+                    run += phase == 0 ? r.perpA[b] : (r.perpT[b] - r.perpA[b]);
+                    acc[b] += static_cast<double>(run) / calls;
+                }
+                ++n;
+            }
+            if (!n) continue;
+            printf("  %-10s", phase == 0 ? "접근" : "보스전");
+            for (int32_t b = 0; b < dc::Metrics::PERP_BUCKETS; ++b) {
+                printf(" %6.2f", acc[b] / n);
+            }
+            printf("\n");
+        }
+    }
+    printf("  ※ 누적합이다 — 각 칸은 '반폭 이 값 이하'의 대상 수다\n");
+    printf("  ※ **탐침은 피해를 주지 않는다** — 세기만 한다. 그래서 이 숫자를\n");
+    printf("     보고 기하를 고르는 동안 측정은 한 판으로 끝난다\n");
+    printf("  ※ **충격파를 들지 않은 행은 발동 0이다** — 각인이 없으면\n");
+    printf("     applyShockwave가 돌지 않는다. 그래서 이 표는 충격파 행만 읽는다\n");
+    printf("  ※ 뒤 두 열은 비교용이다: 광역(발동당 원형)과 장판(20Hz 틱당)이\n");
+    printf("     보스전에서 대상을 얼마나 찾는가 — 같은 '추가 대상'이 기하에 따라\n");
+    printf("     보스전에서 어떻게 달라지는지 보는 자리다\n");
+    printf("  ※ **피격 채널은 카드로 거의 움직이지 않는다** — 실측에서 처형만\n");
+    printf("     −16%%(13.23 → 11.10/초)이고 나머지 다섯은 ±2%% 안이다. 둔화\n");
+    printf("     500‰인 균열도 −2%%뿐이다. 사거리 안의 적을 치워도 다음 적이\n");
+    printf("     곧 들어오므로 **유입률이 아니라 노출 시간이 줄어드는 쪽**으로\n");
+    printf("     일한다 — 그래서 '초당'이 아니라 도달 시 누적을 같이 봐야 한다\n");
     printf("  ※ 보스전 처치율은 보스전 **동안 죽인 잡몹·엘리트**다 — 보스전 중에도\n");
     printf("     스폰이 계속되므로 잠식 시계가 거기서도 돈다\n");
     printf("  ※ **'보스전 초'는 DPS 지표가 아니라 생존 시간이다.** 런은 클리어로도\n");

@@ -191,6 +191,34 @@ int main() {
         printf("    본체 %d raw · 뒤의 적 %d raw (같다)\n", onFront.raw, onBack.raw);
     }
 
+    dctest::section("충격파 — **영웅과 타겟 사이도 맞는다** (관통은 안 맞는다)");
+    {
+        // 경로의 시작점이 영웅이다. 전에는 타겟 뒤만 때렸는데, 그 띠가
+        // 보스전에서 비어서(실측 1.43 → 0.56명/발동) 각인이 승패에 닿지
+        // 못했다 — heroes_vertical_slice.md §4 참조.
+        //
+        // **관통과 갈라지는 자리다.** 관통은 "대상을 뚫고 지나간다"라서 뒤쪽
+        // 기하가 맞다. 두 각인이 폭·길이는 공유하고 시작점만 다르다.
+        World w = makeWorld(21);
+        w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+        w.cards.legendTake(SHOCK);
+        w.cards.engrave[engraveIndex(EngraveId::Pierce)] = Fixed::fromPermille(300);
+        const EntityId mid   = w.entities.spawn(mob(Fixed(1), Fixed{}, 10000), 0, 21);
+        const EntityId front = w.entities.spawn(mob(Fixed(3), Fixed{}, 10000), 0, 21);
+        const uint32_t m = static_cast<uint32_t>(w.entities.denseOf(mid));
+        const uint32_t f = static_cast<uint32_t>(w.entities.denseOf(front));
+        w.hero.target = front;
+
+        // 관통은 사이의 적을 보지 않는다
+        applyPierce(w, cfg, f, Fixed(100));
+        CHECK_EQ(w.entities.damageTaken[m].raw, 0);
+        // 충격파는 본다
+        applyShockwave(w, cfg, f, Fixed(100));
+        CHECK(w.entities.damageTaken[m].raw > 0);
+        printf("    사이의 적 — 관통 0 raw → 충격파 %d raw\n",
+               w.entities.damageTaken[m].raw);
+    }
+
     dctest::section("충격파 — 반폭 밖은 안 맞는다");
     {
         World w = makeWorld(8);
@@ -212,8 +240,9 @@ int main() {
 
     dctest::section("충격파 — E_PIERCE와 **겹쳐 쌓인다**");
     {
-        // 중복 규칙(§4)이 의도한 시너지다. 좁은 충격파 선은 넓은 관통 선의
-        // 부분집합이라 둘 다 든 빌드에서는 뒤의 적이 두 번 맞는다.
+        // 중복 규칙(§4)이 의도한 시너지다. **타겟 뒤에서는 두 띠가 겹치므로**
+        // 둘 다 든 빌드에서 뒤의 적이 두 번 맞는다 (폭·길이를 공유하고 시작점만
+        // 다르다 — 충격파는 영웅에서, 관통은 타겟에서).
         World w = makeWorld(9);
         w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
         w.cards.legendTake(SHOCK);

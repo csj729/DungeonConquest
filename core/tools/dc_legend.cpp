@@ -261,28 +261,49 @@ int main(int argc, char** argv) {
         if (common.empty()) {
             printf("  ※ 공통 집합이 비었다 — 시드를 늘리거나 변종을 줄일 것\n");
         } else {
-            printf("%-12s %12s %10s %12s %12s\n",
-                   "전설", "보스전 생존", "Δ생존", "보스전 초", "보스전 처치/초");
-            printf("  %s\n", "--------------------------------------------------------------");
+            printf("%-12s %12s %10s %7s %7s %8s %12s\n",
+                   "전설", "보스전 생존", "Δ생존", "이김", "짐", "McNemar", "보스전 처치/초");
+            printf("  %s\n", "----------------------------------------------------------------------------");
             double baseSurv = 0;
             for (size_t vi = 0; vi < kVarCount; ++vi) {
                 double bSec = 0;
                 long   bK = 0;
-                int32_t cl = 0;
+                int32_t cl = 0, win = 0, lose = 0;
                 for (int32_t i : common) {
                     const Row& r = rows[vi][static_cast<size_t>(i)];
                     cl += r.cleared; bSec += r.bossSec; bK += r.bossKills;
+                    // **짝지은 비교.** 같은 시드에서 기준선과 결과가 갈린 판만 센다
+                    const int32_t b0 = rows[0][static_cast<size_t>(i)].cleared;
+                    if (r.cleared && !b0) ++win;
+                    if (!r.cleared && b0) ++lose;
                 }
                 const double nn = static_cast<double>(common.size());
                 const double surv = 100.0 * cl / nn;
                 if (vi == 0) baseSurv = surv;
-                printf("%-12s %11.1f%% %+9.1f%%p %9.1fs %12.3f\n",
-                       kVariants[vi].name, surv,
-                       vi == 0 ? 0.0 : surv - baseSurv,
-                       bSec / nn, bSec > 0 ? bK / bSec : 0.0);
+                // McNemar: z = (b − c) / sqrt(b + c). **일치하는 판은 정보가 없다** —
+                // 양쪽 다 깨거나 양쪽 다 죽은 시드는 카드 차이를 말해 주지 않는다.
+                // 독립 표본 SE는 그 판들까지 분산에 넣으므로 과하게 보수적이다.
+                const int32_t disc = win + lose;
+                const double mz = disc > 0
+                    ? (win - lose) / std::sqrt(static_cast<double>(disc)) : 0.0;
+                if (vi == 0) {
+                    printf("%-12s %11.1f%% %10s %7s %7s %8s %12.3f\n",
+                           kVariants[vi].name, surv, "—", "—", "—", "—",
+                           bSec > 0 ? bK / bSec : 0.0);
+                } else {
+                    printf("%-12s %11.1f%% %+9.1f%%p %7d %7d %7.2fσ%s %11.3f\n",
+                           kVariants[vi].name, surv, surv - baseSurv, win, lose, mz,
+                           std::fabs(mz) > 3.0 ? "*" : " ",
+                           bSec > 0 ? bK / bSec : 0.0);
+                }
             }
             printf("  ※ 모집단이 같으므로 **이 Δ생존은 카드의 효과다.** 위 표의\n");
             printf("     '도달 후 생존'과 달리 희석에 교란되지 않는다\n");
+            printf("  ※ **McNemar는 짝지은 검정이다.** 같은 시드에서 결과가 갈린 판만\n");
+            printf("     쓴다(이김 = 카드는 깼고 기준선은 못 깼다, 짐 = 반대).\n");
+            printf("     양쪽 다 깨거나 양쪽 다 죽은 시드는 카드 차이를 말해 주지\n");
+            printf("     않으므로 분산에 넣지 않는다 — 독립 표본 SE보다 검정력이 높다.\n");
+            printf("     * = 3σ 초과\n");
         }
     }
     return 0;

@@ -159,16 +159,16 @@ SWARM_DENSITY = 5.0        # 주변 적 평균 수
 # 1000시드 아래로 내려가지 말 것 — 절대 클리어율이 시드 집합에 민감하다(같은
 # 설정에서 200시드 15.5% · 400시드 13.2% · 1000시드 9.6%). 한 실행 안의 Δ만
 # 비교할 수 있고 실행 사이 절대값은 비교할 수 없다.
-LEGEND_BASE_SEC   = 349.5   # 각인 없음 — 런 길이(초)
+LEGEND_BASE_SEC   = 349.7   # 각인 없음 — 런 길이(초)
 LEGEND_BASE_CLEAR = 9.0     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
-    # **AOE_TARGETS 3.0 → 4.0 + 소용돌이·여진·균열 수치 교정 → 표 전체가 낡았다.**
-    "W_EXECUTE":    None,
-    "W_SHOCKWAVE":  None,
-    "W_VORTEX":     None,
-    "W_CENTRIFUGE": None,
-    "W_AFTERSHOCK": None,
-    "W_FISSURE":    None,
+    # id            런 길이  클리어율
+    "W_EXECUTE":    (328.1, 12.5),
+    "W_SHOCKWAVE":  (333.9, 10.5),
+    "W_VORTEX":     (320.1, 11.2),
+    "W_CENTRIFUGE": (340.0, 13.5),
+    "W_AFTERSHOCK": (346.4, 12.5),
+    "W_FISSURE":    (350.9, 13.7),
 }
 # **이 지문과 위 표는 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
 #
@@ -176,7 +176,7 @@ LEGEND_MEASURED = {
 # E_PIERCE 변경을 놓쳤다)과 입막음(새 값을 지문에 넣어 가드를 껐다). 전체 데이터를
 # 해싱하면 **범위 구멍은 사라진다**. 입막음은 여전히 가능하지만, 지문이 손으로
 # 지어낼 수 없는 값이라 "측정 없이 갱신"이 눈에 띈다.
-LEGEND_MEASURED_FINGERPRINT = "852e99fa26f23207"
+LEGEND_MEASURED_FINGERPRINT = "d884d43378808703"
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
 # 때문이다. 그래서 한 행만 갈아 끼우면 안 되고 기준선까지 같이 다시 적는다.
@@ -717,18 +717,22 @@ def report():
                   f"{cr:>7.0%} {'—':>6}   {sec:>6.1f}s {dclear:>+7.1f}p  ※ 상황 가치")
             continue
         ratio = d / legend_budget
-        total = ratio + cr
+        # **`total`을 쓰면 안 된다** — 바깥의 영웅 총 DPS를 덮어쓴다. 실제로 그랬고,
+        # 그 뒤의 보고 줄들이 전부 이 루프의 마지막 값으로 나눠서 "기본 공격이 총
+        # DPS의 1656%" 같은 숫자를 찍었다. 게이트가 아니라 출력만 틀렸지만,
+        # 검증 보고서에 20배 틀린 수를 찍는 것은 그 자체로 고장이다.
+        combined = ratio + cr
         flag = ""
         if abs(ratio - 1) > BUDGET_TOL:
             flag = "  ← 피해 편차"
             ok = False
-        elif total > UNIQUE_TOTAL_MAX:
+        elif combined > UNIQUE_TOTAL_MAX:
             flag = "  ← 합계 천장 초과"
             ok = False
-        elif total > 1.5:
+        elif combined > 1.5:
             flag = "  ← 합계가 예산의 1.5배 위"
         print(f"  {uid:<14} {e['name']:<5} {d:>7.2f} {ratio:>5.0%} "
-              f"{cr:>+7.0%} {total:>5.0%}   {sec:>6.1f}s {dclear:>+7.1f}p{flag}")
+              f"{cr:>+7.0%} {combined:>5.0%}   {sec:>6.1f}s {dclear:>+7.1f}p{flag}")
     print()
     print(f"  ※ 잠식 유입 {MAP_INFLOW:.1f}/초 (verify_recovery 실측의 가중평균) ·"
           f" 전설 예산 {legend_budget:.2f} DPS")

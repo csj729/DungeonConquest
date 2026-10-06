@@ -17,7 +17,7 @@ import math
 ## 축이 둘이다 — 피해가 게이트, 클리어율은 기록
 
 **피해 예산이 판정하고 클리어율은 판정하지 않는다.** 둘을 한 밴드로 묶으면 각인
-하나를 고칠 때마다 1000시드(14분)를 돌려야 하고, 클리어율 3σ가 약 4%p라 그보다
+하나를 고칠 때마다 5000시드(74분)를 돌려야 하고, 클리어율 3σ가 약 2%p라 그보다
 촘촘한 조정은 측정으로 분간되지도 않는다. 그래서 **피해 예산을 게이트로 두고**
 (`run_all.py` 3초) 클리어율은 **지배 빌드 감시용 기록**으로 나란히 적는다.
 
@@ -151,32 +151,42 @@ FORGE_FIRST_GAIN = 1.64 * _pm(_ITEMS["tier_power_permille"][0])
 # 관통이 뒤로 추가로 맞히는 평균 적 수 — **데이터의 반폭에서 실측값을 읽는다**
 PIERCE_TARGETS = pierce_extra(_CARDS["pierce_width_millitile"])
 SWARM_DENSITY = 5.0        # 주변 적 평균 수
-# ── 고유 각인 실측 (`core/tools/dc_legend` 1000시드 · QTE 항상 완벽) ──────
+# ── 고유 각인 실측 (`core/tools/dc_legend` 5000시드 · QTE 항상 완벽) ──────
 #
 # **손으로 적은 값이 아니라 도구가 낸다.** 수치를 바꾸면 다시 잰다:
-#   `cmake --build build/release --target dc_legend && ./build/release/core/dc_legend 1000`
+#   `cmake --build build/release --target dc_legend && ./build/release/core/dc_legend 5000`
 #
 # 1000시드 아래로 내려가지 말 것 — 절대 클리어율이 시드 집합에 민감하다(같은
 # 설정에서 200시드 15.5% · 400시드 13.2% · 1000시드 9.6%). 한 실행 안의 Δ만
 # 비교할 수 있고 실행 사이 절대값은 비교할 수 없다.
-LEGEND_BASE_SEC   = 349.7   # 각인 없음 — 런 길이(초)
-LEGEND_BASE_CLEAR = 9.0     # 각인 없음 — 클리어율(%)
+#
+# **5000시드로 올렸다**(74분). 1000시드에서 3σ가 약 4%p였는데 실제 Δ가 3~5%p라
+# 여섯 종 중 둘만 유의했다 — 순위를 말할 해상도가 아니었다. 5000시드에서 3σ가
+# 약 2%p로 내려가 다섯 종이 유의해졌다.
+LEGEND_BASE_SEC   = 354.0   # 각인 없음 — 런 길이(초)
+LEGEND_BASE_CLEAR = 9.6     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
     # id            런 길이  클리어율
-    "W_EXECUTE":    (328.1, 12.5),
-    "W_SHOCKWAVE":  (333.9, 10.5),
-    "W_VORTEX":     (320.1, 11.2),
-    "W_CENTRIFUGE": (340.0, 13.5),
-    "W_AFTERSHOCK": (346.4, 12.5),
-    "W_FISSURE":    (350.9, 13.7),
+    "W_EXECUTE":    (327.2, 13.0),
+    "W_SHOCKWAVE":  (334.6, 10.4),
+    "W_VORTEX":     (328.7, 15.1),
+    "W_CENTRIFUGE": (341.1, 13.1),
+    "W_AFTERSHOCK": (350.0, 14.2),
+    "W_FISSURE":    (352.2, 14.4),
 }
 # **이 지문과 위 표는 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
 #
-# 손으로 고른 키 목록을 지문으로 쓰다가 두 번 당했다 — 범위 구멍(고유 각인만 담아
-# E_PIERCE 변경을 놓쳤다)과 입막음(새 값을 지문에 넣어 가드를 껐다). 전체 데이터를
-# 해싱하면 **범위 구멍은 사라진다**. 입막음은 여전히 가능하지만, 지문이 손으로
-# 지어낼 수 없는 값이라 "측정 없이 갱신"이 눈에 띈다.
-LEGEND_MEASURED_FINGERPRINT = "d884d43378808703"
+# 범위 구멍으로 **세 번** 당했다. 손으로 고른 키 목록(고유 각인만 담아 E_PIERCE
+# 변경을 놓쳤다) → 데이터 전체 해시 → 그래도 **코드가 빠져 있었다**: 장판 흡혈
+# 버그를 고쳤을 때 `data/*.json`은 한 글자도 바뀌지 않아 지문이 그대로였고, 이
+# 도구는 고치기 전 소용돌이 행(+2.2%p)을 들고 PASS를 찍었다. 실제로는 +5.5%p로
+# 움직였다 — 같은 종류의 구멍을 세 번째로 밟았다.
+#
+# 그래서 지금은 `gd.sim_fingerprint()`를 쓴다 — `data/*.json` + 코어 헤더
+# (주석 제외)다. **측정을 무효화하는 것은 데이터만이 아니라 시뮬 코드다.**
+# 입막음은 여전히 가능하지만, 지문이 손으로 지어낼 수 없는 값이라 "측정 없이
+# 갱신"이 눈에 띈다.
+LEGEND_MEASURED_FINGERPRINT = "6da0a4afc84d5996"
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
 # 때문이다. 그래서 한 행만 갈아 끼우면 안 되고 기준선까지 같이 다시 적는다.
@@ -192,7 +202,7 @@ LEGEND_MEASURED_FINGERPRINT = "d884d43378808703"
 # 게이트에 넣으면 나머지를 안 보는 것이 더 또렷해지므로 넣지 않았다 — 조합 전반은
 # dc_montecarlo(§14-10) 몫이다.
 # 측정에 쓴 시드 수. 3σ가 여기서 나온다.
-LEGEND_SEEDS = 1000
+LEGEND_SEEDS = 5000
 
 
 def clear_3sigma(p_base, p_var, n=LEGEND_SEEDS):
@@ -217,26 +227,32 @@ def clear_3sigma(p_base, p_var, n=LEGEND_SEEDS):
 
 def _measurement_is_current():
     """`LEGEND_MEASURED`가 현재 데이터에서 나온 값인지. (어긋남, 설명) 목록."""
-    live = gd.fingerprint()
+    live = gd.sim_fingerprint()
     if live == LEGEND_MEASURED_FINGERPRINT:
         return []
     return [(live, LEGEND_MEASURED_FINGERPRINT)]
 
 # **지배 빌드 감시** — 클리어율에서 판정하는 유일한 것이다 (나머지는 기록).
 #
-# "1위 ÷ 2위"로 재려 했는데 **2위가 3σ 아래라 분모가 노이즈다** — 지금 2위는
-# +3.6%p이고 3σ가 약 4.2%p이므로 기준선과 구분되지 않는다. 흔들리는 분모로 나눈
-# 비율은 지표가 아니다.
+# 분모를 두 번 갈았다. 처음엔 "1위 ÷ 2위"였는데 2위가 3σ 아래라 분모가 노이즈였고,
+# 그래서 **3σ를 눈금으로** 썼다(Δ ÷ 3σ). 그런데 그 눈금은 **시드 수에 딸려 있다** —
+# 1000 → 5000시드로 올리기만 해도 3σ가 √5배 작아져 지배도가 1.25배 → 2.80배로
+# 뛴다. 밸런스는 한 글자도 안 바뀌었는데 게이트가 상한(3.0)에 바짝 붙는다.
 #
-# 그래서 **3σ를 눈금으로 쓴다**: 유의한 각인이 하나뿐이고 그 Δ클리어가 3σ의 이
-# 배수를 넘으면 지배다. 분모가 측정의 해상도라 흔들리지 않는다.
+# **측정을 더 정밀하게 했다는 이유로 게임이 더 지배적으로 보이는 지표는 지표가
+# 아니다.** 상수가 아니라 전제가 낡는, 이 파일이 세 번 밟은 그 종류다.
 #
-# 현재 유의한 각인은 **여진 1종**(z = 3.16)이고 지배도는 1.1배로 상한 아래다.
+# 5000시드에서 2위(균열 +4.8%p)가 7σ 넘게 유의하므로 **원래 분모로 돌아간다**:
+# 지배도 = 1위 Δ ÷ 2위 Δ. 비율이라 시드 수에 무관하다. 지금 5.5 ÷ 4.8 = 1.15배이고,
+# 짝 검정도 소용돌이 vs 균열을 +1.00σ(구분되지 않음)로 읽는다 — 지배는 없다.
 #
-# **유의하지 않은 것과 약한 것을 섞지 말 것.** 처형 +39% · 원심력 +37% · 소용돌이
-# +27%는 3σ에 못 미쳐도 상대로 큰 변화다(기준선 9.3%). 절대 %p는 측정의 해상도이고
-# 설계 판단은 상대로 한다 — 진짜 약한 쪽은 충격파(+9%)와 균열(+6%) 둘이다.
-DOMINANT_SIGMA_MAX = 3.0
+# 2위가 유의하지 않은 상태로 돌아가면 분모가 다시 노이즈가 되므로, 그때는 비율을
+# 내지 않고 3σ 눈금으로 떨어뜨리고 **그렇게 적었다고 밝힌다**(아래 출력).
+#
+# **유의하지 않은 것과 약한 것을 섞지 말 것.** 절대 %p는 측정의 해상도이고 설계
+# 판단은 상대로 한다 — 유의하지 않은 쪽은 지금 충격파(+8% 상대) 하나다.
+DOMINANT_RATIO_MAX = 1.50   # 1위 Δ ÷ 2위 Δ (2위가 유의할 때)
+DOMINANT_SIGMA_MAX = 3.0    # 대체 눈금: 1위 Δ ÷ 3σ (2위가 유의하지 않을 때)
 
 # ── 전설은 평균이 아니라 바닥과 상한으로 본다 ──────────────────
 #
@@ -742,7 +758,7 @@ def report():
     if pending:
         ok = False
         print(f"  ← **{', '.join(pending)} 재측정 대기.** 수치를 바꿨으므로 런 길이가")
-        print("     달라졌다. `./build/release/core/dc_legend 1000`을 돌려")
+        print("     달라졌다. `./build/release/core/dc_legend 5000`을 돌려")
         print("     LEGEND_MEASURED를 채울 것 — 옛 값을 그대로 두면 잠식 보정이")
         print("     **다른 수치의 런 길이로** 계산되고, 그래도 전부 PASS가 된다")
 
@@ -752,11 +768,12 @@ def report():
         ok = False
         live, pinned = stale[0]
         print("  ← **측정이 낡았다.** 런 길이·클리어율이 지금 데이터의 것이 아니다.")
-        print(f"       data/*.json 지문  측정 당시 {pinned} → 지금 {live}")
-        print("     `./build/release/core/dc_legend 1000`을 다시 돌려")
+        print(f"       시뮬 지문  측정 당시 {pinned} → 지금 {live}")
+        print("     `./build/release/core/dc_legend 5000`을 다시 돌려")
         print("     LEGEND_MEASURED와 LEGEND_MEASURED_FINGERPRINT를 **같이** 고칠 것")
-        print("     ※ 지문은 data/*.json 전체의 해시다 — 어느 파일의 어느 수치든")
-        print("        측정을 무효화한다. 주석(`_` 키)은 빼므로 설명 수정은 괜찮다")
+        print("     ※ 지문은 data/*.json + 코어 헤더(core/include/dc/*.h)의 해시다 —")
+        print("        어느 파일의 어느 수치든, **그리고 시뮬 코드 변경도** 측정을")
+        print("        무효화한다. 주석은 양쪽 모두 빼므로 설명 수정은 괜찮다")
 
     # ── 클리어율 — 유의 판정과 지배 빌드 ──
     #
@@ -784,28 +801,43 @@ def report():
     # **옛 상수가 틀렸던 게 아니다 — p가 움직였다.** 같은 공식에 p=15%를 넣으면
     # 4.79%p가 나와 상수와 일치한다. 이 한 줄이 공식 자체의 검산이고, 동시에
     # "상수를 박는 방식"이 왜 위험한지를 보여준다: 유도는 맞았고 전제가 낡았다.
-    chk = clear_3sigma(15.0, 15.0)
+    # **n을 명시한다.** 옛 상수 4.8은 p=15% **그리고 n=1000**에서 나온 값이다.
+    # 기본값(LEGEND_SEEDS)으로 두면 시드를 5000으로 올린 순간 검산이 2.14를 내고
+    # FAIL한다 — 공식이 틀린 게 아니라 검산이 전제를 흘린 것이다.
+    chk = clear_3sigma(15.0, 15.0, n=1000)
     chk_ok = abs(chk - 4.79) < 0.02
     ok &= chk_ok
-    print(f"  ※ 검산: p=15%를 넣으면 {chk:.2f}%p — 옛 상수 4.8과 일치  "
+    print(f"  ※ 검산: p=15% · n=1000을 넣으면 {chk:.2f}%p — 옛 상수 4.8과 일치  "
           f"{'PASS' if chk_ok else 'FAIL'}")
     print("     상수의 유도가 틀린 게 아니라 **전제(p)가 낡았다.** 그래서 계산으로 옮긴다")
 
-    # **분모는 3σ다. 2위가 아니다.** 2위가 유의하지 않으면 비율이 노이즈로 나뉜다.
+    # **분모는 2위다 — 2위가 유의할 때만.** Δ ÷ 3σ는 시드 수를 올리기만 해도
+    # 커지므로(√n) 지배도의 분모로 쓸 수 없다. 2위가 노이즈면 그때만 3σ로 떨어진다.
     sig = [uid for uid, (_d, z, _s) in sigma.items() if z > 3.0]
-    top_uid = max(sigma, key=lambda u: sigma[u][0]) if sigma else None
-    # 지배도는 **3σ를 눈금으로** 쓴다 — 유의 판정(z)과 분모가 다르다
-    dom = (sigma[top_uid][0] / sigma[top_uid][2]) if top_uid else 0.0
-    good = dom <= DOMINANT_SIGMA_MAX
+    order = sorted(sigma, key=lambda u: -sigma[u][0])
+    top_uid = order[0] if order else None
+    second = order[1] if len(order) > 1 else None
+    paired = second is not None and sigma[second][1] > 3.0 and sigma[second][0] > 0
+    if top_uid and paired:
+        dom = sigma[top_uid][0] / sigma[second][0]
+        dom_cap, dom_what = DOMINANT_RATIO_MAX, f"2위 {UNIQUE[second]['name']}"
+    elif top_uid:
+        dom = sigma[top_uid][0] / sigma[top_uid][2] if sigma[top_uid][2] > 0 else 0.0
+        dom_cap, dom_what = DOMINANT_SIGMA_MAX, "3σ(2위가 유의하지 않아 대체 눈금)"
+    else:
+        dom, dom_cap, dom_what = 0.0, DOMINANT_RATIO_MAX, "—"
+    good = dom <= dom_cap
     ok &= good
     # 대기 행이 있으면 이 판정은 **그 행을 빼고** 낸 값이다. 그대로 찍으면 지배
     # 후보가 빠진 채 "지배 없음"으로 읽힌다.
     note = f"  ← {len(pending)}종 대기 중이라 **결론이 아니다**" if pending else ""
     name = UNIQUE[top_uid]["name"] if top_uid else "—"
-    tops3 = sigma[top_uid][2] if top_uid else 0.0
     topd  = sigma[top_uid][0] if top_uid else 0.0
-    print(f"\n  지배 빌드: 1위 {name} {topd:+.1f}%p ÷ 3σ {tops3:.2f}%p = {dom:.1f}배"
-          f" (상한 {DOMINANT_SIGMA_MAX:.1f}배)  {'PASS' if good else 'FAIL'}{note}")
+    print(f"\n  지배 빌드: 1위 {name} {topd:+.1f}%p ÷ {dom_what} = {dom:.2f}배"
+          f" (상한 {dom_cap:.2f}배)  {'PASS' if good else 'FAIL'}{note}")
+    if not paired:
+        print("     ※ **2위가 유의하지 않아 3σ 눈금으로 적었다.** 이 값은 시드 수에")
+        print("        딸려 있으므로 실행 사이에 비교할 수 없다")
     print(f"  유의한 각인 {len(sig)}종 / {len(UNIQUE) - len(pending)}")
     if not pending:
         # **유의하지 않은 것과 약한 것은 다르다.** 다만 유의하지 않은 카드의
@@ -821,8 +853,8 @@ def report():
             print(f"  ※ 상대 +15% 아래: {names}")
         print("  ※ **유의하지 않은 행의 상대값은 결론이 아니라 방향이다.** 위 목록도"
               " 그렇다 —")
-        print("     n=1000에서 3σ를 넘지 못한 차이는 순위를 매길 근거가 되지 못한다."
-              " 방향을")
+        print(f"     n={LEGEND_SEEDS}에서 3σ를 넘지 못한 차이는 순위를 매길 근거가"
+              " 되지 못한다. 방향을")
         print("     좁히는 데만 쓰고, 수치를 고친 뒤에는 다시 잰다")
     print()
     for uid, e in UNIQUE.items():

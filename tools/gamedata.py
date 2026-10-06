@@ -67,6 +67,75 @@ def fingerprint():
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
+CORE_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "include", "dc")
+
+
+def _strip_cxx(src):
+    """주석과 연속 공백을 없앤 C++ 소스.
+
+    **설명을 고쳤다고 측정이 낡은 것은 아니다.** 이 코어 헤더에는 한글 주석이
+    코드보다 많아서, 날것으로 해싱하면 주석 한 줄에도 가드가 울린다. 그러면
+    사람이 "또 오탐이네" 하고 측정 없이 지문만 갈아 끼우게 된다 — 가드를 끄는
+    가장 흔한 경로다. 그래서 의미가 바뀐 변경만 잡는다(서식 변경도 무시된다).
+
+    문자열 리터럴 안의 `//`는 주석이 아니므로 상태 기계로 넘긴다. 코어에는 원시
+    문자열(`R"(...)"`)이 없다 — 생기면 여기도 손봐야 한다.
+    """
+    out = []
+    i, n = 0, len(src)
+    while i < n:
+        c = src[i]
+        if c == "/" and i + 1 < n and src[i + 1] == "/":
+            while i < n and src[i] != "\n":
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        if c == '"' or c == "'":
+            out.append(c)
+            i += 1
+            while i < n:
+                if src[i] == "\\" and i + 1 < n:
+                    out.append(src[i:i + 2])
+                    i += 2
+                    continue
+                out.append(src[i])
+                if src[i] == c:
+                    i += 1
+                    break
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return " ".join("".join(out).split())
+
+
+def sim_fingerprint():
+    """**시뮬레이션 결과를 결정하는 모든 것**의 지문 — 데이터 + 코어 헤더.
+
+    `fingerprint()`(데이터만)로는 구멍이 남는다. 장판 흡혈 버그를 고쳤을 때
+    `data/*.json`은 한 글자도 바뀌지 않았으므로 지문이 그대로였고,
+    `verify_card_values`는 **고치기 전 소용돌이 행을 들고 PASS를 찍었다**
+    (실제로는 Δ클리어가 +2.2%p → +5.5%p로 움직였다). 측정을 무효화하는 것은
+    데이터만이 아니라 코어 코드다.
+
+    코어는 헤더 온리라 `core/include/dc/*.h`가 시뮬 전부다. 측정 도구
+    (`core/tools/dc_legend.cpp`)는 일부러 넣지 않는다 — 출력 서식을 고칠 때마다
+    울리면 가드가 무의미해진다. 대신 시드 수는 출력에 찍히므로 눈에 보인다.
+    """
+    parts = ["data:" + fingerprint()]
+    for name in sorted(f for f in os.listdir(CORE_DIR) if f.endswith(".h")):
+        with open(os.path.join(CORE_DIR, name), encoding="utf-8") as f:
+            body = _strip_cxx(f.read())
+        parts.append(name + ":" + hashlib.sha256(body.encode("utf-8")).hexdigest())
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
 def _assert_integral(obj, path):
     """데이터 파일에 부동소수점이 섞이지 않았는지 확인한다 (결정론 요구사항)."""
     if isinstance(obj, float):

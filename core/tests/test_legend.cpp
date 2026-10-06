@@ -596,6 +596,41 @@ int main() {
         printf("    밀도 1~6에서 두 경로의 최종 반경이 일치\n");
     }
 
+    dctest::section("장판 피해도 **흡혈한다** — 소용돌이가 흡혈을 끄고 있었다");
+    {
+        // `hooks` 플래그가 두 종류를 뭉쳐 놓고 있었다. 처형·도트는 **빈도**에 값이
+        // 붙어 틱형 피해에 걸면 예산이 터지지만, E_LEECH는 "그 스킬 피해의 15%"라서
+        // **총 피해에 비례**한다 — 빈도 인플레가 없다.
+        //
+        // 빠져 있어서 소용돌이가 그 스킬의 흡혈을 완전히 껐다(즉발을 대체하니
+        // executeSkill의 흡혈 블록 앞에서 return하고, 장판에서도 안 했다).
+        // 5000시드 실측에서 보스전 처치율 1위인데 도달 시 잠식이 기준선보다 높은
+        // 유일한 카드였다.
+        const uint32_t whirl =
+            static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Vortex) - 3]);
+        Fixed purged[2]{};
+        for (int32_t k = 0; k < 2; ++k) {
+            World w = makeWorld(35);
+            w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
+            w.cards.legendTake(legendIndexOf(LegendId::Vortex));
+            if (k == 1) w.cards.engrave[engraveIndex(EngraveId::Leech)] =
+                            Fixed::fromPermille(500);
+            w.entities.spawn(mob(Fixed::fromPermille(500), Fixed{}, 100000), 0, 35);
+            // 잠식을 올려 둔다 — 0이면 정화가 잘려서 차이가 안 보인다
+            w.hero.corruption = Fixed(100);
+            executeSkill(w, cfg, whirl, QteGrade::Miss);
+            CHECK_EQ(w.zones.count, 1u);
+            const Fixed before = w.hero.corruption;
+            w.tick();
+            zoneRun(w, cfg);
+            purged[k] = before - w.hero.corruption;
+        }
+        CHECK_EQ(purged[0].raw, 0);        // 흡혈 없으면 정화도 없다
+        CHECK(purged[1].raw > 0);          // **장판 피해가 흡혈한다**
+        printf("    흡혈 없음 %d raw · 흡혈 500‰ %d raw 정화\n",
+               purged[0].raw, purged[1].raw);
+    }
+
     dctest::section("소용돌이 — 지속이 끝나면 **사라지고 피해도 멈춘다**");
     {
         const uint32_t whirl = static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Vortex) - 3]);

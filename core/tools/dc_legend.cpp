@@ -133,15 +133,18 @@ int main(int argc, char** argv) {
     const SimConfig& cfg = dev::data().cfg;
 
     // 전설 풀 인덱스. 유물 3칸(0~2)은 이미 다른 도구가 재므로 고유 각인만 본다.
-    struct Variant { const char* name; int32_t legend; };
+    // `tag`는 **매트릭스 전용 ASCII 약칭**이다. 한글은 멀티바이트라 printf의
+    // `%9.9s`가 바이트로 자르고 폭도 어긋난다 — 실제로 "소용돌이"가 "소용돌"로
+    // 잘려 표가 밀렸다. 표 머리글·행 이름에만 쓰고 아래 범례로 잇는다.
+    struct Variant { const char* name; const char* tag; int32_t legend; };
     const Variant kVariants[] = {
-        {"없음(기준)",  -1},
-        {"처형",         static_cast<int32_t>(legendIndexOf(LegendId::Execute))},
-        {"충격파",       static_cast<int32_t>(legendIndexOf(LegendId::Shockwave))},
-        {"소용돌이",     static_cast<int32_t>(legendIndexOf(LegendId::Vortex))},
-        {"원심력",       static_cast<int32_t>(legendIndexOf(LegendId::Centrifuge))},
-        {"여진",         static_cast<int32_t>(legendIndexOf(LegendId::Aftershock))},
-        {"균열",         static_cast<int32_t>(legendIndexOf(LegendId::Fissure))},
+        {"없음(기준)",  "BASE", -1},
+        {"처형",         "EXE",  static_cast<int32_t>(legendIndexOf(LegendId::Execute))},
+        {"충격파",       "SHK",  static_cast<int32_t>(legendIndexOf(LegendId::Shockwave))},
+        {"소용돌이",     "VTX",  static_cast<int32_t>(legendIndexOf(LegendId::Vortex))},
+        {"원심력",       "CEN",  static_cast<int32_t>(legendIndexOf(LegendId::Centrifuge))},
+        {"여진",         "AFT",  static_cast<int32_t>(legendIndexOf(LegendId::Aftershock))},
+        {"균열",         "FIS",  static_cast<int32_t>(legendIndexOf(LegendId::Fissure))},
     };
 
     printf("=== 고유 각인별 실측 (시드 %d · QTE 항상 완벽) ===\n", N);
@@ -261,28 +264,94 @@ int main(int argc, char** argv) {
         if (common.empty()) {
             printf("  ※ 공통 집합이 비었다 — 시드를 늘리거나 변종을 줄일 것\n");
         } else {
-            printf("%-12s %12s %10s %12s %12s\n",
-                   "전설", "보스전 생존", "Δ생존", "보스전 초", "보스전 처치/초");
-            printf("  %s\n", "--------------------------------------------------------------");
+            printf("%-12s %12s %10s %7s %7s %8s %12s\n",
+                   "전설", "보스전 생존", "Δ생존", "이김", "짐", "McNemar", "보스전 처치/초");
+            printf("  %s\n", "----------------------------------------------------------------------------");
             double baseSurv = 0;
             for (size_t vi = 0; vi < kVarCount; ++vi) {
                 double bSec = 0;
                 long   bK = 0;
-                int32_t cl = 0;
+                int32_t cl = 0, win = 0, lose = 0;
                 for (int32_t i : common) {
                     const Row& r = rows[vi][static_cast<size_t>(i)];
                     cl += r.cleared; bSec += r.bossSec; bK += r.bossKills;
+                    // **짝지은 비교.** 같은 시드에서 기준선과 결과가 갈린 판만 센다
+                    const int32_t b0 = rows[0][static_cast<size_t>(i)].cleared;
+                    if (r.cleared && !b0) ++win;
+                    if (!r.cleared && b0) ++lose;
                 }
                 const double nn = static_cast<double>(common.size());
                 const double surv = 100.0 * cl / nn;
                 if (vi == 0) baseSurv = surv;
-                printf("%-12s %11.1f%% %+9.1f%%p %9.1fs %12.3f\n",
-                       kVariants[vi].name, surv,
-                       vi == 0 ? 0.0 : surv - baseSurv,
-                       bSec / nn, bSec > 0 ? bK / bSec : 0.0);
+                // McNemar: z = (b − c) / sqrt(b + c). **일치하는 판은 정보가 없다** —
+                // 양쪽 다 깨거나 양쪽 다 죽은 시드는 카드 차이를 말해 주지 않는다.
+                // 독립 표본 SE는 그 판들까지 분산에 넣으므로 과하게 보수적이다.
+                const int32_t disc = win + lose;
+                const double mz = disc > 0
+                    ? (win - lose) / std::sqrt(static_cast<double>(disc)) : 0.0;
+                if (vi == 0) {
+                    printf("%-12s %11.1f%% %10s %7s %7s %8s %12.3f\n",
+                           kVariants[vi].name, surv, "—", "—", "—", "—",
+                           bSec > 0 ? bK / bSec : 0.0);
+                } else {
+                    printf("%-12s %11.1f%% %+9.1f%%p %7d %7d %7.2fσ%s %11.3f\n",
+                           kVariants[vi].name, surv, surv - baseSurv, win, lose, mz,
+                           std::fabs(mz) > 3.0 ? "*" : " ",
+                           bSec > 0 ? bK / bSec : 0.0);
+                }
             }
             printf("  ※ 모집단이 같으므로 **이 Δ생존은 카드의 효과다.** 위 표의\n");
             printf("     '도달 후 생존'과 달리 희석에 교란되지 않는다\n");
+            printf("  ※ **McNemar는 짝지은 검정이다.** 같은 시드에서 결과가 갈린 판만\n");
+            printf("     쓴다(이김 = 카드는 깼고 기준선은 못 깼다, 짐 = 반대).\n");
+            printf("     양쪽 다 깨거나 양쪽 다 죽은 시드는 카드 차이를 말해 주지\n");
+            printf("     않으므로 분산에 넣지 않는다 — 독립 표본 SE보다 검정력이 높다.\n");
+            printf("     * = 3σ 초과\n");
+
+            // ── 변종끼리 짝 비교 ────────────────────────────────────
+            //
+            // 기준선 대비만으로는 **그룹이 갈리는지** 알 수 없다. 균열(+8.0)과
+            // 소용돌이(+2.8)가 둘 다 기준선과 비교됐을 뿐, 서로 다른지는 따로
+            // 재야 한다. 같은 공통 창이므로 여기서도 짝 검정을 쓴다.
+            //
+            // **순위를 매기려는 것이 아니다.** 상위 둘(균열 8.0 · 원심력 7.8)을
+            // 가르려면 0.2%p를 분해해야 하고 그건 329만 시드다 — 측정의 한계가
+            // 아니라 두 카드가 실질적으로 같다는 뜻이다. 이 표가 답하는 것은
+            // "어느 쌍이 실제로 다른가"뿐이다.
+            printf("\n  변종끼리 짝 비교 (McNemar z · 행 − 열 · * = 3σ 초과)\n");
+            printf("  %-6s", "");
+            for (size_t cj = 1; cj < kVarCount; ++cj) {
+                printf("%8s", kVariants[cj].tag);
+            }
+            printf("\n");
+            for (size_t ri = 1; ri < kVarCount; ++ri) {
+                printf("  %-6s", kVariants[ri].tag);
+                for (size_t cj = 1; cj < kVarCount; ++cj) {
+                    if (cj <= ri) { printf("%8s", "-"); continue; }
+                    int32_t win = 0, lose = 0;
+                    for (int32_t i : common) {
+                        const int32_t a = rows[ri][static_cast<size_t>(i)].cleared;
+                        const int32_t b = rows[cj][static_cast<size_t>(i)].cleared;
+                        if (a && !b) ++win;
+                        if (!a && b) ++lose;
+                    }
+                    const int32_t disc = win + lose;
+                    const double z = disc > 0
+                        ? (win - lose) / std::sqrt(static_cast<double>(disc)) : 0.0;
+                    char cell[16];
+                    std::snprintf(cell, sizeof(cell), "%+.2f%s", z,
+                                  std::fabs(z) > 3.0 ? "*" : "");
+                    printf("%8s", cell);
+                }
+                printf("\n");
+            }
+            printf("  ");
+            for (size_t vi = 1; vi < kVarCount; ++vi) {
+                printf("%s=%s%s", kVariants[vi].tag, kVariants[vi].name,
+                       vi + 1 < kVarCount ? " · " : "\n");
+            }
+            printf("  ※ 양수면 행이 더 많이 깼다. **3σ를 넘는 칸만 '다르다'고 말할 수\n");
+            printf("     있고**, 나머지는 구분되지 않는다 — 순위가 아니라 그룹이다\n");
         }
     }
     return 0;

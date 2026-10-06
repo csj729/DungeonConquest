@@ -133,15 +133,18 @@ int main(int argc, char** argv) {
     const SimConfig& cfg = dev::data().cfg;
 
     // 전설 풀 인덱스. 유물 3칸(0~2)은 이미 다른 도구가 재므로 고유 각인만 본다.
-    struct Variant { const char* name; int32_t legend; };
+    // `tag`는 **매트릭스 전용 ASCII 약칭**이다. 한글은 멀티바이트라 printf의
+    // `%9.9s`가 바이트로 자르고 폭도 어긋난다 — 실제로 "소용돌이"가 "소용돌"로
+    // 잘려 표가 밀렸다. 표 머리글·행 이름에만 쓰고 아래 범례로 잇는다.
+    struct Variant { const char* name; const char* tag; int32_t legend; };
     const Variant kVariants[] = {
-        {"없음(기준)",  -1},
-        {"처형",         static_cast<int32_t>(legendIndexOf(LegendId::Execute))},
-        {"충격파",       static_cast<int32_t>(legendIndexOf(LegendId::Shockwave))},
-        {"소용돌이",     static_cast<int32_t>(legendIndexOf(LegendId::Vortex))},
-        {"원심력",       static_cast<int32_t>(legendIndexOf(LegendId::Centrifuge))},
-        {"여진",         static_cast<int32_t>(legendIndexOf(LegendId::Aftershock))},
-        {"균열",         static_cast<int32_t>(legendIndexOf(LegendId::Fissure))},
+        {"없음(기준)",  "BASE", -1},
+        {"처형",         "EXE",  static_cast<int32_t>(legendIndexOf(LegendId::Execute))},
+        {"충격파",       "SHK",  static_cast<int32_t>(legendIndexOf(LegendId::Shockwave))},
+        {"소용돌이",     "VTX",  static_cast<int32_t>(legendIndexOf(LegendId::Vortex))},
+        {"원심력",       "CEN",  static_cast<int32_t>(legendIndexOf(LegendId::Centrifuge))},
+        {"여진",         "AFT",  static_cast<int32_t>(legendIndexOf(LegendId::Aftershock))},
+        {"균열",         "FIS",  static_cast<int32_t>(legendIndexOf(LegendId::Fissure))},
     };
 
     printf("=== 고유 각인별 실측 (시드 %d · QTE 항상 완벽) ===\n", N);
@@ -316,15 +319,15 @@ int main(int argc, char** argv) {
             // 아니라 두 카드가 실질적으로 같다는 뜻이다. 이 표가 답하는 것은
             // "어느 쌍이 실제로 다른가"뿐이다.
             printf("\n  변종끼리 짝 비교 (McNemar z · 행 − 열 · * = 3σ 초과)\n");
-            printf("  %-10s", "");
+            printf("  %-6s", "");
             for (size_t cj = 1; cj < kVarCount; ++cj) {
-                printf("%9.9s", kVariants[cj].name);
+                printf("%8s", kVariants[cj].tag);
             }
             printf("\n");
             for (size_t ri = 1; ri < kVarCount; ++ri) {
-                printf("  %-10.10s", kVariants[ri].name);
+                printf("  %-6s", kVariants[ri].tag);
                 for (size_t cj = 1; cj < kVarCount; ++cj) {
-                    if (cj <= ri) { printf("%9s", "·"); continue; }
+                    if (cj <= ri) { printf("%8s", "-"); continue; }
                     int32_t win = 0, lose = 0;
                     for (int32_t i : common) {
                         const int32_t a = rows[ri][static_cast<size_t>(i)].cleared;
@@ -338,9 +341,14 @@ int main(int argc, char** argv) {
                     char cell[16];
                     std::snprintf(cell, sizeof(cell), "%+.2f%s", z,
                                   std::fabs(z) > 3.0 ? "*" : "");
-                    printf("%9s", cell);
+                    printf("%8s", cell);
                 }
                 printf("\n");
+            }
+            printf("  ");
+            for (size_t vi = 1; vi < kVarCount; ++vi) {
+                printf("%s=%s%s", kVariants[vi].tag, kVariants[vi].name,
+                       vi + 1 < kVarCount ? " · " : "\n");
             }
             printf("  ※ 양수면 행이 더 많이 깼다. **3σ를 넘는 칸만 '다르다'고 말할 수\n");
             printf("     있고**, 나머지는 구분되지 않는다 — 순위가 아니라 그룹이다\n");

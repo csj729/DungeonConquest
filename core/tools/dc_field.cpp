@@ -190,8 +190,11 @@ int main(int argc, char** argv) {
                     const int32_t td = w.entities.denseOf(w.hero.target);
                     if (td < 0 || w.entities.deadAt(static_cast<uint32_t>(td))) continue;
                     uint32_t buf[config::MAX_ENTITIES];
+                    // **관통 기하다**(타겟 뒤). 충격파는 영웅에서 출발하므로
+                    // 이 스윕으로 값을 매길 수 없다 — dc_legend가 런 안에서
+                    // 수직 거리 히스토그램으로 잰다
                     sum += collectInLine(w, static_cast<uint32_t>(td), halfw,
-                                         cfg.pierceLength, buf, config::MAX_ENTITIES);
+                                         cfg.pierceLength, buf, config::MAX_ENTITIES, false);
                     ++samples;
                 }
             }
@@ -229,7 +232,7 @@ int main(int argc, char** argv) {
                     if (td < 0 || w.entities.deadAt(static_cast<uint32_t>(td))) continue;
                     uint32_t buf[config::MAX_ENTITIES];
                     sum += collectInLine(w, static_cast<uint32_t>(td), cfg.pierceWidth,
-                                         len, buf, config::MAX_ENTITIES);
+                                         len, buf, config::MAX_ENTITIES, false);
                     ++samples;
                 }
             }

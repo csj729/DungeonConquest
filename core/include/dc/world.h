@@ -343,6 +343,77 @@ struct SpawnState {
     }
 };
 
+// 계측 누적기 — **시뮬이 절대 읽지 않는다.**
+//
+// 잠식 게이지가 왜 움직였는지를 채널별로 쪼개 기록한다. 밸런스 도구가 "이 카드가
+// 어느 채널에 닿는가"를 묻는데, 유입이 세 곳(피격 · 보스 장판 · 물량)에서 따로
+// 들어오므로 **게이지 최종값만 보면 구분이 안 된다.** 충격파가 처치율을 +10%
+// 올리면서 도달 시 잠식을 1도 못 움직인 것이 이 계측이 생긴 이유다.
+//
+// ## 체크섬에 넣지 않는다 — 그리고 그래도 되는 이유
+//
+// `hashInto()`가 없다. 넣지 않는 근거는 checksum.h의 규칙([파생]은 넣지 않는다)이
+// 아니라 **더 강한 성질**이다: 여기는 쓰기 전용이다. 시뮬 코드가 이 값을 읽는
+// 순간 계측이 결정론 경로가 되고, 그때는 체크섬에 들어가야 한다.
+//
+//   **읽지 말 것.** 분기·수식·난수에 쓰면 안 된다. 읽는 쪽은 도구와 테스트뿐이다.
+//
+// 그래서 이 구조체를 더해도 골든 체크섬이 움직이지 않는다 — 그 불변이 곧
+// "계측이 시뮬에 새지 않았다"는 증거라서, test_checksum을 고치지 않는 것이 테스트다.
+//
+// 누적은 `Fixed`가 아니라 raw의 `int64_t` 합이다. 한 판 유입이 8000(= 22.8/초 ×
+// 350초)이고 Fixed 20.12 상한이 524288이라 Fixed로도 들어가지만, 런을 길게 돌리는
+// 하네스에서 조용히 포화하는 쪽을 피한다.
+struct Metrics {
+    int64_t corrAttacks = 0;   // 유입 — 적의 공격 (QTE 실패 포함)
+    int64_t corrAura    = 0;   // 유입 — 보스 페이즈 2 장판
+    int64_t corrMass    = 0;   // 유입 — 전장 물량 (위치와 무관하다)
+    int64_t purgeOrbs   = 0;   // 정화 — 구슬
+    int64_t purgeLeech  = 0;   // 정화 — 흡혈
+    int64_t purgeBoss   = 0;   // 정화 — 페이즈 2 진입 보상
+    int64_t purgeSegment = 0;  // 정화 — 구간 돌파 보상
+    int64_t attacksTaken = 0;  // 맞은 횟수 (근접 채널의 분모)
+    int64_t aliveSum    = 0;   // Σ 생존 적 수 (틱마다)
+    int64_t aliveTicks  = 0;   // 위 합의 틱 수 — 평균의 분모
+
+    // ── 추가 타격이 **어느 기하에서** 나왔는가 ─────────────────────
+    //
+    // 직선(`collectInLine` — 관통 · 충격파)과 원형(`collectInRadius` — 광역 ·
+    // 장판)은 전장의 다른 곳을 때린다. 직선은 **타겟 뒤**, 원형은 **영웅 주변**이다.
+    // 예산식은 둘을 '추가 대상 수'로 같이 세는데, 보스전에 들어가면 타겟 뒤가
+    // 비므로 같은 수가 같은 값이 아니다. 그 차이를 보려면 세는 수밖에 없다.
+    //
+    // **발동 횟수와 발동당 대상 수를 따로 센다.** 예산식의 입력이 정확히 그 둘
+    // (`주기`와 `추가 대상 수`)이라, 합쳐 버리면 어느 쪽이 틀렸는지 알 수 없다.
+    int64_t shockCalls  = 0;     // 충격파가 돈 횟수 (= W_SMASH 발동 횟수)
+    int64_t shockHits   = 0;     // 그중 추가로 맞은 대상 수
+    int64_t pierceCalls = 0;     // E_PIERCE가 돈 횟수
+    int64_t pierceHits  = 0;
+    // ── 기하 후보 탐침 (계측 전용 · 피해를 주지 않는다) ──────────────
+    //
+    // 충격파의 선은 지금 **타겟 뒤만** 센다. 보스전에서 그 띠가 비는지 보려면
+    // 대안 기하가 거기서 몇 명을 찾는지 같이 재야 하는데, 구현을 셋 만들어
+    // 각각 한 판씩 돌리면 측정만 네 시간이다. 그래서 **같은 발동에서 세 띠를
+    // 동시에 센다** — 피해는 여전히 `shockBehind` 띠에만 들어간다.
+    int64_t shockBehind  = 0;   // 타겟 뒤 (현재 동작)
+    int64_t shockBetween = 0;   // 영웅과 타겟 사이
+    int64_t shockBack    = 0;   // 영웅 뒤
+    // **반폭 히스토그램.** 폭을 몇으로 둘지는 측정이 답해야 하는데, 스윕 지점을
+    // 코어에 박으면 데이터도 아닌 수치가 시뮬 코드에 산다. 그래서 수직 거리를
+    // 0.1타일 칸으로 세어 두고, **폭별 대상 수는 도구가 누적합으로 만든다** —
+    // 한 판으로 모든 폭의 답이 나온다.
+    //
+    // 띠는 '영웅에서 시작하는 경로'다 (영웅~타겟 + 타겟 뒤). 지금 동작(타겟 뒤
+    // 만)이 보스전에서 무너지므로 그 대안을 재는 자리다.
+    static constexpr int32_t PERP_BUCKETS = 16;      // 0.1타일 × 16 = 1.6타일
+    static constexpr int32_t PERP_BUCKET_MILLI = 100;
+    int64_t heroBandPerp[PERP_BUCKETS] = {0};
+    int64_t aoeExtraHits  = 0;   // 원형 기하로 맞은 대상 수 (광역기 발동당)
+    // **장판은 따로 센다.** 20Hz로 틱하므로 발동당 타격과 같은 통에 넣으면
+    // 수가 두 자릿수 차이로 섞여 양쪽 다 읽을 수 없게 된다.
+    int64_t zoneTickHits  = 0;   // 장판이 틱마다 때린 대상 수
+};
+
 class World {
 public:
     // 마스터 시드 하나가 런 전체를 결정한다. 여기서 모든 스트림이 파생된다.
@@ -365,6 +436,7 @@ public:
         for (uint32_t i = 0; i < STAT_COUNT; ++i) itemStatApplied[i] = 0;
         hero.slowAura = 0;
         cards     = CardState{};
+        metrics   = Metrics{};
         nextSourceId_ = 1;                   // 0은 "없음" 예약
 
         rngSpawn  = Rng::derive(masterSeed, RngStream::Spawn);
@@ -486,11 +558,15 @@ public:
     //
     // **0 아래로 내려가지 않는다.** 음수 잠식은 "죽기까지의 여유"를 몰래 저장하는
     // 것이라, 안전한 구간에서 쌓아두고 위험 구간에서 꺼내 쓰는 경로가 생긴다.
-    void purgeCorruption(Fixed amount) {
-        if (amount.raw <= 0 || hero.corruption.raw <= 0) return;
+    // **실제로 정화된 양을 돌려준다.** 게이지가 비어 있으면 요청량의 일부만
+    // 들어가므로, 계측이 요청량을 세면 정화를 과대 계상한다.
+    Fixed purgeCorruption(Fixed amount) {
+        if (amount.raw <= 0 || hero.corruption.raw <= 0) return Fixed{};
+        const Fixed before = hero.corruption;
         hero.corruption -= amount;
         if (hero.corruption.raw < 0) hero.corruption = Fixed{};
         notifyCorruptionChanged();
+        return before - hero.corruption;
     }
 
     // 잠식 게이지가 움직였을 때. 피격·물량 충전·흡혈 전부 여기로 온다.
@@ -592,6 +668,9 @@ public:
     OrbState    orbs{};
     // 지역 효과 (고유 각인 3종). 구슬과 같은 이유로 [상태]다.
     ZoneState   zones{};
+    // 계측 — **[상태]가 아니다. 쓰기 전용이고 체크섬에 들어가지 않는다.**
+    // 스냅샷에는 따라가지만(memcpy) 시뮬이 읽지 않으므로 값이 새도 결과가 같다.
+    Metrics     metrics{};
 
     Rng rngSpawn{};
     Rng rngCombat{};

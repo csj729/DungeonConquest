@@ -125,6 +125,46 @@ PIERCE_EXTRA_MEASURED = [
 ]
 
 
+# ── 충격파 기하 — **관통과 다른 표를 쓴다** ──────────────────────
+#
+# 충격파의 경로는 **영웅에서** 시작한다(관통은 타겟 뒤부터다). 위 표는 dc_field가
+# 타겟 뒤 띠에서 잰 것이라 쓸 수 없다 — 띠가 다르면 밀도가 다르다.
+#
+# 이 표는 `dc_legend 400`이 **런 안에서** 수직 거리 히스토그램으로 잰 값이다.
+# 폭 스윕을 코어에 박지 않으려고 히스토그램으로 받아 누적합을 낸다.
+#
+# 접근 구간 값을 쓴다 — 런 시간의 대부분이고, **보스전 값이 이제 8% 안에 있다**
+# (0.85타일에서 접근 1.62 · 보스전 1.50). 전에는 1.44 → 0.55로 62% 무너졌고
+# 그것이 이 각인의 고장이었다.
+SHOCK_EXTRA_MEASURED = [
+    # 반폭(millitile), 발동당 추가 대상 수 (접근 구간)
+    (100, 0.21), (200, 0.41), (300, 0.61), (400, 0.78), (500, 0.95),
+    (600, 1.11), (700, 1.28), (800, 1.47), (900, 1.76), (1000, 2.63),
+    (1100, 3.04), (1200, 3.46),
+]
+# **900 위는 절벽이다.** 0.9~1.0타일 칸 하나에 0.87명이 몰려 있다 — 분리 거리가
+# 만든 껍질이다. 그 위에서 폭을 고르면 예산이 분리 거리 튜닝에 딸려 가므로,
+# 이 선 아래에서 고른다. 넘으면 아래 가드가 걸린다.
+SHOCK_WIDTH_CLIFF = 900
+
+
+def _interp(table, x):
+    """실측표 선형 보간. 표 아래는 원점에서 선형, 위는 마지막 기울기로 외삽."""
+    if x <= table[0][0]:
+        return table[0][1] * x / table[0][0]
+    for (x0, y0), (x1, y1) in zip(table, table[1:]):
+        if x <= x1:
+            return y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    x0, y0 = table[-2]
+    x1, y1 = table[-1]
+    return y1 + (y1 - y0) * (x - x1) / (x1 - x0)
+
+
+def shock_extra(width_millitile):
+    """충격파 반폭 → 발동당 추가 대상 수 (영웅에서 시작하는 경로)."""
+    return _interp(SHOCK_EXTRA_MEASURED, width_millitile)
+
+
 def pierce_extra(width_millitile):
     """반폭에서 타겟 뒤로 추가로 맞는 평균 적 수. 실측표를 선형 보간한다."""
     t = PIERCE_EXTRA_MEASURED
@@ -530,7 +570,9 @@ def unique_delta(uid):
         # 전력 피해로 직선의 적을 추가로 맞힌다. 추가 대상 수는 반폭에 비례한다.
         # **전력 피해이므로 오버킬 보정을 먹는다** — 분쇄 강타 한 대가 잡몹 실효
         # 체력의 1.6배라 37%가 버려진다.
-        extra = pierce_extra(e["width_millitile"])
+        # **관통 표가 아니라 충격파 표를 쓴다** — 경로가 영웅에서 시작하므로
+        # 띠가 다르고, 같은 반폭에서 대상 수가 1.4배다.
+        extra = shock_extra(e["width_millitile"])
         return own_dps * extra * overkill_keep(HERO["attack_power"] * mult * crit)
 
     if uid == "W_VORTEX":
@@ -752,6 +794,18 @@ def report():
     print()
     print(f"  ※ 잠식 유입 {MAP_INFLOW:.1f}/초 (verify_recovery 실측의 가중평균) ·"
           f" 전설 예산 {legend_budget:.2f} DPS")
+    # ── 충격파 반폭 절벽 가드 ──
+    #
+    # **예산비만 보면 이 선을 못 본다.** 1000‰에서도 161%라 ±30% 밴드가 걸러
+    # 주긴 하지만, 걸린 뒤 "조금 줄이면 되겠네"로 950을 고르면 밴드는 통과하고
+    # 값은 분리 거리 튜닝에 딸려 간다. 그래서 선 자체를 못 박는다.
+    shock_w = UNIQUE["W_SHOCKWAVE"]["width_millitile"]
+    cliff_ok = shock_w <= SHOCK_WIDTH_CLIFF
+    ok &= cliff_ok
+    print(f"  충격파 반폭 {shock_w}‰ ≤ 절벽 {SHOCK_WIDTH_CLIFF}‰  "
+          f"{'PASS' if cliff_ok else 'FAIL'}")
+    print("     0.9~1.0타일 칸 하나에 0.87명이 몰려 있다(분리 거리가 만든 껍질).")
+    print("     그 위에서 폭을 고르면 예산이 기하가 아니라 분리 거리에 딸려 간다")
     print(f"  ※ 합계 천장 {UNIQUE_TOTAL_MAX:.1f}배. 넘으면 FAIL —"
           f" **DPS만 보면 멀쩡해 보이는 각인을 잡는 자리다**")
 

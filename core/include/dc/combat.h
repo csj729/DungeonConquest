@@ -592,7 +592,9 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
     // 그래서 흡혈은 물량 빌드와 맞물리고, 기저 정화(처치·구간)와 축이 다르다 —
     // 기저는 **처치 수**에, 흡혈은 **입힌 피해**에 비례한다.
     const Fixed leech = w.cards.engrave[engraveIndex(EngraveId::Leech)];
-    if (leech.raw > 0 && dealt.raw > 0) w.purgeCorruption(dealt * leech);
+    if (leech.raw > 0 && dealt.raw > 0) {
+        w.metrics.purgeLeech += w.purgeCorruption(dealt * leech).raw;
+    }
 
     // ── W_AFTERSHOCK(여진) · W_FISSURE(균열) — 둘 다 **가산이다** ──
     //
@@ -755,8 +757,11 @@ inline void qteRun(World& w, const SimConfig& cfg) {
     w.entities.attackCooldown[i] = w.entities.attackInterval[i];
 
     if (g == QteGrade::Miss) {
-        w.hero.corruption += mitigate(w.entities.attackDamage[i],
-                                      w.hero.stats.value(Stat::Armor), cfg.armorK);
+        const Fixed hit = mitigate(w.entities.attackDamage[i],
+                                   w.hero.stats.value(Stat::Armor), cfg.armorK);
+        w.hero.corruption += hit;
+        w.metrics.corrAttacks += hit.raw;
+        ++w.metrics.attacksTaken;
         w.notifyCorruptionChanged();
         return;
     }
@@ -797,6 +802,7 @@ inline void zoneRun(World& w, const SimConfig& cfg) {
         uint32_t hit[config::MAX_ENTITIES];
         const uint32_t n = collectInRadius(w.entities, w.zones.posX[z], w.zones.posY[z],
                                            w.zones.radius[z], hit, config::MAX_ENTITIES);
+        w.metrics.zoneTickHits += n;
         for (uint32_t m = 0; m < n; ++m) {
             // **hooks=false** — 처형도 도트 갱신도 붙지 않는다. 그 둘은 **발동
             // 빈도**에 값이 붙는 훅이라, 틱형 피해에 걸면 판정 횟수가 공속의
@@ -826,7 +832,9 @@ inline void zoneRun(World& w, const SimConfig& cfg) {
     // 가정하고 있었고 구현만 빠져 있었다.**
     {
         const Fixed leech = w.cards.engrave[engraveIndex(EngraveId::Leech)];
-        if (leech.raw > 0 && dealt.raw > 0) w.purgeCorruption(dealt * leech);
+        if (leech.raw > 0 && dealt.raw > 0) {
+            w.metrics.purgeLeech += w.purgeCorruption(dealt * leech).raw;
+        }
     }
 
     // ② 만료 — 뒤에서 앞으로
@@ -852,7 +860,7 @@ inline void orbRun(World& w, const SimConfig& cfg) {
         const int64_t dx = static_cast<int64_t>(w.orbs.posX[k].raw) - w.hero.posX.raw;
         const int64_t dy = static_cast<int64_t>(w.orbs.posY[k].raw) - w.hero.posY.raw;
         if (dx * dx + dy * dy > r2) continue;
-        w.purgeCorruption(Fixed(w.orbs.amount[k]));
+        w.metrics.purgeOrbs += w.purgeCorruption(Fixed(w.orbs.amount[k])).raw;
         w.orbs.removeAt(k);
     }
 }
@@ -879,7 +887,9 @@ inline void bossPhase2AuraRun(World& w, const SimConfig& cfg) {
     // Fixed 20.12에서 2867raw라 절삭 손실이 0.01% 미만이다.
     const Fixed perSec = mitigate(Fixed(cfg.bossPhase2AuraDps),
                                   w.hero.stats.value(Stat::Armor), cfg.armorK);
-    w.hero.corruption += perSec / cfg.tickHz;
+    const Fixed perTick = perSec / cfg.tickHz;
+    w.hero.corruption += perTick;
+    w.metrics.corrAura += perTick.raw;
     w.notifyCorruptionChanged();
 }
 
@@ -896,7 +906,7 @@ inline void bossPhaseRun(World& w, const SimConfig& cfg) {
         const int64_t max = static_cast<int64_t>(w.entities.maxHp[i].raw);
         const int64_t hp  = max - static_cast<int64_t>(w.entities.damageTaken[i].raw);
         if (hp * 1000 <= max * cfg.bossPhase2AtPermille) {
-            w.purgeCorruption(Fixed(cfg.bossPhase2Purge));
+            w.metrics.purgeBoss += w.purgeCorruption(Fixed(cfg.bossPhase2Purge)).raw;
             w.run.bossPhase2 = true;
             // 첫 소환은 **한 주기 뒤다.** 진입 즉시 부르면 정화와 소환이 같은 틱에
             // 겹쳐 서로를 가린다 — 숨통이 트인 것도 물량이 는 것도 체감되지 않는다.
@@ -991,8 +1001,17 @@ inline void boltRun(World& w, const SimConfig& cfg) {
 //
 // E_PIERCE(관통)와 W_SHOCKWAVE(충격파)가 같은 기하를 공유한다 — 다른 것은
 // **폭과 피해 비율**뿐이다. 두 벌로 두면 한쪽만 고치는 사고가 난다.
+// `fromHero`가 **경로의 시작점**을 정한다.
+//
+//   false — 타겟 뒤만 (E_PIERCE). "타격이 대상을 뚫고 지나간다"가 뒤쪽 기하다
+//   true  — 영웅에서 타겟을 지나 끝까지 (W_SHOCKWAVE). 파동이 영웅에서 출발한다
+//
+// **이 한 줄이 충격파의 고장이었다.** 뒤쪽 띠는 보스전에서 비는데(실측: 발동당
+// 1.43명 → 0.56명), 승패는 보스전에서 갈린다. 영웅에서 시작하면 같은 폭에서
+// 접근 3.21 · 보스전 3.40으로 **구간 차이가 사라진다** — 영웅은 어느 구간에서도
+// 둘러싸여 있기 때문이다. heroes_vertical_slice.md §4 참조.
 inline uint32_t collectInLine(const World& w, uint32_t target, Fixed width, Fixed length,
-                              uint32_t* out, uint32_t outMax) {
+                              uint32_t* out, uint32_t outMax, bool fromHero) {
     const int64_t dx = static_cast<int64_t>(w.entities.posX[target].raw) - w.hero.posX.raw;
     const int64_t dy = static_cast<int64_t>(w.entities.posY[target].raw) - w.hero.posY.raw;
     const int64_t len = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(dx * dx + dy * dy)));
@@ -1006,7 +1025,7 @@ inline uint32_t collectInLine(const World& w, uint32_t target, Fixed width, Fixe
         const int64_t ey = static_cast<int64_t>(w.entities.posY[i].raw) - w.hero.posY.raw;
         // 진행 거리 = 내적 / |d| — 타겟보다 뒤이고 사거리 안이어야 한다
         const int64_t along = (ex * dx + ey * dy) / len;
-        if (along <= len) continue;
+        if (fromHero ? along < 0 : along <= len) continue;
         if (along > len + static_cast<int64_t>(length.raw)) continue;
         // 수직 거리 = |외적| / |d|
         int64_t perp = (ex * dy - ey * dx) / len;
@@ -1017,30 +1036,80 @@ inline uint32_t collectInLine(const World& w, uint32_t target, Fixed width, Fixe
     return found;
 }
 
+// 기하 후보 탐침 — **세기만 한다.** 영웅·타겟이 만드는 직선을 세 띠로 나눠
+// 각각의 적 수를 계측에 적는다. 피해·CC·난수에 손대지 않으므로 체크섬이 움직이지
+// 않는다(그 불변이 "탐침이 시뮬에 새지 않았다"는 증거다).
+//
+// `collectInLine`과 판정식이 같아야 비교가 성립하므로 같은 내적·외적을 쓴다.
+// 다른 것은 `along`의 구간뿐이다:
+//
+//     along > len            → 타겟 뒤 (현재 충격파가 때리는 띠)
+//     0 <= along <= len      → 영웅과 타겟 사이
+//     along < 0              → 영웅 뒤
+inline void probeLineBands(World& w, const SimConfig& cfg, uint32_t target) {
+    if (cfg.shockwaveWidth.raw <= 0) return;
+    const int64_t dx = static_cast<int64_t>(w.entities.posX[target].raw) - w.hero.posX.raw;
+    const int64_t dy = static_cast<int64_t>(w.entities.posY[target].raw) - w.hero.posY.raw;
+    const int64_t len = static_cast<int64_t>(isqrt64(static_cast<uint64_t>(dx * dx + dy * dy)));
+    if (len <= 0) return;
+
+    const int64_t reach = static_cast<int64_t>(cfg.pierceLength.raw);
+    const int64_t half  = static_cast<int64_t>(cfg.shockwaveWidth.raw);
+    const uint32_t n = w.entities.count();
+    for (uint32_t i = 0; i < n; ++i) {
+        if (i == target || w.entities.deadAt(i)) continue;
+        const int64_t ex = static_cast<int64_t>(w.entities.posX[i].raw) - w.hero.posX.raw;
+        const int64_t ey = static_cast<int64_t>(w.entities.posY[i].raw) - w.hero.posY.raw;
+        const int64_t along = (ex * dx + ey * dy) / len;
+        int64_t perp = (ex * dy - ey * dx) / len;
+        if (perp < 0) perp = -perp;
+        // 히스토그램은 **폭 제한 없이** 담는다 — 도구가 누적합으로 폭을 고른다.
+        if (along >= 0 && along <= len + reach) {
+            const int64_t milli = (perp * 1000) / Fixed::ONE_RAW;
+            const int64_t b = milli / Metrics::PERP_BUCKET_MILLI;
+            if (b < Metrics::PERP_BUCKETS) ++w.metrics.heroBandPerp[b];
+        }
+        if (perp > half) continue;
+        if (along > len) {
+            if (along <= len + reach) ++w.metrics.shockBehind;
+        } else if (along >= 0) {
+            ++w.metrics.shockBetween;
+        } else if (-along <= reach) {
+            ++w.metrics.shockBack;
+        }
+    }
+}
+
 inline void applyPierce(World& w, const SimConfig& cfg, uint32_t target, Fixed damage) {
     const Fixed ratio = w.cards.engrave[engraveIndex(EngraveId::Pierce)];
     if (ratio.raw <= 0 || cfg.pierceWidth.raw <= 0) return;
 
     uint32_t hit[config::MAX_ENTITIES];
     const uint32_t n = collectInLine(w, target, cfg.pierceWidth, cfg.pierceLength,
-                                     hit, config::MAX_ENTITIES);
+                                     hit, config::MAX_ENTITIES, false);
+    ++w.metrics.pierceCalls;
+    w.metrics.pierceHits += n;
     for (uint32_t k = 0; k < n; ++k) applySkillHit(w, cfg, hit[k], damage * ratio);
 }
 
 // W_SHOCKWAVE(충격파) — 고유 각인 4번. **단일 타격이 직선 관통으로 바뀐다.**
 //
 // E_PIERCE와 겹쳐 쌓이는 것이 의도다 (cards_vertical_slice.md §4 중복 규칙) —
-// 다만 질이 다르다: 관통은 감쇠된 피해, 충격파는 **전력 피해**다. 그래서 반폭을
-// E_PIERCE(700)의 절반으로 잡았다. 같은 폭에 전력 피해면 예산의 194%가 된다.
+// 다만 질이 다르다: 관통은 감쇠된 피해(영웅 66%), 충격파는 **전력 피해**다.
 //
-// 길이는 `pierceLength`를 공유한다 — "보이는 만큼 뚫는다"가 두 각인에서 같아야
-// 플레이어가 판정을 하나로 학습한다.
+// **시작점이 다르다.** 관통은 타겟 뒤만, 충격파는 영웅에서 출발한다
+// (`collectInLine`의 `fromHero` 주석에 이유가 있다). 길이는 `pierceLength`를
+// 공유한다 — "보이는 만큼 뚫는다"가 두 각인에서 같아야 플레이어가 판정을
+// 하나로 학습한다.
 inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fixed damage) {
     if (cfg.shockwaveWidth.raw <= 0) return Fixed{};
 
     uint32_t hit[config::MAX_ENTITIES];
     const uint32_t n = collectInLine(w, target, cfg.shockwaveWidth, cfg.pierceLength,
-                                     hit, config::MAX_ENTITIES);
+                                     hit, config::MAX_ENTITIES, true);
+    ++w.metrics.shockCalls;
+    w.metrics.shockHits += n;
+    probeLineBands(w, cfg, target);
     Fixed dealt{};
     for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], damage);
     return dealt;
@@ -1076,6 +1145,7 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
     if (!grow) {
         const uint32_t n = collectInRadius(w.entities, cx, cy, base,
                                            hit, config::MAX_ENTITIES);
+        w.metrics.aoeExtraHits += n;
         Fixed dealt{};
         for (uint32_t k = 0; k < n; ++k) {
             dealt += applySkillHit(w, cfg, hit[k], damage);
@@ -1098,6 +1168,7 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
             if (struck[hit[k]] != 0) continue;
             struck[hit[k]] = 1;
             ++fresh;
+            ++w.metrics.aoeExtraHits;
             dealt += applySkillHit(w, cfg, hit[k], damage);
             (void)applyCc(w, cfg, hit[k], ccGain);
         
@@ -1217,6 +1288,8 @@ inline void combatRun(World& w, const SimConfig& cfg) {
     }
     if (incoming.raw != 0) {
         w.hero.corruption += incoming;
+        w.metrics.corrAttacks += incoming.raw;
+        ++w.metrics.attacksTaken;
         w.notifyCorruptionChanged();
 
         // R_RAGE — **피격이 곧 화력이 된다.** 잠식이 차오를수록 반격이 세지므로
@@ -1237,6 +1310,10 @@ inline void combatRun(World& w, const SimConfig& cfg) {
     // **이게 "몬스터 수 상한 = 게임오버"를 게이지 하나로 흡수한 장치다.**
     if (cfg.tickHz > 0 && cfg.corruptionThreshold > 0) {
         const int32_t alive = static_cast<int32_t>(aliveCount(w.entities));
+        // **임계 아래 틱도 센다.** 평균 생존 적 수는 "물량이 상한에 못 박혀
+        // 있는가"를 묻는 값이므로 유입이 0인 구간을 빼면 답이 왜곡된다.
+        w.metrics.aliveSum += alive;
+        ++w.metrics.aliveTicks;
         if (alive > cfg.corruptionThreshold) {
             const Fixed perMob = Fixed::fromPermille(cfg.corruptionPerMobPermille);
             Fixed perSec = perMob * (alive - cfg.corruptionThreshold);
@@ -1256,7 +1333,9 @@ inline void combatRun(World& w, const SimConfig& cfg) {
                 const Fixed extra = Fixed::fromPermille(cfg.corruptionOverflowMultPermille - 1000);
                 perSec += perMob * (alive - cap) * extra;
             }
-            w.hero.corruption += perSec / cfg.tickHz;
+            const Fixed perTick = perSec / cfg.tickHz;
+            w.hero.corruption += perTick;
+            w.metrics.corrMass += perTick.raw;
             w.notifyCorruptionChanged();
         }
     }

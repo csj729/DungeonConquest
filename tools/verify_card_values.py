@@ -162,13 +162,14 @@ SWARM_DENSITY = 5.0        # 주변 적 평균 수
 LEGEND_BASE_SEC   = 350.0   # 각인 없음 — 런 길이(초)
 LEGEND_BASE_CLEAR = 8.9     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
-    # id            런 길이  클리어율
-    "W_EXECUTE":    (328.3, 12.4),
-    "W_SHOCKWAVE":  (339.6, 10.3),
-    "W_VORTEX":     (319.3, 11.5),
-    "W_CENTRIFUGE": (339.6, 13.1),
-    "W_AFTERSHOCK": (342.6, 14.0),
-    "W_FISSURE":    (345.2, 13.3),
+    # **충격파 반폭 800 → 1150 → 표 전체가 낡았다.** 전설이라 다른 변종의 런에서도
+    # 뽑히고 기준선도 그렇다. 재측정 중 — 채우면 지문도 **같이** 고친다.
+    "W_EXECUTE":    None,
+    "W_SHOCKWAVE":  None,
+    "W_VORTEX":     None,
+    "W_CENTRIFUGE": None,
+    "W_AFTERSHOCK": None,
+    "W_FISSURE":    None,
 }
 # **이 지문과 위 표는 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
 #
@@ -405,6 +406,38 @@ def _exec_saving(threshold, rate, ttk):
     return (win - (1 - math.exp(-rate * win)) / rate) / ttk
 
 
+def overkill_keep(damage_per_hit):
+    """한 대 피해 중 **실제로 전달되는** 비율. 잡몹 실효 체력을 넘는 몫은 버려진다.
+
+    예산식은 `대상당 DPS × 추가 대상 수`로 세는데, 실제로 들어가는 것은
+    `min(한 대 피해, 남은 체력)`이다. **전력 피해를 넣는 각인에서 이 차이가 크다.**
+
+    충격파가 그 사례다. 반폭을 실측으로 고쳐 예산비를 99%로 맞췄는데도 실측
+    Δ처치율이 +6.4%에 그쳤다(같은 99%인 원심력은 +9.7%). 분쇄 강타 한 대가
+    31.5인데 잡몹 실효 체력이 20이라 **37%가 버려진다.**
+
+    보정이 맞다는 증거는 **예측력**이다. `Δ처치율 ÷ (예산비 × 전달률)`이:
+
+        여진   0.095   (폭발 17.85 < 20 → 손실 없음)
+        균열   0.097   (틱당 0.21 → 손실 없음)
+        충격파 0.102   (전력 31.50 → 전달률 63%)
+
+    세 카드가 7% 안에서 같은 계수로 모인다. 보정 전에는 충격파만 혼자 벗어나
+    있었다.
+
+    맞지 않는 둘은 **구조가 다르다** — 소용돌이(0.220)는 장판이 캐스트 시점에
+    없던 적까지 잡아서 AOE_TARGETS보다 많이 때리고(별도 저평가다), 처형(0.403)은
+    체력을 건너뛰므로 오버킬 개념이 없다. 둘은 이 보정의 대상이 아니다.
+
+    **엘리트·보스에는 손실이 없다**(실효 체력이 훨씬 크다). 그래서 보수적으로
+    잡몹 기준만 쓴다 — 전투 시간의 70%가 잡몹이고(1 − ELITE_SHARE), 광역·직선
+    추가 대상은 거의 전부 잡몹이다.
+    """
+    if damage_per_hit <= 0:
+        return 1.0
+    return min(1.0, effective_hp(TRASH["hp"], 0) / damage_per_hit)
+
+
 def centrifuge_targets(e, density):
     """원심력 한 발동이 최종적으로 때리는 적 수. `applyAoeHits`를 그대로 옮긴다.
 
@@ -462,9 +495,11 @@ def unique_delta(uid):
         return total * sum(share[k] * _exec_saving(T, rate, ttk[k]) for k in ttk)
 
     if uid == "W_SHOCKWAVE":
-        # 전력 피해로 직선의 적을 추가로 맞힌다. 추가 대상 수는 반폭에 비례한다
+        # 전력 피해로 직선의 적을 추가로 맞힌다. 추가 대상 수는 반폭에 비례한다.
+        # **전력 피해이므로 오버킬 보정을 먹는다** — 분쇄 강타 한 대가 잡몹 실효
+        # 체력의 1.6배라 37%가 버려진다.
         extra = pierce_extra(e["width_millitile"])
-        return own_dps * extra
+        return own_dps * extra * overkill_keep(HERO["attack_power"] * mult * crit)
 
     if uid == "W_VORTEX":
         # **즉발을 대체한다** — 잃은 즉발분까지 장판이 메워야 한다
@@ -476,7 +511,8 @@ def unique_delta(uid):
         # **패스가 반복된다** — `applyAoeHits`는 벤 수만큼 반경을 키워 다시 훑는다.
         # 예산식이 패스를 한 번만 세면 상한이 보이지 않는다 (아래 주석 참조).
         extra = centrifuge_targets(e, AOE_TARGETS) - AOE_TARGETS
-        return own_dps * extra
+        # 회전 베기도 전력 피해다 — 한 대 26.25 vs 실효 체력 20 → 전달률 76%
+        return own_dps * extra * overkill_keep(HERO["attack_power"] * mult * crit)
 
     if uid == "W_AFTERSHOCK":
         return own_pps * HERO["attack_power"] * _pm(e["damage_permille"]) * AOE_TARGETS

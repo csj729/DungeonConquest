@@ -201,5 +201,43 @@ int main(int argc, char** argv) {
         }
         printf("  ※ 선형 가정 = PIERCE_TARGETS(2.0) × 반폭 / 700\n");
     }
+
+    // ── 길이 축도 잰다 ──────────────────────────────────────────────
+    //
+    // 반폭을 넓히면 '직선 관통'이 부채꼴이 된다. 같은 예산을 **길이**로 살 수
+    // 있으면 선을 선으로 유지할 수 있는데, 길이 축은 측정된 적이 없다.
+    printf("\n== 직선 관통 길이별 추가 대상 수 (반폭 %.3f타일 고정) ==\n",
+           cfg.pierceWidth.raw / static_cast<double>(Fixed::ONE_RAW));
+    {
+        const int32_t kSeeds = 24;
+        const int32_t kFirst = 600;
+        const int32_t kEvery = 40;
+        printf("%10s %12s %10s\n", "길이", "추가 대상", "표본");
+        for (int32_t lp : {3000, 4500, 6000, 9000, 12000, 20000}) {
+            const Fixed len = Fixed::fromPermille(lp);
+            int64_t sum = 0;
+            int32_t samples = 0;
+            for (int32_t sd = 0; sd < kSeeds; ++sd) {
+                World w;
+                initWorld(w, 777 + static_cast<uint64_t>(sd) * 31,
+                          dev::data().cfg, dev::data().table, dev::data().hero);
+                static SimScratch sc3;
+                for (int32_t t = 0; t < ticks; ++t) {
+                    stepWorld(w, cfg, dev::data().table, sc3);
+                    if (t < kFirst || (t - kFirst) % kEvery != 0) continue;
+                    const int32_t td = w.entities.denseOf(w.hero.target);
+                    if (td < 0 || w.entities.deadAt(static_cast<uint32_t>(td))) continue;
+                    uint32_t buf[config::MAX_ENTITIES];
+                    sum += collectInLine(w, static_cast<uint32_t>(td), cfg.pierceWidth,
+                                         len, buf, config::MAX_ENTITIES);
+                    ++samples;
+                }
+            }
+            printf("%8.1f타일 %12.2f %10d\n", lp / 1000.0,
+                   samples ? static_cast<double>(sum) / samples : 0.0, samples);
+        }
+        printf("  ※ 전장 반경이 유한하므로 길이를 늘리면 **포화한다** — 어디서\n");
+        printf("     멈추는지가 이 축을 쓸 수 있는지를 정한다\n");
+    }
     return 0;
 }

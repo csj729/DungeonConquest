@@ -197,12 +197,15 @@ int main() {
         w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
         w.cards.legendTake(SHOCK);
         const EntityId front = w.entities.spawn(mob(Fixed(2), Fixed{}, 10000), 0, 8);
-        // 반폭이 350‰(0.35타일)이므로 1.0타일 옆은 벗어난다
-        const EntityId side  = w.entities.spawn(mob(Fixed(4), Fixed(1), 10000), 0, 8);
+        // **옆 거리를 반폭에서 도출한다.** 전에는 "반폭 350‰이므로 1.0타일"로
+        // 박아 뒀는데, 반폭이 1150‰이 되자 그 전제가 조용히 거짓이 됐다.
+        const Fixed side_at = cfg.shockwaveWidth * Fixed::fromPermille(1500);
+        CHECK(side_at.raw > cfg.shockwaveWidth.raw);     // 전제: 밖이다
+        const EntityId side  = w.entities.spawn(mob(Fixed(4), side_at, 10000), 0, 8);
         const uint32_t f = static_cast<uint32_t>(w.entities.denseOf(front));
         const uint32_t sd = static_cast<uint32_t>(w.entities.denseOf(side));
 
-        CHECK(cfg.shockwaveWidth.raw < Fixed(1).raw);    // 전제: 반폭 < 1타일
+        CHECK(cfg.shockwaveWidth.raw > 0);
         CHECK_EQ(applyShockwave(w, cfg, f, Fixed(100)).raw, 0);
         CHECK_EQ(w.entities.damageTaken[sd].raw, 0);
     }

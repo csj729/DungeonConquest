@@ -497,7 +497,7 @@ int main() {
         // **즉발 피해가 없다** — 장판으로 바뀌었다
         CHECK_EQ(w.entities.damageTaken[i].raw, 0);
         CHECK_EQ(w.zones.count, 1u);
-        CHECK_EQ(static_cast<int32_t>(w.zones.kind[0]), static_cast<int32_t>(ZoneKind::Vortex));
+        CHECK_EQ(static_cast<int32_t>(w.zones.kind[0]), static_cast<int32_t>(ZoneKind::Burn));
         CHECK(w.zones.value[0].raw > 0);
         CHECK_EQ(w.zones.expireTick[0], w.tickCount() + cfg.vortexDurationTicks);
 
@@ -650,35 +650,55 @@ int main() {
                direct, cfg.aftershockFuseTicks, afterBoom - direct);
     }
 
-    dctest::section("균열 — 기절을 **유지하고** 둔화를 더한다 (피해는 0)");
+    dctest::section("균열 — 기절 유지 + 둔화 + **지속 피해.** 반경이 둘이다");
     {
+        // 둔화와 피해는 **반경이 다르다.** 둔화는 fissureRadius(4.0타일)로 넓고,
+        // 피해는 광역 반경(1.5타일)으로 좁다. 같은 4.0타일에 피해를 깔면 dc_field
+        // 실측으로 27마리가 들어와 예산이 터진다.
+        //
+        // 그래서 이 절의 핵심은 **두 반경이 실제로 분리되는가**다 — 둔화만 받고
+        // 피해는 안 받는 거리가 존재해야 한다.
         const uint32_t cleave = static_cast<uint32_t>(cfg.uniqueSkill[legendIndexOf(LegendId::Fissure) - 3]);
         World w = makeWorld(33);
         w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
         w.cards.legendTake(legendIndexOf(LegendId::Fissure));
-        // 균열 반경 안 · 밖에 한 마리씩
-        const EntityId in  = w.entities.spawn(mob(cfg.fissureRadius / Fixed(2), Fixed{}, 100000), 0, 33);
-        const EntityId out = w.entities.spawn(mob(cfg.fissureRadius * Fixed(3), Fixed{}, 100000), 0, 33);
-        const uint32_t a = static_cast<uint32_t>(w.entities.denseOf(in));
+        const Fixed aoeR = wideRadius(w, aoeRadiusOf(w));
+        CHECK(aoeR.raw < cfg.fissureRadius.raw);      // 전제: 피해가 둔화보다 좁다
+
+        // 타겟(= 전방 중심을 정한다) · 피해 반경 안 · 둔화만 · 둘 다 밖
+        const EntityId tgt  = w.entities.spawn(mob(aoeR, Fixed{}, 100000), 0, 33);
+        const EntityId mid  = w.entities.spawn(
+            mob(aoeR + cfg.fissureRadius / Fixed(2), Fixed{}, 100000), 0, 33);
+        const EntityId out  = w.entities.spawn(mob(cfg.fissureRadius * Fixed(4), Fixed{}, 100000), 0, 33);
+        const uint32_t a = static_cast<uint32_t>(w.entities.denseOf(tgt));
+        const uint32_t m = static_cast<uint32_t>(w.entities.denseOf(mid));
         const uint32_t b = static_cast<uint32_t>(w.entities.denseOf(out));
 
         executeSkill(w, cfg, cleave, QteGrade::Miss);
-        CHECK_EQ(w.zones.count, 1u);
+        // **장판 둘.** 둔화가 먼저, 피해가 뒤다 (push 순서)
+        CHECK_EQ(w.zones.count, 2u);
         CHECK_EQ(static_cast<int32_t>(w.zones.kind[0]), static_cast<int32_t>(ZoneKind::Fissure));
+        CHECK_EQ(static_cast<int32_t>(w.zones.kind[1]), static_cast<int32_t>(ZoneKind::Burn));
+        CHECK_EQ(w.zones.radius[0].raw, cfg.fissureRadius.raw);
+        CHECK_EQ(w.zones.radius[1].raw, aoeR.raw);
+        CHECK(w.zones.value[1].raw > 0);              // 피해가 실렸다
+        CHECK_EQ(w.zones.expireTick[0], w.zones.expireTick[1]);   // 같이 사라진다
 
-        // **반경 안은 느려지고 밖은 그대로다.** 피해는 둘 다 균열에서 오지 않는다
-        const Fixed inMult  = slowMult(w, cfg, a);
-        const Fixed outMult = slowMult(w, cfg, b);
-        CHECK(inMult.raw < Fixed::one().raw);
-        CHECK_EQ(outMult.raw, Fixed::one().raw);
-        CHECK_EQ(inMult.raw, (Fixed::one() - Fixed::fromPermille(cfg.fissureSlowPermille)).raw);
+        // 둔화 — 넓은 반경 기준
+        CHECK_EQ(slowMult(w, cfg, m).raw,
+                 (Fixed::one() - Fixed::fromPermille(cfg.fissureSlowPermille)).raw);
+        CHECK_EQ(slowMult(w, cfg, b).raw, Fixed::one().raw);
 
-        // 장판이 피해를 주지 않는다 — zoneRun을 돌려도 균열은 때리지 않는다
-        const int32_t before = w.entities.damageTaken[a].raw;
+        // 피해 — **좁은 반경 기준.** mid는 둔화만 받고 피해는 받지 않아야 한다
+        const int32_t a0 = w.entities.damageTaken[a].raw;
+        const int32_t m0 = w.entities.damageTaken[m].raw;
+        w.tick();
         zoneRun(w, cfg);
-        CHECK_EQ(w.entities.damageTaken[a].raw, before);
-        printf("    반경 안 이동 배율 %d‰ · 밖 1000‰ · 균열 피해 0\n",
-               inMult.raw * 1000 / Fixed::ONE_RAW);
+        CHECK_EQ(w.entities.damageTaken[a].raw - a0, w.zones.value[1].raw);
+        CHECK_EQ(w.entities.damageTaken[m].raw, m0);   // 둔화만, 피해는 없다
+        printf("    둔화 %d‰타일 · 피해 %d‰타일 · 틱당 %d raw · 둔화만 받는 거리가 있다\n",
+               cfg.fissureRadius.raw * 1000 / Fixed::ONE_RAW,
+               aoeR.raw * 1000 / Fixed::ONE_RAW, w.zones.value[1].raw);
     }
 
     dctest::section("균열 — 겹치면 **합산이 아니라 큰 쪽**이다");
@@ -700,7 +720,7 @@ int main() {
     {
         World w = makeWorld(35);
         for (uint32_t k = 0; k < ZoneState::MAX_ZONES; ++k) {
-            w.zones.push(ZoneKind::Vortex, Fixed{}, Fixed{}, Fixed(1), Fixed(1),
+            w.zones.push(ZoneKind::Burn, Fixed{}, Fixed{}, Fixed(1), Fixed(1),
                          500 + static_cast<int32_t>(k));
         }
         CHECK_EQ(w.zones.count, ZoneState::MAX_ZONES);
@@ -712,7 +732,7 @@ int main() {
                  static_cast<int32_t>(ZoneKind::Fissure));         // 새 것이 들어왔다
         // **반경 0은 거부한다** — 아무도 못 맞히는 장판은 상태만 먹는다
         const uint32_t before = w.zones.count;
-        CHECK(!w.zones.push(ZoneKind::Vortex, Fixed{}, Fixed{}, Fixed{}, Fixed(1), 9999));
+        CHECK(!w.zones.push(ZoneKind::Burn, Fixed{}, Fixed{}, Fixed{}, Fixed(1), 9999));
         CHECK_EQ(w.zones.count, before);
     }
 

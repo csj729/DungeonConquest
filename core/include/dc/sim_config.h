@@ -231,6 +231,10 @@ struct SimConfig {
     int32_t  fissureSlowPermille      = 0;
     Fixed    fissureRadius{};
     int32_t  fissureDurationTicks     = 0;
+    // 균열의 지속 피해 — **둔화와 별개 장판이다.** 둔화는 fissureRadius(4.0타일),
+    // 피해는 광역 반경(1.5타일)이다. 같은 반경에 피해를 깔면 4.0타일에 27마리가
+    // 들어와(dc_field 실측) 예산이 터진다.
+    int32_t  fissureDpsPermille       = 0;
     // 타겟 우선순위 거리 감쇠 (타일당). 닿을 수 없는 표적에 묶이지 않게 한다.
     int32_t  targetPriorityFalloffPerTile = 0;
 

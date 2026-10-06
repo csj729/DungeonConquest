@@ -539,7 +539,7 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
         // 지속 중의 변화는 따르지 않는다: 장판 피해를 캐스트 시점에 고정하는
         // 규칙(E_DECAY의 decayPerTick)과 같은 이유다.
         const Fixed zoneR = hasCentri ? centrifugeRadius(w, cfg, ccx, ccy, aoeR) : aoeR;
-        w.zones.push(ZoneKind::Vortex, ccx, ccy, zoneR, perTick,
+        w.zones.push(ZoneKind::Burn, ccx, ccy, zoneR, perTick,
                      w.tickCount() + cfg.vortexDurationTicks);
         // **E_CHAIN(연타)은 소용돌이에 붙지 않는다.** 장판을 두 개 깔면 지속이
         // 겹쳐 2배가 되는데, 연타의 설계는 "총 피해를 2회로 나눈다"이지
@@ -615,11 +615,34 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
                      w.tickCount() + cfg.aftershockFuseTicks);
     }
     if (cfg.uniqueOnSkill(legendIndexOf(LegendId::Fissure), skillIndex)
-        && w.cards.legendHas(legendIndexOf(LegendId::Fissure))
-        && cfg.fissureSlowPermille > 0) {
-        w.zones.push(ZoneKind::Fissure, ccx, ccy,
-                     cfg.fissureRadius, Fixed::fromPermille(cfg.fissureSlowPermille),
-                     w.tickCount() + cfg.fissureDurationTicks);
+        && w.cards.legendHas(legendIndexOf(LegendId::Fissure))) {
+        // **장판을 둘 깐다.** 둔화와 지속 피해는 반경이 달라서 한 장판에 담을 수
+        // 없고, `ZoneState`의 `value` 칸은 하나다. 칸을 늘리는 대신 **기존
+        // 모디파이어를 조합한다** — `Burn`은 소용돌이가 이미 쓰는 것이다.
+        //
+        // ## 왜 반경이 다른가
+        //
+        // 둔화는 접근을 늦추는 것이므로 넓어야 한다(4.0타일 = frost_radius).
+        // 피해를 같은 4.0타일에 깔면 `dc_field` 실측으로 27마리가 들어와 예산이
+        // 터진다. 피해는 **광역 반경**(1.5타일)이다 — 소용돌이 장판과 같은 크기이고,
+        // 예산 환산도 AOE_TARGETS(3.0)로 한다.
+        //
+        // 설계로 읽으면: 갈라진 금 자체가 타고(좁다), 그 주변 땅이 험해진다(넓다).
+        if (cfg.fissureSlowPermille > 0) {
+            w.zones.push(ZoneKind::Fissure, ccx, ccy,
+                         cfg.fissureRadius, Fixed::fromPermille(cfg.fissureSlowPermille),
+                         w.tickCount() + cfg.fissureDurationTicks);
+        }
+        // 피해는 **캐스트 시점에 고정**한다 (소용돌이·여진과 같은 규칙) — 매 틱
+        // 다시 계산하면 지속 중에 얻은 버프가 이미 깔린 장판에 소급된다.
+        if (cfg.fissureDpsPermille > 0 && cfg.tickHz > 0) {
+            const Fixed perTick = w.hero.stats.value(Stat::AttackPower)
+                                * Fixed::fromPermille(cfg.fissureDpsPermille)
+                                * qteAmplify(cfg, g) * swarmMult(w, cfg)
+                                * heroPowerMult(w, cfg) / cfg.tickHz;
+            w.zones.push(ZoneKind::Burn, ccx, ccy, aoeR, perTick,
+                         w.tickCount() + cfg.fissureDurationTicks);
+        }
     }
 }
 

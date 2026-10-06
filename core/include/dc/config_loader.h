@@ -547,6 +547,7 @@ inline bool ConfigLoader::loadCards(const json::Doc& d, SimConfig* cfg) {
         cfg->fissureSlowPermille  = take32(ue.at(5)["slow_permille"]);
         cfg->fissureRadius        = Fixed::fromPermille(take32(ue.at(5)["radius_millitile"]));
         cfg->fissureDurationTicks = take32(ue.at(5)["duration_ticks"]);
+        cfg->fissureDpsPermille   = take32(ue.at(5)["dps_permille"]);
     }
 
     // 일반 등급 스탯 카드 풀. **여기서 빌드 축이 갈린다.**

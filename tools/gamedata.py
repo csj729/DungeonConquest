@@ -30,6 +30,7 @@ JSON 숫자는 부동소수점이라 파서·플랫폼에 따라 값이 갈릴 �
 판정하는 기준"이고, 후자는 "닫힌 식으로 게임을 근사하려고 파이썬이 쓰는 값"이라
 C++ 코어는 둘 다 읽지 않는다. 각 검증 도구에 남긴다.
 """
+import hashlib
 import json
 import os
 
@@ -39,6 +40,31 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 def load(name):
     with open(os.path.join(DATA_DIR, f"{name}.json"), encoding="utf-8") as f:
         return json.load(f)
+
+
+def fingerprint():
+    """`data/*.json` 전체의 지문. **측정이 어느 데이터에서 나왔는지 못 박는 용도다.**
+
+    `dc_legend`는 게임 전체를 돌리므로 **어느 파일의 어느 수치든** 측정을
+    무효화한다. 전에는 손으로 고른 키 목록을 지문으로 썼는데 범위 구멍이 생겼다 —
+    고유 각인 수치만 담아 둬서 E_PIERCE(공통 각인)를 고쳤을 때 조용히 통과했다.
+    전체를 해싱하면 그 종류의 구멍이 사라진다.
+
+    주석 키(`_`로 시작)는 뺀다 — 시뮬이 읽지 않으므로 설명을 고쳤다고 측정이
+    낡은 것은 아니다.
+    """
+    def strip(o):
+        if isinstance(o, dict):
+            return {k: strip(v) for k, v in sorted(o.items()) if not k.startswith("_")}
+        if isinstance(o, list):
+            return [strip(v) for v in o]
+        return o
+
+    blob = json.dumps(
+        {n: strip(load(n)) for n in sorted(
+            f[:-5] for f in os.listdir(DATA_DIR) if f.endswith(".json"))},
+        sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
 def _assert_integral(obj, path):

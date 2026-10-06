@@ -239,5 +239,125 @@ int main(int argc, char** argv) {
         printf("  ※ 전장 반경이 유한하므로 길이를 늘리면 **포화한다** — 어디서\n");
         printf("     멈추는지가 이 축을 쓸 수 있는지를 정한다\n");
     }
+
+    // ── 장판의 평균 점유 수 ─────────────────────────────────────────
+    //
+    // 예산식은 장판 피해를 `AOE_TARGETS(3.0) × 지속`으로 센다 — **캐스트 순간의
+    // 스냅샷이 지속 내내 유지된다는 가정**이다. 그런데 장판은 깔린 자리에
+    // 머물고 적은 영웅으로 모여들므로, 4초 동안 들어오는 적까지 맞는다.
+    //
+    // 실제로 필요한 값은 **지속 동안의 평균 점유 수**다. 캐스트 시점에 중심을
+    // 고정하고 지속 틱 동안 반경 안 적을 세어 평균한다 — 장판이 매 틱 반경 안
+    // 전부를 때리므로 그 평균이 곧 `AOE_TARGETS`가 서야 할 자리다.
+    printf("\n== 장판 평균 점유 수 (중심 고정 · 지속 동안 평균) ==\n");
+    {
+        const int32_t kSeeds = 24;
+        const int32_t kFirst = 600;
+        const int32_t kEvery = 40;
+        printf("%10s %10s %12s %12s %10s\n",
+               "반경", "지속(틱)", "평균 점유", "캐스트 시점", "표본");
+        for (int32_t rp : {1500, 4000}) {
+            for (int32_t dur : {20, 80, 160}) {
+                const Fixed r = Fixed::fromPermille(rp);
+                const int64_t r2 = static_cast<int64_t>(r.raw) * r.raw;
+                int64_t occ = 0, at0 = 0;
+                int32_t zoneTicks = 0, casts = 0;
+                for (int32_t sd = 0; sd < kSeeds; ++sd) {
+                    World w;
+                    initWorld(w, 777 + static_cast<uint64_t>(sd) * 31,
+                              dev::data().cfg, dev::data().table, dev::data().hero);
+                    static SimScratch sc4;
+                    // 활성 가상 장판 (중심 고정 · 남은 틱)
+                    Fixed cx[8]{}, cy[8]{};
+                    int32_t left[8]{};
+                    uint32_t live = 0;
+                    for (int32_t t = 0; t < ticks; ++t) {
+                        stepWorld(w, cfg, dev::data().table, sc4);
+                        if (t >= kFirst && (t - kFirst) % kEvery == 0 && live < 8) {
+                            // 회전 베기는 영웅 중심이다 (aoe_center: hero)
+                            cx[live] = w.hero.posX; cy[live] = w.hero.posY;
+                            left[live] = dur;
+                            int32_t n0 = 0;
+                            for (uint32_t i = 0; i < w.entities.count(); ++i) {
+                                if (w.entities.deadAt(i)) continue;
+                                if (distanceSq(w.entities.posX[i], w.entities.posY[i],
+                                               cx[live], cy[live]) <= r2) ++n0;
+                            }
+                            at0 += n0; ++casts; ++live;
+                        }
+                        for (uint32_t z = 0; z < live;) {
+                            int32_t n = 0;
+                            for (uint32_t i = 0; i < w.entities.count(); ++i) {
+                                if (w.entities.deadAt(i)) continue;
+                                if (distanceSq(w.entities.posX[i], w.entities.posY[i],
+                                               cx[z], cy[z]) <= r2) ++n;
+                            }
+                            occ += n; ++zoneTicks;
+                            if (--left[z] <= 0) {
+                                cx[z] = cx[live - 1]; cy[z] = cy[live - 1];
+                                left[z] = left[live - 1]; --live;
+                            } else {
+                                ++z;
+                            }
+                        }
+                    }
+                    }
+                printf("%8.1f타일 %10d %12.2f %12.2f %10d\n", rp / 1000.0, dur,
+                       zoneTicks ? static_cast<double>(occ) / zoneTicks : 0.0,
+                       casts ? static_cast<double>(at0) / casts : 0.0, casts);
+            }
+        }
+        printf("  ※ '캐스트 시점'이 예산식의 AOE_TARGETS가 가정한 값이고,\n");
+        printf("     '평균 점유'가 장판이 실제로 때리는 수다\n");
+    }
+
+    // ── 광역 반경 안 대상 수가 런 중에 흔들리는가 ───────────────────
+    //
+    // `AOE_TARGETS = 3.0`은 "보수적인 하한"으로 박아 둔 값이고, 주석이 올리지
+    // 않는 이유로 "구간·물량에 따라 흔들린다"를 적어 뒀다. **그 흔들림을 실제로
+    // 재 본 적은 없다.** 채택 가능한 값인지는 그 분산이 정한다.
+    printf("\n== 광역 반경(%.1f타일) 안 대상 수 — 틱 구간별 ==\n",
+           dev::data().hero.bases[static_cast<uint32_t>(Stat::AoeRadius)].raw
+           / static_cast<double>(Fixed::ONE_RAW));
+    {
+        const int32_t kSeeds = 24;
+        const Fixed r = dev::data().hero.bases[static_cast<uint32_t>(Stat::AoeRadius)];
+        const int64_t r2 = static_cast<int64_t>(r.raw) * r.raw;
+        const int32_t kBuckets = 6;
+        int64_t sum[kBuckets]{};
+        int32_t cnt[kBuckets]{};
+        int32_t lo[kBuckets]{}, hi[kBuckets]{};
+        for (int32_t b = 0; b < kBuckets; ++b) { lo[b] = 1 << 30; hi[b] = 0; }
+        for (int32_t sd = 0; sd < kSeeds; ++sd) {
+            World w;
+            initWorld(w, 777 + static_cast<uint64_t>(sd) * 31,
+                      dev::data().cfg, dev::data().table, dev::data().hero);
+            static SimScratch sc5;
+            for (int32_t t = 0; t < ticks; ++t) {
+                stepWorld(w, cfg, dev::data().table, sc5);
+                if (t % 20 != 0) continue;
+                const int32_t b = t * kBuckets / ticks;
+                if (b < 0 || b >= kBuckets) continue;
+                int32_t n = 0;
+                for (uint32_t i = 0; i < w.entities.count(); ++i) {
+                    if (w.entities.deadAt(i)) continue;
+                    if (distanceSq(w.entities.posX[i], w.entities.posY[i],
+                                   w.hero.posX, w.hero.posY) <= r2) ++n;
+                }
+                sum[b] += n; ++cnt[b];
+                if (n < lo[b]) lo[b] = n;
+                if (n > hi[b]) hi[b] = n;
+            }
+        }
+        printf("%14s %10s %8s %8s %8s\n", "틱 구간", "평균", "최소", "최대", "표본");
+        for (int32_t b = 0; b < kBuckets; ++b) {
+            if (!cnt[b]) continue;
+            printf("%6d~%-7d %10.2f %8d %8d %8d\n",
+                   b * ticks / kBuckets, (b + 1) * ticks / kBuckets - 1,
+                   static_cast<double>(sum[b]) / cnt[b], lo[b], hi[b], cnt[b]);
+        }
+        printf("  ※ 흔들림이 크면 하한(3.0)을 쓰는 지금 방식이 맞고,\n");
+        printf("     작으면 실측값으로 올려야 한다\n");
+    }
     return 0;
 }

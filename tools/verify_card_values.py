@@ -562,9 +562,25 @@ def unique_delta(uid):
         share = {"잡몹": 1 - ELITE_SHARE,
                  "엘리트": ELITE_SHARE * (1 - BOSS_SHARE_IN_ELITE),
                  "보스": ELITE_SHARE * BOSS_SHARE_IN_ELITE}
+        boss_share = share["보스"]
         if BOSS_EXECUTE_IMMUNE:
-            share["보스"] = 0.0        # 면역이면 보스 몫은 가치가 아니다
-        return total * sum(share[k] * _exec_saving(T, rate, ttk[k]) for k in ttk)
+            share["보스"] = 0.0        # 면역이면 즉시 처치 몫은 가치가 아니다
+        kill = total * sum(share[k] * _exec_saving(T, rate, ttk[k]) for k in ttk)
+
+        # ── 임계 이하 피해 증폭 ──
+        #
+        # **면역인 대상만 실제로 받는다** — 아닌 적은 같은 타격에서 즉사한다.
+        # 임계 아래 구간이 TTK의 T만큼이고 그 구간이 1/(1+b)로 줄므로 아끼는
+        # 비율은 `T × b/(1+b)`다. 처형 판정과 달리 **대기 항이 없다** — 발동이
+        # 아니라 상시 배수다.
+        #
+        # **예산이 이 축을 거의 못 본다.** 보스 몫이 평균 8.4%라 b를 무한대로
+        # 올려도 예산비가 117%에서 멈춘다. 보스전이 승패를 가르는데 예산은 런
+        # 전체 평균이라 그렇다 — 충격파에서 배운 것과 같은 구조다. 그래서 이
+        # 수치는 예산이 아니라 **측정**으로 고른다.
+        b = _pm(e["weak_damage_bonus_permille"])
+        weaken = total * boss_share * (T * b / (1 + b)) if BOSS_EXECUTE_IMMUNE else 0.0
+        return kill + weaken
 
     if uid == "W_SHOCKWAVE":
         # 전력 피해로 직선의 적을 추가로 맞힌다. 추가 대상 수는 반폭에 비례한다.
@@ -792,6 +808,9 @@ def report():
         print(f"  {uid:<14} {e['name']:<5} {d:>7.2f} {ratio:>5.0%} "
               f"{cr:>+7.0%} {combined:>5.0%}   {sec:>6.1f}s {dclear:>+7.1f}p{flag}")
     print()
+    print("  ※ **잠식 보정은 포화를 세지 않는다.** 런이 짧아 잠식이 낮으면 정화가")
+    print("     넘쳐 버려지므로 그만큼은 가치가 아니다 — 처형의 구슬 실효율이")
+    print("     52.6%(기준선 67.2%)로 여섯 중 최저다. 처형의 보정은 그만큼 과대평가다")
     print(f"  ※ 잠식 유입 {MAP_INFLOW:.1f}/초 (verify_recovery 실측의 가중평균) ·"
           f" 전설 예산 {legend_budget:.2f} DPS")
     # ── 충격파 반폭 절벽 가드 ──

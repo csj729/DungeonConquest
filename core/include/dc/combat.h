@@ -351,9 +351,12 @@ inline void applyDecay(World& w, const SimConfig& cfg, uint32_t i) {
     w.entities.decayLeft[i] = cfg.decayTicks;
 }
 
-// **실제로 입힌 피해를 돌려준다** — `E_LEECH`가 그 값에 비례해 정화하기 때문이다.
-// 굴리기 전 위력(rawDamage)이 아니라 방어 감쇠 후의 값이어야 방어력 높은 적에게
-// 흡혈이 덜 붙는다.
+// **이 타격이 적의 체력에서 지운 양을 돌려준다** — `E_LEECH`가 그 값에 비례해
+// 정화하기 때문이다. 굴리기 전 위력(rawDamage)이 아니라 방어 감쇠 후의 값이어야
+// 방어력 높은 적에게 흡혈이 덜 붙는다.
+//
+// **처형이 지운 체력도 여기 들어간다.** "입힌 피해"로만 읽으면 처형이 피해 비례
+// 효과의 입력을 없애 버린다 (`executeIfBelowThreshold` 주석 참조).
 // `hooks`가 false면 onHit 각인을 건너뛴다. **도트 자신은 도트를 갱신하면 안 된다** —
 // decayRun이 매 틱 applyDecay를 다시 부르면 지속이 영원히 새로 시작되어 도트가
 // 끝나지 않는다. 테스트가 이걸 잡았다.
@@ -363,24 +366,64 @@ inline void applyDecay(World& w, const SimConfig& cfg, uint32_t i) {
 // 나눗셈 없이 `남은 체력 × 1000 <= 최대 체력 × 임계`로 본다 — 나눗셈을 쓰면
 // 절삭 방향이 경계에서 결과를 바꾸고, Fixed 나눗셈은 그 자리에서 정밀도를 잃는다.
 // raw는 int32이므로 1000을 곱하기 전에 int64로 승격한다 (부호 있는 오버플로는 UB).
-inline bool executeIfBelowThreshold(World& w, const SimConfig& cfg, uint32_t i) {
+//
+// **지운 체력을 돌려준다** (처형하지 않았으면 0). 피해 비례 효과가 그 값을 봐야
+// 하기 때문이다 — 그렇지 않으면 처형이 **흡혈을 잡아먹는다.** 40%에 걸린 적은
+// 원래 몇 대 더 맞았고 그 타격마다 흡혈이 붙었는데, 처형이 그 타격들을 없앤다.
+//
+// 실측이 이것을 짚었다: 처형은 보스전 흡혈이 초당 3.86(기준선 5.36)이고, 그 결과
+// **여섯 중 유일하게 보스전 순유입이 기준선보다 높았다**(19.43 대 18.46). 도달 시
+// 잠식이 기준선의 절반(201 대 402)인데 Δ생존이 가장 낮았던 이유가 이것이다.
+//
+// 장판 흡혈과 같은 종류의 고장이다 — **피해 비례 효과가 입력을 잃는 자리**를
+// 두 번째로 밟았다. 다른 것은 그때는 플래그였고 이번엔 피해가 아예 발생하지
+// 않는다는 점뿐이다.
+// 처형의 임계 아래인가. 즉시 처치와 **피해 증폭**이 같은 판정을 쓴다 —
+// 두 벌로 두면 경계가 어긋난다.
+inline bool belowExecuteThreshold(const World& w, const SimConfig& cfg, uint32_t i) {
     if (cfg.executeThresholdPermille <= 0) return false;
-    if (!w.cards.legendHas(legendIndexOf(LegendId::Execute))) return false;
-    if ((w.entities.flags[i] & EntityFlag::ExecuteImmune) != 0) return false;
-
     const int64_t max  = w.entities.maxHp[i].raw;
     const int64_t left = max - static_cast<int64_t>(w.entities.damageTaken[i].raw);
     if (left <= 0) return false;                    // 이미 죽을 피해를 받았다
-    if (left * 1000 > max * cfg.executeThresholdPermille) return false;
+    return left * 1000 <= max * cfg.executeThresholdPermille;
+}
 
+// **임계 이하 대상에게 피해 배수.** 면역 여부를 묻지 않는다 — 면역이 아닌 적은
+// 같은 타격에서 즉사하므로 실제로 이 배수를 쓰는 것은 면역인 대상뿐이다.
+// "보스면"이라는 분기를 코어에 넣지 않는 것이 요점이다 (CLAUDE.md).
+//
+// 이 각인이 **보스전 화력이 0**이었고, 그래서 도달 시 잠식이 기준선의 절반인데도
+// Δ생존이 여섯 중 가장 낮았다. 접근 구간의 과잉은 포화한다 — 잠식이 낮으면 구슬과
+// 흡혈이 넘쳐 버려진다(실측 구슬 실효율 52.6%, 기준선 67.2%).
+inline Fixed executeWeakenMult(const World& w, const SimConfig& cfg, uint32_t i) {
+    if (cfg.executeWeakBonusPermille <= 0) return Fixed::one();
+    if (!w.cards.legendHas(legendIndexOf(LegendId::Execute))) return Fixed::one();
+    if (!belowExecuteThreshold(w, cfg, i)) return Fixed::one();
+    return Fixed::one() + Fixed::fromPermille(cfg.executeWeakBonusPermille);
+}
+
+inline Fixed executeIfBelowThreshold(World& w, const SimConfig& cfg, uint32_t i) {
+    if (cfg.executeThresholdPermille <= 0) return Fixed{};
+    if (!w.cards.legendHas(legendIndexOf(LegendId::Execute))) return Fixed{};
+    if ((w.entities.flags[i] & EntityFlag::ExecuteImmune) != 0) return Fixed{};
+
+    if (!belowExecuteThreshold(w, cfg, i)) return Fixed{};
+
+    const int64_t left = static_cast<int64_t>(w.entities.maxHp[i].raw)
+                       - static_cast<int64_t>(w.entities.damageTaken[i].raw);
     w.entities.damageTaken[i] = w.entities.maxHp[i];
-    return true;
+    // **raw에서 만든다.** `Fixed(left)`는 정수값 생성자라 ONE_RAW를 한 번 더
+    // 곱해 int32를 넘긴다 — `left`는 이미 raw다.
+    return Fixed::fromRaw(static_cast<int32_t>(left));
 }
 
 inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage,
                            bool hooks = true) {
     if (w.entities.deadAt(i)) return Fixed{};
-    const Fixed dealt = mitigate(rawDamage * beaconMult(w, w.entities.archetype[i]),
+    // **배수는 맞기 전 체력으로 판정한다.** 이 타격이 임계 아래로 내려보내는
+    // 경우까지 세면 같은 타격이 자기 조건을 만드는 셈이 된다.
+    const Fixed weaken = hooks ? executeWeakenMult(w, cfg, i) : Fixed::one();
+    const Fixed dealt = mitigate(rawDamage * beaconMult(w, w.entities.archetype[i]) * weaken,
                                  rendArmor(w, w.entities.armor[i]), cfg.armorK);
     w.entities.damageTaken[i] += dealt;
 
@@ -392,13 +435,14 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
     // `hooks`가 false인 호출(도트 · 보스 장판 · R_BOLT · RL_STORM)은 제외한다 —
     // 설계가 말한 범위는 **영웅의 타격**이고, 예산도 공속(1.54/s)으로 환산했다.
     // 틱형 피해까지 포함하면 판정 빈도가 올라 예산을 넘는다.
-    if (hooks) executeIfBelowThreshold(w, cfg, i);
+    const Fixed executed = hooks ? executeIfBelowThreshold(w, cfg, i) : Fixed{};
 
     if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) {
         if (hooks) applyDecay(w, cfg, i);   // 살아남은 적에게만 · 도트 자신은 제외
-        return dealt;
+        return dealt;                       // 처형이 안 걸렸다 (걸렸으면 죽는다)
     }
-    if (!w.entities.markDead(w.entities.idAt(i))) return dealt;
+    // **처형이 지운 체력을 더해서 돌려준다** — 아래 두 return 모두 그렇다.
+    if (!w.entities.markDead(w.entities.idAt(i))) return dealt + executed;
     // 경험치는 실효 체력에 비례한다 (§4). Fixed가 아니라 정수 누적값이다 —
     // 고정소수점 범위 ±524,288을 훨씬 넘고 소수점이 필요 없다.
     {
@@ -420,6 +464,7 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
         // **굴림은 처치할 때마다 한 번씩** — 드랍 여부와 무관하게 소비해야
         // 난수 소비 횟수가 처치 수만의 함수가 된다 (리플레이 안정성).
         if (w.rngItems.chancePermille(cfg.orbTrashDropPermille)) {
+            ++w.metrics.orbsSpawned;
             w.orbs.push(w.entities.posX[i], w.entities.posY[i],
                         cfg.orbTrashAmount, orbExpire);
         }
@@ -433,9 +478,10 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
     } else {
         ++w.run.killedElite;
         w.run.clearPoints += cfg.elitePoints;
+        ++w.metrics.orbsSpawned;
         w.orbs.push(w.entities.posX[i], w.entities.posY[i], cfg.orbEliteAmount, orbExpire);
     }
-    return dealt;
+    return dealt + executed;
 }
 
 // W_CENTRIFUGE(원심력)가 **때리지 않고** 최종 반경만 계산한다 — 소용돌이 장판용.
@@ -483,6 +529,7 @@ inline Fixed qteAmplify(const SimConfig& cfg, QteGrade g) {
 // 창을 닫고 결과를 적용한다. **closeTick에 입력이 없으면 Miss로 자동 해결**된다 —
 // 판정을 미루면 그 틱의 다른 계산이 무엇을 봐야 할지가 모호해진다.
 inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, QteGrade g) {
+    ++w.metrics.skillCasts;
     if (skillIndex >= cfg.skillCount) return;
     const SkillConfig& sk = cfg.skills[skillIndex];
     Fixed dmg = w.hero.stats.value(Stat::AttackPower) * sk.mult * qteAmplify(cfg, g)
@@ -856,11 +903,18 @@ inline void orbRun(World& w, const SimConfig& cfg) {
 
     for (int32_t i = static_cast<int32_t>(w.orbs.count) - 1; i >= 0; --i) {
         const uint32_t k = static_cast<uint32_t>(i);
-        if (w.tickCount() >= w.orbs.expireTick[k]) { w.orbs.removeAt(k); continue; }
+        if (w.tickCount() >= w.orbs.expireTick[k]) {
+            ++w.metrics.orbsExpired;
+            w.orbs.removeAt(k);
+            continue;
+        }
         const int64_t dx = static_cast<int64_t>(w.orbs.posX[k].raw) - w.hero.posX.raw;
         const int64_t dy = static_cast<int64_t>(w.orbs.posY[k].raw) - w.hero.posY.raw;
         if (dx * dx + dy * dy > r2) continue;
-        w.metrics.purgeOrbs += w.purgeCorruption(Fixed(w.orbs.amount[k])).raw;
+        const Fixed want = Fixed(w.orbs.amount[k]);
+        w.metrics.purgeOrbs += w.purgeCorruption(want).raw;
+        w.metrics.orbRequested += want.raw;
+        ++w.metrics.orbsPicked;
         w.orbs.removeAt(k);
     }
 }
@@ -1141,6 +1195,20 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
     // 가르게 되고, 그게 1차 구현의 예산 221% 버그였다.
     const bool grow = centrifuge && cfg.centrifugeStepPermille > 0
                    && cfg.centrifugeMaxStacks > 0;
+    ++w.metrics.aoeCasts;
+    // 반경 히스토그램 — **세기만 한다.** 캐스트 시점(아무도 죽기 전)의 분포다.
+    if (base.raw > 0) {
+        const uint32_t cnt = w.entities.count();
+        for (uint32_t k = 0; k < cnt; ++k) {
+            if (w.entities.deadAt(k)) continue;
+            const int64_t dx = static_cast<int64_t>(w.entities.posX[k].raw) - cx.raw;
+            const int64_t dy = static_cast<int64_t>(w.entities.posY[k].raw) - cy.raw;
+            const int64_t d = static_cast<int64_t>(
+                isqrt64(static_cast<uint64_t>(dx * dx + dy * dy)));
+            const int64_t b = (d * 8) / base.raw;
+            if (b < Metrics::AOE_BUCKETS) ++w.metrics.aoeRadiusHist[b];
+        }
+    }
     if (!grow) {
         const uint32_t n = collectInRadius(w.entities, cx, cy, base,
                                            hit, config::MAX_ENTITIES);
@@ -1172,7 +1240,10 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
             (void)applyCc(w, cfg, hit[k], ccGain);
         
         }
-        if (fresh == 0 || stacks >= cfg.centrifugeMaxStacks) break;
+        if (fresh == 0 || stacks >= cfg.centrifugeMaxStacks) {
+            w.metrics.centriStacks += stacks;
+            break;
+        }
         stacks += fresh;
         if (stacks > cfg.centrifugeMaxStacks) stacks = cfg.centrifugeMaxStacks;
         radius = base * (Fixed::one()
@@ -1214,6 +1285,7 @@ inline void combatRun(World& w, const SimConfig& cfg) {
                 }
             }
 
+            ++w.metrics.heroBasicHits;
             applySkillHit(w, cfg, i, dmg);
             applyPierce(w, cfg, i, dmg);
 
@@ -1228,7 +1300,11 @@ inline void combatRun(World& w, const SimConfig& cfg) {
                 applyPierce(w, cfg, i, dmg);
             }
             w.hero.attackCooldown = heroAttackInterval(w, cfg);
+        } else {
+            ++w.metrics.heroIdleTicks;   // 쿨다운은 끝났는데 사거리 밖이다
         }
+    } else if (w.hero.attackCooldown <= 0) {
+        ++w.metrics.heroIdleTicks;       // 타겟이 없거나 죽었다
     }
 
     // ── 적 → 영웅 ──

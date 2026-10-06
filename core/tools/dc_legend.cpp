@@ -80,6 +80,17 @@ struct Row {
     int64_t corrAttacks = 0, corrMass = 0;
     int64_t purgeOrbs = 0, purgeLeech = 0, purgeSegment = 0;
     int64_t attacksTaken = 0;
+    // 런 전체 누적 — 위 값과의 차이가 **보스전 몫**이다. 보스전에는 장판 유입
+    // (페이즈 2 오라)이 하나 더 있으므로 그것도 받는다.
+    int64_t corrAttacksT = 0, corrMassT = 0, corrAuraT = 0;
+    int64_t purgeOrbsT = 0, purgeLeechT = 0, purgeSegmentT = 0, purgeBossT = 0;
+    // 구슬 — 런 전체. 만료와 넘침을 가른다
+    int64_t orbsSpawned = 0, orbsPicked = 0, orbsExpired = 0, orbRequested = 0;
+    // 영웅의 출력 — 접근 구간(A)과 런 전체(T)
+    int64_t basicA = 0, idleA = 0, castA = 0, acA = 0, csA = 0;
+    int64_t basicT = 0, idleT = 0, castT = 0, acT = 0, csT = 0;
+    int64_t aoeHistA[dc::Metrics::AOE_BUCKETS] = {0};
+    int64_t aoeHistT[dc::Metrics::AOE_BUCKETS] = {0};
     // 평균 생존 적 수. **"물량 채널이 상한에 못 박혀 있는가"를 묻는 열이다** —
     // 스폰이 처치를 즉시 메우면 처치율을 올려도 물량 유입이 움직이지 않는다.
     double  aliveAvg = 0;
@@ -95,6 +106,29 @@ struct Row {
 };
 
 // 접근 구간 끝(보스 등장 또는 사망)에서 계측을 베낀다.
+// 런 전체 누적 — 접근 구간 값과의 차이가 보스전 몫이다.
+static void captureTotals(Row& r, const dc::World& w) {
+    r.corrAttacksT  = w.metrics.corrAttacks;
+    r.corrMassT     = w.metrics.corrMass;
+    r.corrAuraT     = w.metrics.corrAura;
+    r.purgeOrbsT    = w.metrics.purgeOrbs;
+    r.purgeLeechT   = w.metrics.purgeLeech;
+    r.purgeSegmentT = w.metrics.purgeSegment;
+    r.purgeBossT    = w.metrics.purgeBoss;
+    r.orbsSpawned   = w.metrics.orbsSpawned;
+    r.orbsPicked    = w.metrics.orbsPicked;
+    r.orbsExpired   = w.metrics.orbsExpired;
+    r.orbRequested  = w.metrics.orbRequested;
+    r.basicT = w.metrics.heroBasicHits;
+    r.idleT  = w.metrics.heroIdleTicks;
+    r.castT  = w.metrics.skillCasts;
+    r.acT    = w.metrics.aoeCasts;
+    r.csT    = w.metrics.centriStacks;
+    for (int32_t b = 0; b < dc::Metrics::AOE_BUCKETS; ++b) {
+        r.aoeHistT[b] = w.metrics.aoeRadiusHist[b];
+    }
+}
+
 static void captureChannels(Row& r, const dc::World& w) {
     r.corrAttacks  = w.metrics.corrAttacks;
     r.corrMass     = w.metrics.corrMass;
@@ -102,6 +136,14 @@ static void captureChannels(Row& r, const dc::World& w) {
     r.purgeLeech   = w.metrics.purgeLeech;
     r.purgeSegment = w.metrics.purgeSegment;
     r.attacksTaken = w.metrics.attacksTaken;
+    r.basicA = w.metrics.heroBasicHits;
+    r.idleA  = w.metrics.heroIdleTicks;
+    r.castA  = w.metrics.skillCasts;
+    r.acA    = w.metrics.aoeCasts;
+    r.csA    = w.metrics.centriStacks;
+    for (int32_t b = 0; b < dc::Metrics::AOE_BUCKETS; ++b) {
+        r.aoeHistA[b] = w.metrics.aoeRadiusHist[b];
+    }
     r.aliveAvg     = w.metrics.aliveTicks > 0
                    ? static_cast<double>(w.metrics.aliveSum) / w.metrics.aliveTicks
                    : 0.0;
@@ -160,6 +202,7 @@ static Row runOne(uint64_t seed, int32_t legend) {
             else ++r.ccElite;
         }
     }
+    captureTotals(r, w);
     r.scT  = w.metrics.shockCalls;
     r.shT  = w.metrics.shockHits;
     r.aoeT = w.metrics.aoeExtraHits;
@@ -329,6 +372,180 @@ int main(int argc, char** argv) {
     printf("  ※ **물량 채널은 위치와 무관하다** — 전장의 생존 적 수만 본다. 그래서\n");
     printf("     '멀리 있는 적을 죽였다'도 물량에는 똑같이 듣는다. 다만 스폰이 처치를\n");
     printf("     메우면 '평균 적'이 움직이지 않고, 그때는 처치율을 올려도 유입이 그대로다\n");
+    // ── 영웅이 놀고 있는가 ───────────────────────────────────────────
+    //
+    // **스킬 발동은 기본 공격의 proc에서 나온다.** 적을 빨리 치우는 카드는 영웅을
+    // 놀게 만들 수 있고, 그러면 기본 공격이 빠지고 스킬도 같이 빠지고 스킬에 붙은
+    // 흡혈·도트도 빠진다. 처형이 도달 시 잠식은 절반인데 보스전 순유입이 기준선보다
+    // 높았던 것(19.2 대 18.5)을 설명할 후보가 이 경로다.
+    printf("\n== 영웅이 놀고 있는가 (도달한 런만 · 초당) ==\n");
+    printf("%-12s %9s %9s %9s %9s %9s %9s\n",
+           "전설", "기본타(접)", "유휴틱(접)", "발동(접)",
+           "기본타(보)", "유휴틱(보)", "발동(보)");
+    printf("  %s\n", "--------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double ba = 0, ia = 0, ca = 0, bb = 0, ib = 0, cb = 0;
+        int32_t n = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.approachSec <= 0 || r.bossSec <= 0) continue;
+            ba += static_cast<double>(r.basicA) / r.approachSec;
+            ia += static_cast<double>(r.idleA)  / r.approachSec;
+            ca += static_cast<double>(r.castA)  / r.approachSec;
+            bb += static_cast<double>(r.basicT - r.basicA) / r.bossSec;
+            ib += static_cast<double>(r.idleT  - r.idleA)  / r.bossSec;
+            cb += static_cast<double>(r.castT  - r.castA)  / r.bossSec;
+            ++n;
+        }
+        if (!n) continue;
+        printf("%-12s %9.2f %9.2f %9.3f %9.2f %9.2f %9.3f\n", kVariants[vi].name,
+               ba / n, ia / n, ca / n, bb / n, ib / n, cb / n);
+    }
+    // ── 광역 발동당 대상 수와 원심력 중첩 — 구간별 ────────────────────
+    //
+    // 원심력은 보스전 순유입이 2위(17.1)이고 보스전 처치율도 2위인데 Δ생존은
+    // 4위다. **접근 구간 순유입이 여섯 중 가장 나쁘다**(1.24/초, 기준선 1.19보다
+    // 높다). 원심력의 값은 "캐스트 시점에 기본 반경 안에 몇 명이 있었나"에
+    // 달려 있으므로, 그 수가 구간마다 다른지 봐야 한다.
+    printf("\n  광역 발동당 대상 수 · 원심력 중첩 (구간별)\n");
+    printf("  %-12s %12s %12s %12s %12s\n",
+           "전설", "대상/발동(접)", "대상/발동(보)", "중첩/발동(접)", "중첩/발동(보)");
+    printf("  %s\n", "--------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double ta = 0, tb = 0, sa = 0, sb = 0;
+        int32_t na = 0, nb = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.bossSec <= 0) continue;
+            if (r.acA > 0) {
+                ta += static_cast<double>(r.aoeA) / r.acA;
+                sa += static_cast<double>(r.csA) / r.acA;
+                ++na;
+            }
+            if (r.acT > r.acA) {
+                const double d = static_cast<double>(r.acT - r.acA);
+                tb += static_cast<double>(r.aoeT - r.aoeA) / d;
+                sb += static_cast<double>(r.csT - r.csA) / d;
+                ++nb;
+            }
+        }
+        if (!na || !nb) continue;
+        printf("  %-12s %12.2f %12.2f %12.2f %12.2f\n", kVariants[vi].name,
+               ta / na, tb / nb, sa / na, sb / nb);
+    }
+    // 반경 → 발동당 대상 수. **원심력 수치를 여기서 읽는다.**
+    printf("\n  반경 → 발동당 대상 수 (기준선 행 · 기본 반경 배수)\n");
+    printf("  %-10s", "반경 배수");
+    for (int32_t b = 3; b < dc::Metrics::AOE_BUCKETS; ++b) {
+        printf(" %6.2f", (b + 1) / 8.0);
+    }
+    printf("\n");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        if (kVariants[vi].legend >= 0) continue;        // 기준선만 — 성장 없는 분포
+        for (int32_t phase = 0; phase < 2; ++phase) {
+            double acc[dc::Metrics::AOE_BUCKETS] = {0};
+            int32_t n = 0;
+            for (const Row& r : rows[vi]) {
+                if (!r.reached || r.bossSec <= 0) continue;
+                const double calls = phase == 0 ? static_cast<double>(r.acA)
+                                                : static_cast<double>(r.acT - r.acA);
+                if (calls <= 0) continue;
+                int64_t run = 0;
+                for (int32_t b = 0; b < dc::Metrics::AOE_BUCKETS; ++b) {
+                    run += phase == 0 ? r.aoeHistA[b] : (r.aoeHistT[b] - r.aoeHistA[b]);
+                    acc[b] += static_cast<double>(run) / calls;
+                }
+                ++n;
+            }
+            if (!n) continue;
+            printf("  %-10s", phase == 0 ? "접근" : "보스전");
+            for (int32_t b = 3; b < dc::Metrics::AOE_BUCKETS; ++b) {
+                printf(" %6.2f", acc[b] / n);
+            }
+            printf("\n");
+        }
+    }
+    printf("  ※ 누적합이다 — 1.00 칸이 기본 반경이다. **원심력의 extra는\n");
+    printf("     (반경배수 1+3·step 칸) − (1.00 칸)** 이고, 예산식이 쓰는\n");
+    printf("     '평균 대상 수에 성장을 먹인 값'과 다르다 — 성장은 0명에서\n");
+    printf("     끊기는 함수라 f(평균) ≠ 평균(f)이고, 실측이 모델의 1/2.18이었다\n");
+
+    printf("  ※ 중첩은 **원심력 행만** 의미가 있다 — 각인이 없으면 성장 분기가\n");
+    printf("     아예 돌지 않는다. 상한은 cards.json의 max_stacks(3)다\n");
+
+    printf("  ※ 유휴틱 = 공격 쿨다운이 끝났는데 사거리 안에 타겟이 없던 틱이다\n");
+    printf("     (20Hz이므로 초당 20이 상한이고, 그 값이면 내내 놀았다는 뜻이다)\n");
+    printf("  ※ **발동이 줄면 흡혈·도트가 같이 준다** — 둘 다 스킬에 붙는 효과다.\n");
+    printf("     E_LEECH는 '그 스킬 피해의 N%%'이고 기본 공격에는 붙지 않는다\n");
+
+    // ── 구슬이 어디서 새는가 ─────────────────────────────────────────
+    //
+    // 원심력은 보스전 순유입이 2위인데 Δ생존이 4위다. 접근 구간 순유입은
+    // **여섯 중 가장 나쁘고**(1.24/초, 기준선 1.19보다 높다) 처치는 더 많다 —
+    // 처치가 정화로 환산되지 않는다는 뜻이다. 구슬이 새는 곳이 둘이라
+    // (만료 · 넘침) 둘을 갈라야 어느 쪽인지 알 수 있다.
+    printf("\n== 구슬이 어디서 새는가 (런 전체) ==\n");
+    printf("%-12s %9s %9s %9s %9s %9s %9s\n",
+           "전설", "드랍", "주움", "만료", "만료율", "요청량", "실효율");
+    printf("  %s\n", "--------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double sp = 0, pk = 0, ex = 0, req = 0, got = 0;
+        int32_t n = 0;
+        for (const Row& r : rows[vi]) {
+            sp += static_cast<double>(r.orbsSpawned);
+            pk += static_cast<double>(r.orbsPicked);
+            ex += static_cast<double>(r.orbsExpired);
+            req += static_cast<double>(r.orbRequested) / Fixed::ONE_RAW;
+            got += static_cast<double>(r.purgeOrbsT)   / Fixed::ONE_RAW;
+            ++n;
+        }
+        if (!n) continue;
+        printf("%-12s %9.1f %9.1f %9.1f %8.1f%% %9.0f %8.1f%%\n", kVariants[vi].name,
+               sp / n, pk / n, ex / n, sp > 0 ? 100.0 * ex / sp : 0.0,
+               req / n, req > 0 ? 100.0 * got / req : 0.0);
+    }
+    printf("  ※ **만료율**은 주우러 가지 못한 구슬이다 — 터지는 위치가 영웅에서\n");
+    printf("     멀수록 오른다. **실효율**은 주운 구슬 중 실제로 정화된 몫이고,\n");
+    printf("     잠식이 구슬량보다 낮을 때 초과분이 버려지는 넘침이 여기 들어온다\n");
+    printf("     (progression.json `_orb_amount`가 말하는 실효 64.8%%가 이 열이다)\n");
+
+    // ── 잠식 채널 (보스전) ───────────────────────────────────────────
+    //
+    // **접근 구간 채널만으로는 하위 그룹이 설명되지 않는다.** 처형은 도달 시
+    // 잠식이 기준선의 절반(201 대 402)인데 Δ생존이 여섯 중 가장 낮고, 원심력은
+    // 보스전 처치율이 2위인데 4위다. 둘 다 "접근에서 잘한다"로는 안 풀린다.
+    //
+    // 그래서 같은 쪼개기를 보스전에 적용한다. 보스전에는 유입이 하나 더 있다 —
+    // 페이즈 2 오라다.
+    printf("\n== 잠식 채널 (보스전 · 도달한 런만 · 초당) ==\n");
+    printf("%-12s %8s %8s %8s %8s %8s %8s %8s %8s\n",
+           "전설", "피격", "물량", "오라", "구슬", "흡혈", "구간", "페이즈2", "순유입");
+    printf("  %s\n", "--------------------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double atk = 0, mass = 0, aura = 0, orb = 0, lee = 0, segp = 0, bos = 0;
+        int32_t n = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.bossSec <= 0) continue;
+            const double d = r.bossSec;
+            atk  += static_cast<double>(r.corrAttacksT - r.corrAttacks)  / Fixed::ONE_RAW / d;
+            mass += static_cast<double>(r.corrMassT    - r.corrMass)     / Fixed::ONE_RAW / d;
+            aura += static_cast<double>(r.corrAuraT)                     / Fixed::ONE_RAW / d;
+            orb  += static_cast<double>(r.purgeOrbsT   - r.purgeOrbs)    / Fixed::ONE_RAW / d;
+            lee  += static_cast<double>(r.purgeLeechT  - r.purgeLeech)   / Fixed::ONE_RAW / d;
+            segp += static_cast<double>(r.purgeSegmentT - r.purgeSegment)/ Fixed::ONE_RAW / d;
+            bos  += static_cast<double>(r.purgeBossT)                    / Fixed::ONE_RAW / d;
+            ++n;
+        }
+        if (!n) continue;
+        const double net = (atk + mass + aura - orb - lee - segp - bos) / n;
+        printf("%-12s %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f %8.2f\n",
+               kVariants[vi].name, atk / n, mass / n, aura / n,
+               orb / n, lee / n, segp / n, bos / n, net);
+    }
+    printf("  ※ 오라는 **페이즈 2 전용 유입**이다 — 보스 체력이 임계 아래로\n");
+    printf("     내려간 뒤에만 흐르므로, 보스를 빨리 깎는 카드가 더 많이 먹는다\n");
+    printf("  ※ **순유입 = 유입 − 정화.** 이 값이 보스전에서 게이지가 차는 속도고,\n");
+    printf("     '도달 시 잠식 + 순유입 × 보스전 초'가 죽느냐 마느냐를 정한다.\n");
+    printf("     도달 시 잠식만 보면 안 되는 이유가 이 열이다\n");
+
     // ── 기하별 추가 타격 — 구간별 ────────────────────────────────────
     //
     // **예산식의 입력을 그대로 측정한다.** 충격파 예산은 `발동 주기`와 `추가

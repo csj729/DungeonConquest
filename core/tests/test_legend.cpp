@@ -104,10 +104,33 @@ int main() {
             const EntityId id = w.entities.spawn(mob(Fixed(1), Fixed{}, 1000), 0, 3);
             const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(id));
             w.entities.damageTaken[i] = Fixed(1000 - left);
-            const bool killed = executeIfBelowThreshold(w, cfg, i);
+            const bool killed = executeIfBelowThreshold(w, cfg, i).raw > 0;
             CHECK_EQ(killed, left <= T);
         }
         printf("    남은 %d‰ 처형 · %d‰ 생존\n", T, T + 1);
+    }
+
+    dctest::section("처형 — **지운 체력이 흡혈의 입력이 된다**");
+    {
+        // 처형이 흡혈을 잡아먹고 있었다. 40%에 걸린 적은 원래 몇 대 더 맞았고
+        // 그 타격마다 흡혈이 붙었는데, 처형이 그 타격들을 없앤다. 실측에서
+        // 처형만 보스전 순유입이 기준선보다 높았던(19.43 대 18.46) 원인이다.
+        //
+        // **장판 흡혈과 같은 종류다** — 피해 비례 효과가 입력을 잃는 자리.
+        int32_t ret[2] = {0, 0};
+        for (int32_t k = 0; k < 2; ++k) {
+            World w = makeWorld(22);
+            if (k == 1) w.cards.legendTake(EXEC);
+            const EntityId id = w.entities.spawn(mob(Fixed(1), Fixed{}, 1000), 0, 22);
+            const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(id));
+            // 남은 체력을 임계 **아래**로 내려 둔다 → 한 대 때리면 처형이 걸린다
+            w.entities.damageTaken[i] = Fixed(1000 - cfg.executeThresholdPermille / 2);
+            ret[k] = applySkillHit(w, cfg, i, Fixed(1)).raw;
+        }
+        // 각인이 없으면 한 대 값(1)만, 있으면 지운 체력까지 돌아온다
+        CHECK(ret[1] > ret[0]);
+        CHECK(ret[0] > 0);
+        printf("    각인 없음 %d raw → 처형 %d raw (지운 체력 포함)\n", ret[0], ret[1]);
     }
 
     dctest::section("처형 — **보스는 면역이다** (페이즈 2를 지킨다)");
@@ -121,7 +144,7 @@ int main() {
         const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(id));
         w.entities.damageTaken[i] = Fixed(950);     // 남은 5% — 임계보다 한참 아래
 
-        CHECK(!executeIfBelowThreshold(w, cfg, i));
+        CHECK_EQ(executeIfBelowThreshold(w, cfg, i).raw, 0);
         CHECK(!w.entities.deadAt(i));
         CHECK(!w.run.over());                        // 보스 처치 = 클리어가 아니다
 

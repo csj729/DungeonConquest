@@ -216,8 +216,13 @@ struct SimConfig {
     // 10.8초가 임계 구간보다 길어 임계 50%에서도 예산의 39%에 그친다.
     int32_t  executeThresholdPermille = 0;
     bool     executeAllAttacks        = false;
-    // W_SHOCKWAVE 충격파 — 직선 판정의 반폭. 길이는 `pierceLength`를 공유한다.
-    // E_PIERCE(700)의 절반인 이유는 예산이다 — 같은 폭에 전력 피해면 194%가 된다.
+    // **임계 이하 대상에게 피해 +N‰.** 처형이 보스에게 면역이라 보스전 화력이
+    // 0이었고, 그 대가를 접근 구간의 과잉으로 받았는데 그 과잉이 포화한다
+    // (잠식이 낮으면 정화가 넘쳐 버려진다 — 처형의 구슬 실효율 52.6% 대 67.2%).
+    // 면역 여부를 묻지 않는 한 규칙이다 — 면역이 아닌 적은 어차피 즉사한다.
+    int32_t  executeWeakBonusPermille = 0;
+    // W_SHOCKWAVE 충격파 — 직선 판정의 반폭. 길이는 `pierceLength`를 공유하고
+    // **경로의 시작점만 다르다**(충격파는 영웅, 관통은 타겟 뒤).
     Fixed    shockwaveWidth{};
     // W_CENTRIFUGE 원심력 — 적을 벨 때마다 반경이 이만큼 늘고, 상한이 있다.
     // **상한은 반드시 둔다** — 없으면 물량↑ → 반경↑ → 처치↑ → 물량↑이 폭주한다.

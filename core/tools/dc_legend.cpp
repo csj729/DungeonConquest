@@ -37,6 +37,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <vector>
+
 #include "../include/dc/sim.h"
 #include "data_files.h"
 
@@ -47,6 +49,24 @@ struct Row {
     int32_t reached = 0, cleared = 0, trash = 0, elites = 0;
     long    ccElite = 0, ccTrash = 0;
     int32_t arriveCorruption = -1;   // 보스 등장 틱의 잠식. 도달하지 않으면 -1
+
+    // ── 구간 분리 ───────────────────────────────────────────────────
+    //
+    // **런 전체 집계로는 메커니즘을 짚을 수 없다.** heroes_vertical_slice.md §4가
+    // 그 실패를 두 번 기록한다 — 처치율·런 길이를 한 덩이로 보고 "전환율 절벽"의
+    // 원인을 경험치로, 다음엔 장판 기하로 짚었는데 둘 다 틀렸다. 접근 구간에서
+    // 일하는 효과와 보스전에서 일하는 효과가 같은 숫자에 섞여 들어오기 때문이다.
+    //
+    // 그래서 **보스 등장 틱에서 자른다.**
+    double  approachSec = 0;     // 0 → 보스 등장
+    double  bossSec     = 0;     // 보스 등장 → 종료
+    int32_t approachKills = 0;   // 잡몹 + 엘리트
+    int32_t bossKills     = 0;
+    // **도달 시 레벨.** 처형은 접근 처치 수가 기준선과 같은데도 보스전이 길다.
+    // 경험치는 처치 **수**가 아니라 `처치 × 실효 체력`이고 웨이브마다 체력이
+    // 오르므로, 일찍 도달하면 같은 수라도 약한 웨이브에서 받은 것이다 —
+    // 그 가설을 검사할 수 있는 유일한 열이다.
+    int32_t arriveLevel = 0;
 };
 
 // QTE는 항상 완벽, 카드는 무작위 — `dc_montecarlo`의 무입력 정책과 달리
@@ -77,7 +97,13 @@ static Row runOne(uint64_t seed, int32_t legend) {
         }
         const bool wasSpawned = w.run.bossSpawned;
         stepWorld(w, cfg, dev::data().table, sc);
-        if (!wasSpawned && w.run.bossSpawned) r.arriveCorruption = w.hero.corruption.raw;
+        if (!wasSpawned && w.run.bossSpawned) {
+            r.arriveCorruption = w.hero.corruption.raw;
+            // 자르는 지점. 여기까지가 접근 구간이다
+            r.approachSec   = static_cast<double>(w.tickCount()) / cfg.tickHz;
+            r.approachKills = w.run.killedTrash + w.run.killedElite;
+            r.arriveLevel   = w.hero.level;
+        }
 
         for (uint32_t i = 0; i < w.entities.count(); ++i) {
             if (w.entities.deadAt(i) || w.entities.groggyLeft[i] <= 0) continue;
@@ -90,6 +116,15 @@ static Row runOne(uint64_t seed, int32_t legend) {
     r.cleared = w.run.outcome == RunOutcome::Cleared ? 1 : 0;
     r.trash   = w.run.killedTrash;
     r.elites  = w.run.killedElite;
+    if (r.reached) {
+        r.bossSec   = r.sec - r.approachSec;
+        r.bossKills = (w.run.killedTrash + w.run.killedElite) - r.approachKills;
+    } else {
+        // 도달하지 못한 런은 **전부 접근 구간이다.** 0으로 두면 보스전 평균이
+        // 도달한 런만의 값인지 전체인지 모르게 된다
+        r.approachSec   = r.sec;
+        r.approachKills = w.run.killedTrash + w.run.killedElite;
+    }
     return r;
 }
 
@@ -127,13 +162,21 @@ int main(int argc, char** argv) {
         const double a = pa / 100.0, b = pb / 100.0;
         return 3.0 * 100.0 * std::sqrt(a * (1 - a) / N + b * (1 - b) / N);
     };
+    // **행을 저장해 둔다.** 아래 '공통 창' 절이 시드별로 대조해야 한다 —
+    // 즉석 집계로는 "모든 변종에서 도달한 시드"를 알 수 없다.
+    constexpr size_t kVarCount = sizeof(kVariants) / sizeof(kVariants[0]);
+    std::vector<std::vector<Row>> rows(kVarCount);
+    for (auto& v : rows) v.reserve(static_cast<size_t>(N));
+
     double baseClear = 0;
-    for (const Variant& v : kVariants) {
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        const Variant& v = kVariants[vi];
         double sec = 0;
         long tr = 0, el = 0, ce = 0, arrive = 0;
         int32_t re = 0, cl = 0, n = 0, arriveN = 0;
         for (int32_t s = 1; s <= N; ++s) {
             const Row r = runOne(static_cast<uint64_t>(s) * 7919ull, v.legend);
+            rows[vi].push_back(r);
             sec += r.sec; re += r.reached; cl += r.cleared;
             tr += r.trash; el += r.elites; ce += r.ccElite; ++n;
             if (r.arriveCorruption >= 0) { arrive += r.arriveCorruption; ++arriveN; }
@@ -142,9 +185,11 @@ int main(int argc, char** argv) {
         if (v.legend < 0) baseClear = clear;
         const bool sig = v.legend >= 0
                       && std::fabs(clear - baseClear) > sigma3(baseClear, clear);
-        // **런 길이를 같이 찍는다.** 빨리 끝나면 경험치가 덜 쌓여 보스 앞에서
-        // 레벨이 낮다 — "도달은 늘었는데 생존이 줄었다"가 모집단 효과인지
-        // 성장 부족인지 가리는 열이다.
+        // **런 길이를 같이 찍는다.** 다만 이 열로 메커니즘을 짚으려는 시도는
+        // 두 번 틀렸다(heroes_vertical_slice.md §4) — "런이 짧으면 경험치가 덜
+        // 쌓인다"는 처치 수가 반박하고, "장판이 보스에 안 닿는다"는 소용돌이·
+        // 원심력이 둘 다 안 닿아 차이를 설명하지 못한다. **구간을 나눠 재야
+        // 한다**는 것이 그 결론이고, 아래 두 절이 그 일을 한다.
         printf("%-12s %7.1f%% %10.1f%% %9.1f%% %+8.1f%%p%s %8.1fs %10.0f %10.1f %10.0f\n",
                v.name, 100.0 * re / n, re > 0 ? 100.0 * cl / re : 0.0, clear,
                v.legend < 0 ? 0.0 : clear - baseClear, sig ? " *" : "  ",
@@ -158,5 +203,87 @@ int main(int argc, char** argv) {
            baseClear, sigma3(baseClear, baseClear));
     printf("  전설 풀 %u칸 중 고유 각인 6칸만 본다 — 유물 3종은 dc_boss·dc_montecarlo 몫이다.\n",
            cfg.legendPoolSize);
+
+    // ── 구간 분리 ───────────────────────────────────────────────────
+    //
+    // 접근 구간과 보스전을 나눠 본다. 위 표의 '잡몹처치'·'런 길이'는 둘을 합친
+    // 값이라, 접근에서 일하는 효과와 보스전에서 일하는 효과가 섞인다.
+    printf("\n== 구간 분리 (도달한 런만) ==\n");
+    printf("%-12s %10s %12s %10s %10s %12s\n",
+           "전설", "접근 초", "접근 처치", "도달 레벨", "보스전 초", "보스전 처치/초");
+    printf("  %s\n", "--------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double aSec = 0, bSec = 0;
+        long   aK = 0, bK = 0, lv = 0;
+        int32_t n = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached) continue;
+            aSec += r.approachSec; bSec += r.bossSec;
+            aK += r.approachKills; bK += r.bossKills; lv += r.arriveLevel; ++n;
+        }
+        if (!n) continue;
+        printf("%-12s %9.1fs %12.1f %10.2f %9.1fs %12.3f\n", kVariants[vi].name,
+               aSec / n, static_cast<double>(aK) / n, static_cast<double>(lv) / n,
+               bSec / n, bSec > 0 ? bK / bSec : 0.0);
+    }
+    printf("  ※ 보스전 처치율은 보스전 **동안 죽인 잡몹·엘리트**다 — 보스전 중에도\n");
+    printf("     스폰이 계속되므로 잠식 시계가 거기서도 돈다\n");
+    printf("  ※ **'보스전 초'는 DPS 지표가 아니라 생존 시간이다.** 런은 클리어로도\n");
+    printf("     끝나고 죽어서도 끝난다 — 길다는 것은 '오래 버텼다'이고, 보스를\n");
+    printf("     빨리 깼다면 오히려 짧다. 승패와 섞이는 열이므로 단독으로 읽지 말 것\n");
+    printf("  ※ **도달 레벨이 카드와 무관하게 상수다**(17.4~17.5). 보스는 clearPoints\n");
+    printf("     (처치)로 열리므로 도달에 필요한 처치 수가 고정이고, 따라서 도달 시\n");
+    printf("     경험치도 고정이다 — '런이 짧으면 경험치가 덜 쌓인다'는 축은 데이터가\n");
+    printf("     지지하지 않는 수준이 아니라 **구조적으로 존재할 수 없다**\n");
+
+    // ── 공통 창 ─────────────────────────────────────────────────────
+    //
+    // **'도달 후 생존'은 변종마다 모집단이 달라 비교할 수 없다.** 도달률이 오르면
+    // 약한 판이 보스전 모집단에 섞여 들어와 생존율을 끌어내린다 — 처형이 도달률
+    // 99.5%에 생존 12.6%(기준 13.7%)인 것이 그 효과이고, 카드가 나쁘다는 뜻이
+    // 아니다. 위 표가 그 주의를 머리글에 적어 두지만, 숫자 자체는 교란된 채다.
+    //
+    // `dc_boss`가 쓰는 방법을 가져온다: **모든 변종에서 보스에 도달한 시드만**
+    // 모아 그 집합에서만 비교한다. 모집단이 같아지므로 생존율 차이가 카드의
+    // 효과다.
+    printf("\n== 공통 창 — 모든 변종에서 도달한 시드만 ==\n");
+    {
+        std::vector<int32_t> common;
+        for (int32_t i = 0; i < N; ++i) {
+            bool all = true;
+            for (size_t vi = 0; vi < kVarCount && all; ++vi) {
+                if (!rows[vi][static_cast<size_t>(i)].reached) all = false;
+            }
+            if (all) common.push_back(i);
+        }
+        printf("  공통 %zu판 / %d시드 (%.0f%%)\n",
+               common.size(), N, 100.0 * static_cast<double>(common.size()) / N);
+        if (common.empty()) {
+            printf("  ※ 공통 집합이 비었다 — 시드를 늘리거나 변종을 줄일 것\n");
+        } else {
+            printf("%-12s %12s %10s %12s %12s\n",
+                   "전설", "보스전 생존", "Δ생존", "보스전 초", "보스전 처치/초");
+            printf("  %s\n", "--------------------------------------------------------------");
+            double baseSurv = 0;
+            for (size_t vi = 0; vi < kVarCount; ++vi) {
+                double bSec = 0;
+                long   bK = 0;
+                int32_t cl = 0;
+                for (int32_t i : common) {
+                    const Row& r = rows[vi][static_cast<size_t>(i)];
+                    cl += r.cleared; bSec += r.bossSec; bK += r.bossKills;
+                }
+                const double nn = static_cast<double>(common.size());
+                const double surv = 100.0 * cl / nn;
+                if (vi == 0) baseSurv = surv;
+                printf("%-12s %11.1f%% %+9.1f%%p %9.1fs %12.3f\n",
+                       kVariants[vi].name, surv,
+                       vi == 0 ? 0.0 : surv - baseSurv,
+                       bSec / nn, bSec > 0 ? bK / bSec : 0.0);
+            }
+            printf("  ※ 모집단이 같으므로 **이 Δ생존은 카드의 효과다.** 위 표의\n");
+            printf("     '도달 후 생존'과 달리 희석에 교란되지 않는다\n");
+        }
+    }
     return 0;
 }

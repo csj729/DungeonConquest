@@ -417,14 +417,44 @@ inline Fixed executeIfBelowThreshold(World& w, const SimConfig& cfg, uint32_t i)
     return Fixed::fromRaw(static_cast<int32_t>(left));
 }
 
+// 계측 전용 스코프 — **이 범위 안의 `applySkillHit` 전달량을 각인 몫으로 센다.**
+//
+// 인자를 하나 더 다는 대신 범위로 표시한다. 각인 경로에 조기 반환이 있으므로
+// RAII여야 안전하다. **시뮬은 이 상태를 읽지 않는다**(쓰기 전용 규칙).
+struct LegendScope {
+    World& w;
+    explicit LegendScope(World& world) : w(world) { ++w.metrics.attribDepth; }
+    ~LegendScope() { --w.metrics.attribDepth; }
+    LegendScope(const LegendScope&) = delete;
+    LegendScope& operator=(const LegendScope&) = delete;
+};
+
 inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed rawDamage,
                            bool hooks = true) {
     if (w.entities.deadAt(i)) return Fixed{};
     // **배수는 맞기 전 체력으로 판정한다.** 이 타격이 임계 아래로 내려보내는
     // 경우까지 세면 같은 타격이 자기 조건을 만드는 셈이 된다.
     const Fixed weaken = hooks ? executeWeakenMult(w, cfg, i) : Fixed::one();
-    const Fixed dealt = mitigate(rawDamage * beaconMult(w, w.entities.archetype[i]) * weaken,
+    const Fixed raw = rawDamage * beaconMult(w, w.entities.archetype[i]);
+    const Fixed dealt = mitigate(raw * weaken,
                                  rendArmor(w, w.entities.armor[i]), cfg.armorK);
+    // ── 계측: 전달량 = min(피해, 때리기 전 남은 체력) ──
+    //
+    // 오버킬로 버려지는 몫을 빼므로 예산의 `overkill_keep`과 같은 단위다.
+    // **시뮬 계산에는 쓰이지 않는다** — 아래 `damageTaken`은 클램프 없이 그대로
+    // 더한다(죽음 판정이 그 초과분을 봐야 한다).
+    {
+        const int64_t left = static_cast<int64_t>(w.entities.maxHp[i].raw)
+                           - static_cast<int64_t>(w.entities.damageTaken[i].raw);
+        const int64_t got = dealt.raw < left ? dealt.raw : left;
+        if (w.metrics.attribDepth > 0) w.metrics.legendDelivered += got;
+        // 처형의 **피해 증폭분**은 각인 경로 밖(기본 공격)에서도 생기므로 따로 센다.
+        if (weaken.raw != Fixed::ONE_RAW) {
+            const Fixed plain = mitigate(raw, rendArmor(w, w.entities.armor[i]), cfg.armorK);
+            const int64_t plainGot = plain.raw < left ? plain.raw : left;
+            w.metrics.legendDelivered += got - plainGot;
+        }
+    }
     w.entities.damageTaken[i] += dealt;
 
     // ── W_EXECUTE(처형) — 고유 각인 ──
@@ -436,6 +466,7 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
     // 설계가 말한 범위는 **영웅의 타격**이고, 예산도 공속(1.54/s)으로 환산했다.
     // 틱형 피해까지 포함하면 판정 빈도가 올라 예산을 넘는다.
     const Fixed executed = hooks ? executeIfBelowThreshold(w, cfg, i) : Fixed{};
+    w.metrics.legendDelivered += executed.raw;   // 지운 체력 = 처형이 전달한 피해
 
     if (w.entities.damageTaken[i].raw < w.entities.maxHp[i].raw) {
         if (hooks) applyDecay(w, cfg, i);   // 살아남은 적에게만 · 도트 자신은 제외
@@ -850,6 +881,9 @@ inline void zoneRun(World& w, const SimConfig& cfg) {
         const uint32_t n = collectInRadius(w.entities, w.zones.posX[z], w.zones.posY[z],
                                            w.zones.radius[z], hit, config::MAX_ENTITIES);
         w.metrics.zoneTickHits += n;
+        // 장판 피해는 소용돌이·균열(Burn)과 여진(Aftershock)의 몫이다.
+        // Fissure 종류는 둔화라 이 분기에 오지 않는다(value가 둔화율이다).
+        const LegendScope attrib(w);
         for (uint32_t m = 0; m < n; ++m) {
             // **hooks=false** — 처형도 도트 갱신도 붙지 않는다. 그 둘은 **발동
             // 빈도**에 값이 붙는 훅이라, 틱형 피해에 걸면 판정 횟수가 공속의
@@ -1163,6 +1197,7 @@ inline Fixed applyShockwave(World& w, const SimConfig& cfg, uint32_t target, Fix
     ++w.metrics.shockCalls;
     w.metrics.shockHits += n;
     probeLineBands(w, cfg, target);
+    const LegendScope attrib(w);          // 아래 타격 전부가 충격파 몫이다
     Fixed dealt{};
     for (uint32_t k = 0; k < n; ++k) dealt += applySkillHit(w, cfg, hit[k], damage);
     return dealt;
@@ -1227,17 +1262,25 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
     Fixed   radius = base;
     Fixed   dealt{};
     int32_t stacks = 0;
+    // **1패스는 각인 몫이 아니다** — 각인이 없어도 기본 반경은 훑는다.
+    // 2패스부터가 원심력이 추가로 때리는 몫이다.
+    int32_t pass = 0;
     for (;;) {
         const uint32_t n = collectInRadius(w.entities, cx, cy, radius,
                                            hit, config::MAX_ENTITIES);
         int32_t fresh = 0;
-        for (uint32_t k = 0; k < n; ++k) {
-            if (struck[hit[k]] != 0) continue;
-            struck[hit[k]] = 1;
-            ++fresh;
-            ++w.metrics.aoeExtraHits;
-            dealt += applySkillHit(w, cfg, hit[k], damage);
-            (void)applyCc(w, cfg, hit[k], ccGain);
+        {
+            const int32_t depth = pass > 0 ? 1 : 0;
+            w.metrics.attribDepth += depth;
+            for (uint32_t k = 0; k < n; ++k) {
+                if (struck[hit[k]] != 0) continue;
+                struck[hit[k]] = 1;
+                ++fresh;
+                ++w.metrics.aoeExtraHits;
+                dealt += applySkillHit(w, cfg, hit[k], damage);
+                (void)applyCc(w, cfg, hit[k], ccGain);
+            }
+            w.metrics.attribDepth -= depth;
         
         }
         if (fresh == 0 || stacks >= cfg.centrifugeMaxStacks) {
@@ -1248,6 +1291,7 @@ inline Fixed applyAoeHits(World& w, const SimConfig& cfg, Fixed cx, Fixed cy,
         if (stacks > cfg.centrifugeMaxStacks) stacks = cfg.centrifugeMaxStacks;
         radius = base * (Fixed::one()
                        + Fixed::fromPermille(cfg.centrifugeStepPermille * stacks));
+        ++pass;
     }
     return dealt;
 }

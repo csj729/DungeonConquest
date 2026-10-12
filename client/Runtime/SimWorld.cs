@@ -156,6 +156,38 @@ namespace DungeonConquest.Sim
         public ReadOnlySpan<byte> Archetypes
             => new ReadOnlySpan<byte>((void*)DcNative.dc_entity_archetype(_handle), EntityCount);
 
+        /// <summary>
+        /// 쌓인 출력 이벤트를 넘기고 큐를 비운다. **복사하지 않는다** — 코어가
+        /// 소유한 배열을 그대로 가리키므로, 다음 <see cref="Step"/>이나 다음
+        /// 드레인 전에 다 읽어야 한다.
+        ///
+        /// <para><b>틱마다 부를 필요는 없다.</b> 드라이버가 한 프레임에 여러 틱을
+        /// 소비하면 그 틱들의 이벤트가 **순서대로 쌓여** 한 번에 온다. 틱마다
+        /// 플립하는 설계였다면 앞의 틱 이벤트가 사라졌을 자리다.</para>
+        ///
+        /// <para><paramref name="dropped"/>가 0이 아니면 큐가 넘쳐 버린 것이다 —
+        /// 연출 하나가 빠진 것과 큐가 터진 것은 다른 문제이므로 로그에 남길 것.</para>
+        /// </summary>
+        public ReadOnlySpan<DcEvent> DrainEvents(out int dropped)
+        {
+            IntPtr p = DcNative.dc_events_drain(_handle, out int count, out dropped);
+            if (p == IntPtr.Zero || count <= 0) return default;
+            return new ReadOnlySpan<DcEvent>((void*)p, count);
+        }
+
+        /// <summary>
+        /// 이번 드레인에 **플레이어 선택이 필요한 이벤트**가 있는가.
+        /// 드라이버가 0배속으로 전환하는 조건이다 (design.md §10 자동 일시정지).
+        /// </summary>
+        public static bool NeedsChoice(ReadOnlySpan<DcEvent> events)
+        {
+            for (int i = 0; i < events.Length; ++i)
+            {
+                if (events[i].Kind == (int)DcEventKind.CardOffer) return true;
+            }
+            return false;
+        }
+
         private ReadOnlySpan<int> Span(IntPtr p)
             => p == IntPtr.Zero ? default : new ReadOnlySpan<int>((void*)p, EntityCount);
         private ReadOnlySpan<uint> SpanU(IntPtr p)

@@ -123,6 +123,8 @@ inline bool openSkillQte(World& w, const SimConfig& cfg, uint32_t skillIndex) {
     q.perfectFrom = q.perfectTo - cfg.qtePerfectWindowTicks;
     w.hero.qte        = q;
     w.hero.qteCooldown = cfg.qteCooldownTicks;
+    // **드라이버가 슬로모로 전환하는 신호다** (design.md §10 QTE 슬로모).
+    w.events.push(EventKind::QteOpen, w.tickCount(), w.hero.posX, w.hero.posY, len);
     return true;
 }
 
@@ -138,6 +140,11 @@ inline void openCrisisQte(World& w, const SimConfig& cfg, EntityId src, int32_t 
     q.perfectFrom = q.perfectTo - cfg.qtePerfectWindowTicks;
     w.hero.qte         = q;
     w.hero.qteCooldown = cfg.qteCooldownTicks;
+    const int32_t sd = w.entities.denseOf(src);
+    w.events.push(EventKind::QteOpen, w.tickCount(), src,
+                  sd >= 0 ? w.entities.posX[static_cast<uint32_t>(sd)] : w.hero.posX,
+                  sd >= 0 ? w.entities.posY[static_cast<uint32_t>(sd)] : w.hero.posY,
+                  windup);
 }
 
 // 피해 적용 + 처치 판정. 영웅 기본 공격과 스킬이 같은 경로를 쓴다.
@@ -447,6 +454,10 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
         const int64_t left = static_cast<int64_t>(w.entities.maxHp[i].raw)
                            - static_cast<int64_t>(w.entities.damageTaken[i].raw);
         const int64_t got = dealt.raw < left ? dealt.raw : left;
+        // 연출용 출력 — **상태 디프로는 같은 틱의 두 번째 타격이 안 보인다**
+        w.events.push(EventKind::Hit, w.tickCount(), w.entities.idAt(i),
+                      w.entities.posX[i], w.entities.posY[i],
+                      static_cast<int32_t>(got));
         if (w.metrics.attribDepth > 0) w.metrics.legendDelivered += got;
         // 처형의 **피해 증폭분**은 각인 경로 밖(기본 공격)에서도 생기므로 따로 센다.
         if (weaken.raw != Fixed::ONE_RAW) {
@@ -474,6 +485,11 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
     }
     // **처형이 지운 체력을 더해서 돌려준다** — 아래 두 return 모두 그렇다.
     if (!w.entities.markDead(w.entities.idAt(i))) return dealt + executed;
+    // **죽은 자리를 이벤트가 들고 있어야 한다.** 엔티티 행은 틱 끝에 압축되어
+    // 사라지므로, 다음 프레임의 상태 버퍼에는 "어디서 죽었는지"가 없다.
+    w.events.push(EventKind::Kill, w.tickCount(), w.entities.idAt(i),
+                  w.entities.posX[i], w.entities.posY[i],
+                  static_cast<int32_t>(w.entities.archetype[i]));
     // 경험치는 실효 체력에 비례한다 (§4). Fixed가 아니라 정수 누적값이다 —
     // 고정소수점 범위 ±524,288을 훨씬 넘고 소수점이 필요 없다.
     {
@@ -498,6 +514,8 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
             ++w.metrics.orbsSpawned;
             w.orbs.push(w.entities.posX[i], w.entities.posY[i],
                         cfg.orbTrashAmount, orbExpire);
+            w.events.push(EventKind::OrbDrop, w.tickCount(),
+                          w.entities.posX[i], w.entities.posY[i], cfg.orbTrashAmount);
         }
     } else if (w.entities.archetype[i] == Archetype::Boss) {
         // **보스 처치가 곧 클리어다** (§2).
@@ -505,12 +523,16 @@ inline Fixed applySkillHit(World& w, const SimConfig& cfg, uint32_t i, Fixed raw
         if (!w.run.over()) {
             w.run.outcome = RunOutcome::Cleared;
             w.run.endTick = w.tickCount();
+            w.events.push(EventKind::RunEnd, w.tickCount(), w.hero.posX, w.hero.posY,
+                          static_cast<int32_t>(w.run.outcome));
         }
     } else {
         ++w.run.killedElite;
         w.run.clearPoints += cfg.elitePoints;
         ++w.metrics.orbsSpawned;
         w.orbs.push(w.entities.posX[i], w.entities.posY[i], cfg.orbEliteAmount, orbExpire);
+        w.events.push(EventKind::OrbDrop, w.tickCount(),
+                      w.entities.posX[i], w.entities.posY[i], cfg.orbEliteAmount);
     }
     return dealt + executed;
 }
@@ -619,6 +641,8 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
         const Fixed zoneR = hasCentri ? centrifugeRadius(w, cfg, ccx, ccy, aoeR) : aoeR;
         w.zones.push(ZoneKind::Burn, ccx, ccy, zoneR, perTick,
                      w.tickCount() + cfg.vortexDurationTicks);
+        w.events.push(EventKind::ZoneSpawn, w.tickCount(), ccx, ccy,
+                      static_cast<int32_t>(ZoneKind::Burn));
         // **E_CHAIN(연타)은 소용돌이에 붙지 않는다.** 장판을 두 개 깔면 지속이
         // 겹쳐 2배가 되는데, 연타의 설계는 "총 피해를 2회로 나눈다"이지
         // "효과를 두 번 건다"가 아니다.
@@ -693,6 +717,8 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
                          * qteAmplify(cfg, g) * swarmMult(w, cfg) * heroPowerMult(w, cfg);
         w.zones.push(ZoneKind::Aftershock, ccx, ccy, aoeR, boom,
                      w.tickCount() + cfg.aftershockFuseTicks);
+        w.events.push(EventKind::ZoneSpawn, w.tickCount(), ccx, ccy,
+                      static_cast<int32_t>(ZoneKind::Aftershock));
     }
     if (cfg.uniqueOnSkill(legendIndexOf(LegendId::Fissure), skillIndex)
         && w.cards.legendHas(legendIndexOf(LegendId::Fissure))) {
@@ -712,6 +738,8 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
             w.zones.push(ZoneKind::Fissure, ccx, ccy,
                          cfg.fissureRadius, Fixed::fromPermille(cfg.fissureSlowPermille),
                          w.tickCount() + cfg.fissureDurationTicks);
+            w.events.push(EventKind::ZoneSpawn, w.tickCount(), ccx, ccy,
+                          static_cast<int32_t>(ZoneKind::Fissure));
         }
         // 피해는 **캐스트 시점에 고정**한다 (소용돌이·여진과 같은 규칙) — 매 틱
         // 다시 계산하면 지속 중에 얻은 버프가 이미 깔린 장판에 소급된다.
@@ -722,6 +750,8 @@ inline void executeSkill(World& w, const SimConfig& cfg, uint32_t skillIndex, Qt
                                 * heroPowerMult(w, cfg) / cfg.tickHz;
             w.zones.push(ZoneKind::Burn, ccx, ccy, aoeR, perTick,
                          w.tickCount() + cfg.fissureDurationTicks);
+            w.events.push(EventKind::ZoneSpawn, w.tickCount(), ccx, ccy,
+                          static_cast<int32_t>(ZoneKind::Burn));
         }
     }
 }
@@ -810,6 +840,8 @@ inline bool applyCc(World& w, const SimConfig& cfg, uint32_t i, int32_t gainPerm
     ++w.entities.ccTriggerCount[i];
     w.entities.groggyLeft[i] = cfg.groggyTicks;
     w.entities.flags[i] = static_cast<uint8_t>(w.entities.flags[i] | EntityFlag::Groggy);
+    w.events.push(EventKind::CcTrigger, w.tickCount(), w.entities.idAt(i),
+                  w.entities.posX[i], w.entities.posY[i], cfg.groggyTicks);
     return true;
 }
 
@@ -821,6 +853,8 @@ inline void qteRun(World& w, const SimConfig& cfg) {
     const QteWindow q = w.hero.qte;
     const QteGrade  g = q.hasInput ? q.input : QteGrade::Miss;
     w.hero.qte.reset();
+    w.events.push(EventKind::QteResult, w.tickCount(), w.hero.posX, w.hero.posY,
+                  static_cast<int32_t>(g));
 
     if (q.kind == QteKind::SkillAmplify) {
         executeSkill(w, cfg, q.skillIndex, g);
@@ -946,7 +980,12 @@ inline void orbRun(World& w, const SimConfig& cfg) {
         const int64_t dy = static_cast<int64_t>(w.orbs.posY[k].raw) - w.hero.posY.raw;
         if (dx * dx + dy * dy > r2) continue;
         const Fixed want = Fixed(w.orbs.amount[k]);
-        w.metrics.purgeOrbs += w.purgeCorruption(want).raw;
+        const Fixed got = w.purgeCorruption(want);
+        w.metrics.purgeOrbs += got.raw;
+        // **요청량이 아니라 실제 정화량이다** — 게이지가 비어 있으면 초과분은
+        // 버려지고, 연출이 요청량을 보여 주면 플레이어가 회복을 과대평가한다
+        w.events.push(EventKind::OrbPick, w.tickCount(),
+                      w.hero.posX, w.hero.posY, got.raw);
         w.metrics.orbRequested += want.raw;
         ++w.metrics.orbsPicked;
         w.orbs.removeAt(k);
@@ -995,6 +1034,8 @@ inline void bossPhaseRun(World& w, const SimConfig& cfg) {
         const int64_t hp  = max - static_cast<int64_t>(w.entities.damageTaken[i].raw);
         if (hp * 1000 <= max * cfg.bossPhase2AtPermille) {
             w.metrics.purgeBoss += w.purgeCorruption(Fixed(cfg.bossPhase2Purge)).raw;
+            w.events.push(EventKind::BossPhase2, w.tickCount(), w.entities.idAt(i),
+                          w.entities.posX[i], w.entities.posY[i], cfg.bossPhase2Purge);
             w.run.bossPhase2 = true;
             // 첫 소환은 **한 주기 뒤다.** 진입 즉시 부르면 정화와 소환이 같은 틱에
             // 겹쳐 서로를 가린다 — 숨통이 트인 것도 물량이 는 것도 체감되지 않는다.

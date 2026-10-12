@@ -46,6 +46,10 @@ TYPE_MAP = {
     "const uint8_t*": "IntPtr",
     "const uint32_t*": "IntPtr",
     "DcChecksums*": "out DcChecksums",
+    # **이벤트 배열은 복사하지 않는다** — 코어가 소유한 포인터를 그대로 받는다
+    # (design.md: 매 틱 구조체 마샬링 금지). C#는 IntPtr로 받아 Span으로 감싼다.
+    "const DcEvent*": "IntPtr",
+    "int32_t*": "out int",
 }
 
 
@@ -150,6 +154,15 @@ ENUM_NAME_MAP = {
         "DC_INPUT_NONE": "None", "DC_INPUT_MANUAL_TARGET": "ManualTarget",
         "DC_INPUT_QTE_GRADE": "QteGrade", "DC_INPUT_CARD_CHOICE": "CardChoice",
         "DC_INPUT_CRAFT": "Craft",
+    },
+    "DcEventKind": {
+        "DC_EV_NONE": "None", "DC_EV_HIT": "Hit", "DC_EV_KILL": "Kill",
+        "DC_EV_ORB_DROP": "OrbDrop", "DC_EV_ORB_PICK": "OrbPick",
+        "DC_EV_LEVEL_UP": "LevelUp", "DC_EV_CARD_OFFER": "CardOffer",
+        "DC_EV_QTE_OPEN": "QteOpen", "DC_EV_QTE_RESULT": "QteResult",
+        "DC_EV_CC_TRIGGER": "CcTrigger", "DC_EV_ZONE_SPAWN": "ZoneSpawn",
+        "DC_EV_BOSS_SPAWN": "BossSpawn", "DC_EV_BOSS_PHASE2": "BossPhase2",
+        "DC_EV_SEGMENT_CLEAR": "SegmentClear", "DC_EV_RUN_END": "RunEnd",
     },
 }
 

@@ -84,6 +84,7 @@ inline void progressRun(World& w, const SimConfig& cfg, const RecipeTable& table
     // 한 번만 주면 빨리 미는 빌드가 오히려 손해를 본다.
     w.metrics.purgeSegment += w.purgeCorruption(
         Fixed((seg - w.run.segmentIndex) * cfg.segmentClearPurge)).raw;
+    w.events.push(EventKind::SegmentClear, w.tickCount(), w.hero.posX, w.hero.posY, seg);
 
     // RL_FORGE(대장장이의 화로) — **넘긴 칸마다 한 개**다. 정화와 같은 이유로
     // 곱해야 한다. 한 번만 주면 엘리트를 연달아 잡아 두 구간을 한 틱에 넘기는
@@ -134,9 +135,11 @@ inline void spawnRun(World& w, const SimConfig& cfg) {
         SpawnDesc d = makeDesc(cfg.boss, cfg.boss.hp);
         d.posX = bx;
         d.posY = by;
-        if (w.entities.spawn(d, w.tickCount(), w.masterSeed()).valid()) {
+        const EntityId bid = w.entities.spawn(d, w.tickCount(), w.masterSeed());
+        if (bid.valid()) {
             w.run.bossSpawned = true;
             w.run.bossAlive   = true;
+            w.events.push(EventKind::BossSpawn, w.tickCount(), bid, bx, by, 0);
         }
     }
 

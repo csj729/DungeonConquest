@@ -19,6 +19,7 @@
 #include "checksum.h"
 #include "config.h"
 #include "entity_store.h"
+#include "event.h"
 #include "fixed.h"
 #include "card.h"
 #include "input.h"
@@ -487,6 +488,7 @@ public:
         hero.slowAura = 0;
         cards     = CardState{};
         metrics   = Metrics{};
+        events.clear();
         nextSourceId_ = 1;                   // 0은 "없음" 예약
 
         rngSpawn  = Rng::derive(masterSeed, RngStream::Spawn);
@@ -721,6 +723,9 @@ public:
     // 계측 — **[상태]가 아니다. 쓰기 전용이고 체크섬에 들어가지 않는다.**
     // 스냅샷에는 따라가지만(memcpy) 시뮬이 읽지 않으므로 값이 새도 결과가 같다.
     Metrics     metrics{};
+    // 출력 이벤트 — **[상태]가 아니다.** 같은 이유로 체크섬에 들어가지 않는다.
+    // 프레젠테이션이 드레인할 때까지 쌓인다 (event.h 참조).
+    EventQueue  events{};
 
     Rng rngSpawn{};
     Rng rngCombat{};

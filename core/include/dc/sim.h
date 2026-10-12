@@ -74,6 +74,8 @@ inline void stepWorld(World& w, const SimConfig& cfg, const RecipeTable& table,
     if (!w.run.over() && w.hero.dead()) {
         w.run.outcome = RunOutcome::Dead;
         w.run.endTick = w.tickCount();
+        w.events.push(EventKind::RunEnd, w.tickCount(), w.hero.posX, w.hero.posY,
+                      static_cast<int32_t>(w.run.outcome));
     }
 }
 

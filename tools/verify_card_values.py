@@ -218,6 +218,12 @@ LEGEND_MEASURED = {
 # 지문 하나가 `LEGEND_MEASURED`와 `LEGEND_DPS_MEASURED`를 **둘 다** 덮는다 —
 # 같은 시뮬에서 나온 값이라 무효화 조건이 같다.
 #
+# **지문은 보수적이다.** 전달량 계측을 더했을 때 코어 헤더가 바뀌어 지문이 울렸고,
+# 다시 돌리니 `LEGEND_MEASURED`가 **한 자리도 움직이지 않았다**(골든 체크섬이 이미
+# 그걸 보장하고 있었다). 즉 지문은 "시뮬이 바뀌었을 수 있다"를 말하고 "바뀌었다"를
+# 말하지 않는다. 그 대가로 계측을 더할 때마다 재측정이 붙는데, **지문을 손으로
+# 갱신하는 길을 열지 않는 쪽**을 고른다 — 거짓 음성 한 번이 오탐 열 번보다 비싸다.
+#
 # 범위 구멍으로 **세 번** 당했다. 손으로 고른 키 목록(고유 각인만 담아 E_PIERCE
 # 변경을 놓쳤다) → 데이터 전체 해시 → 그래도 **코드가 빠져 있었다**: 장판 흡혈
 # 버그를 고쳤을 때 `data/*.json`은 한 글자도 바뀌지 않아 지문이 그대로였고, 이
@@ -228,7 +234,7 @@ LEGEND_MEASURED = {
 # (주석 제외)다. **측정을 무효화하는 것은 데이터만이 아니라 시뮬 코드다.**
 # 입막음은 여전히 가능하지만, 지문이 손으로 지어낼 수 없는 값이라 "측정 없이
 # 갱신"이 눈에 띈다.
-LEGEND_MEASURED_FINGERPRINT = "9688d4d5fff2e7a6"
+LEGEND_MEASURED_FINGERPRINT = "61e7f1ae5ad7ec6e"
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
 # 때문이다. 그래서 한 행만 갈아 끼우면 안 되고 기준선까지 같이 다시 적는다.
@@ -254,12 +260,13 @@ LEGEND_MEASURED_FINGERPRINT = "9688d4d5fff2e7a6"
 #
 # (접근 ΔDPS, 보스전 ΔDPS) — 기준선 행을 뺀 값이다.
 LEGEND_DPS_MEASURED = {
-    "W_EXECUTE":    (None, None),
-    "W_SHOCKWAVE":  (None, None),
-    "W_VORTEX":     (None, None),
-    "W_CENTRIFUGE": (None, None),
-    "W_AFTERSHOCK": (None, None),
-    "W_FISSURE":    (None, None),
+    # id             접근   보스전
+    "W_EXECUTE":    (6.41,  4.51),
+    "W_SHOCKWAVE":  (3.88,  4.51),
+    "W_VORTEX":     (15.22, 23.33),
+    "W_CENTRIFUGE": (7.33,  11.73),
+    "W_AFTERSHOCK": (2.92,  4.86),
+    "W_FISSURE":    (3.09,  5.11),
 }
 # **총량과 Δ가 같은 각인만 예산과 직접 비교할 수 있다.**
 #

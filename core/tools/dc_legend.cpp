@@ -36,6 +36,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include <vector>
 
@@ -233,6 +234,11 @@ static Row runOne(uint64_t seed, int32_t legend) {
 
 int main(int argc, char** argv) {
     const int32_t N = argc > 1 ? std::atoi(argv[1]) : 1000;
+    // **변종 필터.** 한 카드 수치를 맞출 때 일곱 갈래를 다 돌릴 이유가 없다 —
+    // 2갈래면 3.5배 빠르다(5000시드 75분 → 21분). 태그를 주면 기준선 + 그
+    // 변종만 돈다. **보고용 표는 필터 없이 돌린 것만 쓴다** — 공통 창이
+    // 변종 집합에 딸려 있으므로 필터를 건 Δ생존은 전체 표와 비교할 수 없다.
+    const char* only = argc > 2 ? argv[2] : nullptr;
     const SimConfig& cfg = dev::data().cfg;
 
     // 전설 풀 인덱스. 유물 3칸(0~2)은 이미 다른 도구가 재므로 고유 각인만 본다.
@@ -240,7 +246,7 @@ int main(int argc, char** argv) {
     // `%9.9s`가 바이트로 자르고 폭도 어긋난다 — 실제로 "소용돌이"가 "소용돌"로
     // 잘려 표가 밀렸다. 표 머리글·행 이름에만 쓰고 아래 범례로 잇는다.
     struct Variant { const char* name; const char* tag; int32_t legend; };
-    const Variant kVariants[] = {
+    const Variant kAll[] = {
         {"없음(기준)",  "BASE", -1},
         {"처형",         "EXE",  static_cast<int32_t>(legendIndexOf(LegendId::Execute))},
         {"충격파",       "SHK",  static_cast<int32_t>(legendIndexOf(LegendId::Shockwave))},
@@ -249,6 +255,17 @@ int main(int argc, char** argv) {
         {"여진",         "AFT",  static_cast<int32_t>(legendIndexOf(LegendId::Aftershock))},
         {"균열",         "FIS",  static_cast<int32_t>(legendIndexOf(LegendId::Fissure))},
     };
+    Variant kVariants[sizeof(kAll) / sizeof(kAll[0])];
+    size_t kVarN = 0;
+    for (const Variant& v : kAll) {
+        if (only == nullptr || v.legend < 0 || std::strcmp(v.tag, only) == 0) {
+            kVariants[kVarN++] = v;
+        }
+    }
+    if (only != nullptr) {
+        printf("※ 변종 필터 \"%s\" — %zu갈래만 돈다. **공통 창이 변종 집합에\n"
+               "   딸려 있으므로 전체 표와 비교하지 말 것.**\n\n", only, kVarN);
+    }
 
     printf("=== 고유 각인별 실측 (시드 %d · QTE 항상 완벽) ===\n", N);
     printf("클리어 = 도달 × 도달 후 생존. **도달 후 생존은 품질이 아니다** —\n");
@@ -270,7 +287,7 @@ int main(int argc, char** argv) {
     };
     // **행을 저장해 둔다.** 아래 '공통 창' 절이 시드별로 대조해야 한다 —
     // 즉석 집계로는 "모든 변종에서 도달한 시드"를 알 수 없다.
-    constexpr size_t kVarCount = sizeof(kVariants) / sizeof(kVariants[0]);
+    const size_t kVarCount = kVarN;
     std::vector<std::vector<Row>> rows(kVarCount);
     for (auto& v : rows) v.reserve(static_cast<size_t>(N));
 

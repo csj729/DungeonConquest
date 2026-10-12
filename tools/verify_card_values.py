@@ -214,7 +214,9 @@ LEGEND_MEASURED = {
     "W_AFTERSHOCK": (349.9, 14.4),
     "W_FISSURE":    (352.2, 14.8),
 }
-# **이 지문과 위 표는 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
+# **이 지문과 위 표들은 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
+# 지문 하나가 `LEGEND_MEASURED`와 `LEGEND_DPS_MEASURED`를 **둘 다** 덮는다 —
+# 같은 시뮬에서 나온 값이라 무효화 조건이 같다.
 #
 # 범위 구멍으로 **세 번** 당했다. 손으로 고른 키 목록(고유 각인만 담아 E_PIERCE
 # 변경을 놓쳤다) → 데이터 전체 해시 → 그래도 **코드가 빠져 있었다**: 장판 흡혈
@@ -241,6 +243,53 @@ LEGEND_MEASURED_FINGERPRINT = "9688d4d5fff2e7a6"
 # 전설을 하나만 강제하므로, 전설 × 전설은 어느 쪽에서도 보이지 않는다. 짝 하나만
 # 게이트에 넣으면 나머지를 안 보는 것이 더 또렷해지므로 넣지 않았다 — 조합 전반은
 # dc_montecarlo(§14-10) 몫이다.
+# ── 각인이 **전달한** 피해 (실측) ───────────────────────────────
+#
+# **예산이 말하는 ΔDPS를 처음으로 직접 재는 자리다.** 지금까지 예산은 대리 지표로만
+# 검증됐다 — 처치율 · 클리어율 · 대상 수. 그 셋은 예산과 단위가 달라서, 어긋났을 때
+# "예산이 틀렸나 환산이 틀렸나"를 가릴 수 없었다.
+#
+# `dc_legend`가 각인 경로에서 나온 **전달량**(`min(피해, 남은 체력)`)을 구간별로
+# 누적한다. 오버킬 손실이 빠져 있으므로 `overkill_keep`과 같은 단위다.
+#
+# (접근 ΔDPS, 보스전 ΔDPS) — 기준선 행을 뺀 값이다.
+LEGEND_DPS_MEASURED = {
+    "W_EXECUTE":    (None, None),
+    "W_SHOCKWAVE":  (None, None),
+    "W_VORTEX":     (None, None),
+    "W_CENTRIFUGE": (None, None),
+    "W_AFTERSHOCK": (None, None),
+    "W_FISSURE":    (None, None),
+}
+# **총량과 Δ가 같은 각인만 예산과 직접 비교할 수 있다.**
+#
+#   가산 — 추가 피해다. 총량 = Δ. 예산과 바로 비교된다
+#   대체 — 소용돌이는 즉발을 장판으로 바꾼다. 총량 ≫ Δ이고 예산식은 잃은 즉발분을
+#          뺀다. 반사실(각인이 없었으면 즉발이 얼마를 전달했을까)을 재야 비교된다
+#   가속 — 처형은 같은 피해를 덜 들여 처치한다. 지운 체력은 **어차피 들어갔을**
+#          피해이므로 Δ피해가 아니다. 값은 피해가 아니라 시간이다
+#
+# 둘은 비교에서 빼고 **왜 뺐는지 출력에 적는다** — 조용히 빠지면 "예산과 맞는 카드가
+# 넷"으로 읽힌다.
+LEGEND_KIND = {
+    "W_EXECUTE":    "가속",
+    "W_SHOCKWAVE":  "가산",
+    "W_VORTEX":     "대체",
+    "W_CENTRIFUGE": "가산",
+    "W_AFTERSHOCK": "가산",
+    "W_FISSURE":    "가산",
+}
+# 가산형의 예산 대 실측 배수 상한. **못 박은 값이다** — 지금을 고정해 더 나빠지면
+# 걸리게 하는 목적이고, 1.0이 아닌 이유는 아래 두 카드가 아직 설명되지 않았기
+# 때문이다(원심력 · 충격파). 설명하고 환산을 고치면 이 값을 내린다.
+BUDGET_VS_MEASURED_MAX = 3.0
+# 구간 균형 하한 — 보스전 ΔDPS ÷ 접근 ΔDPS.
+#
+# **런 전체 평균 하나로는 보이지 않는 축이다.** 충격파가 띠를 고치기 전에 이 값이
+# 0.38이었고(발동당 1.44 → 0.55명) 예산비는 100%였다. 승패는 보스전에서 갈리므로,
+# 보스전에서 값이 사라지는 카드는 예산을 채워도 일하지 않는다.
+PHASE_BALANCE_MIN = 0.60
+
 # 측정에 쓴 시드 수. 3σ가 여기서 나온다.
 LEGEND_SEEDS = 5000
 
@@ -867,6 +916,55 @@ def report():
     print("     52.6%(기준선 67.2%)로 여섯 중 최저다. 처형의 보정은 그만큼 과대평가다")
     print(f"  ※ 잠식 유입 {MAP_INFLOW:.1f}/초 (verify_recovery 실측의 가중평균) ·"
           f" 전설 예산 {legend_budget:.2f} DPS")
+    # ── 예산 대 실측 · 구간 균형 ──
+    #
+    # **예산식의 축이 여기서 검증된다.** 위 표의 `피해` 열은 예산식이 스스로 낸
+    # 값이고, 이 절은 그 값을 **실제로 전달된 피해**와 대조한다. 지금까지 검증은
+    # 늘 대리 지표(처치율·클리어율·대상 수)로 했고, 어긋나면 어느 쪽이 틀렸는지
+    # 가릴 수 없었다.
+    print("\n=== 예산 대 실측 — 각인이 전달한 피해 ===")
+    print(f"  {'ID':<14} {'종류':<5} {'접근':>7} {'보스전':>7} {'예산':>7}"
+          f" {'실측÷예산':>9} {'균형':>7}  판정")
+    print("  " + "-" * 66)
+    dps_pending = []
+    for uid, e in UNIQUE.items():
+        a, b = LEGEND_DPS_MEASURED.get(uid, (None, None))
+        kind = LEGEND_KIND[uid]
+        if a is None or b is None:
+            dps_pending.append(uid)
+            print(f"  {uid:<14} {kind:<5} {'—':>7} {'—':>7} {'—':>7} {'—':>9}"
+                  f" {'—':>7}  ※ 미측정")
+            continue
+        bal = b / a if a > 0 else 0.0
+        bal_ok = bal >= PHASE_BALANCE_MIN
+        ok &= bal_ok
+        if kind == "가산":
+            d = unique_delta(uid)
+            ratio = a / d if d and d > 0 else 0.0
+            r_ok = ratio <= BUDGET_VS_MEASURED_MAX
+            ok &= r_ok
+            flag = "PASS" if (bal_ok and r_ok) else "FAIL"
+            print(f"  {uid:<14} {kind:<5} {a:>7.2f} {b:>7.2f} {d:>7.2f}"
+                  f" {ratio:>8.2f}배 {bal:>6.2f}배  {flag}")
+        else:
+            flag = "PASS" if bal_ok else "FAIL"
+            why = "즉발을 대체한다" if kind == "대체" else "지운 체력은 어차피 들어갔을 피해다"
+            print(f"  {uid:<14} {kind:<5} {a:>7.2f} {b:>7.2f} {'—':>7} {'—':>9}"
+                  f" {bal:>6.2f}배  {flag}  ※ {why}")
+    if dps_pending:
+        ok = False
+        print(f"  ← **{', '.join(dps_pending)} 미측정.** `dc_legend`를 돌려")
+        print("     LEGEND_DPS_MEASURED를 채울 것 — 비워 두면 이 절이 아무것도 안 본다")
+    print(f"  ※ **총량과 Δ가 같은 각인만 예산과 비교한다.** 대체형(소용돌이)은"
+          f" 잃은 즉발분을")
+    print("     빼야 하고, 가속형(처형)은 Δ가 피해가 아니라 시간이다. 반사실을 재면")
+    print("     둘도 비교할 수 있다 — 그게 이 축의 다음 작업이다")
+    print(f"  ※ 구간 균형 하한 {PHASE_BALANCE_MIN:.2f}배 · 가산형 실측÷예산 상한"
+          f" {BUDGET_VS_MEASURED_MAX:.1f}배")
+    print("  ※ **순수 가산형 둘(여진·균열)이 예산과 4% 안에서 맞는다** — 측정과")
+    print("     모델이 같은 언어를 쓴다는 뜻이고, 그래서 나머지의 어긋남은")
+    print("     측정 잡음이 아니라 환산 오류다")
+
     # ── 충격파 반폭 절벽 가드 ──
     #
     # **예산비만 보면 이 선을 못 본다.** 1000‰에서도 161%라 ±30% 밴드가 걸러

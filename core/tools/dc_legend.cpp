@@ -92,6 +92,8 @@ struct Row {
     int64_t basicT = 0, idleT = 0, castT = 0, acT = 0, csT = 0;
     int64_t aoeHistA[dc::Metrics::AOE_BUCKETS] = {0};
     int64_t aoeHistT[dc::Metrics::AOE_BUCKETS] = {0};
+    // 각인이 전달한 피해 (접근 / 런 전체) — 예산과 같은 단위다
+    int64_t ldA = 0, ldT = 0;
     // 평균 생존 적 수. **"물량 채널이 상한에 못 박혀 있는가"를 묻는 열이다** —
     // 스폰이 처치를 즉시 메우면 처치율을 올려도 물량 유입이 움직이지 않는다.
     double  aliveAvg = 0;
@@ -125,6 +127,7 @@ static void captureTotals(Row& r, const dc::World& w) {
     r.castT  = w.metrics.skillCasts;
     r.acT    = w.metrics.aoeCasts;
     r.csT    = w.metrics.centriStacks;
+    r.ldT    = w.metrics.legendDelivered;
     for (int32_t b = 0; b < dc::Metrics::AOE_BUCKETS; ++b) {
         r.aoeHistT[b] = w.metrics.aoeRadiusHist[b];
     }
@@ -142,6 +145,7 @@ static void captureChannels(Row& r, const dc::World& w) {
     r.castA  = w.metrics.skillCasts;
     r.acA    = w.metrics.aoeCasts;
     r.csA    = w.metrics.centriStacks;
+    r.ldA    = w.metrics.legendDelivered;
     for (int32_t b = 0; b < dc::Metrics::AOE_BUCKETS; ++b) {
         r.aoeHistA[b] = w.metrics.aoeRadiusHist[b];
     }
@@ -396,26 +400,29 @@ int main(int argc, char** argv) {
     // 흡혈·도트도 빠진다. 처형이 도달 시 잠식은 절반인데 보스전 순유입이 기준선보다
     // 높았던 것(19.2 대 18.5)을 설명할 후보가 이 경로다.
     printf("\n== 영웅이 놀고 있는가 (도달한 런만 · 초당) ==\n");
-    printf("%-12s %9s %9s %9s %9s %9s %9s\n",
+    printf("%-12s %9s %9s %9s %9s %9s %9s %9s %9s\n",
            "전설", "기본타(접)", "유휴틱(접)", "발동(접)",
-           "기본타(보)", "유휴틱(보)", "발동(보)");
+           "기본타(보)", "유휴틱(보)", "발동(보)", "광역발동(접)", "광역발동(보)");
     printf("  %s\n", "--------------------------------------------------------------------------");
     for (size_t vi = 0; vi < kVarCount; ++vi) {
-        double ba = 0, ia = 0, ca = 0, bb = 0, ib = 0, cb = 0;
+        double ba = 0, ia = 0, ca = 0, bb = 0, ib = 0, cb = 0, aa = 0, ab = 0;
         int32_t n = 0;
         for (const Row& r : rows[vi]) {
             if (!r.reached || r.approachSec <= 0 || r.bossSec <= 0) continue;
             ba += static_cast<double>(r.basicA) / r.approachSec;
             ia += static_cast<double>(r.idleA)  / r.approachSec;
             ca += static_cast<double>(r.castA)  / r.approachSec;
+            aa += static_cast<double>(r.acA)    / r.approachSec;
             bb += static_cast<double>(r.basicT - r.basicA) / r.bossSec;
             ib += static_cast<double>(r.idleT  - r.idleA)  / r.bossSec;
             cb += static_cast<double>(r.castT  - r.castA)  / r.bossSec;
+            ab += static_cast<double>(r.acT    - r.acA)    / r.bossSec;
             ++n;
         }
         if (!n) continue;
-        printf("%-12s %9.2f %9.2f %9.3f %9.2f %9.2f %9.3f\n", kVariants[vi].name,
-               ba / n, ia / n, ca / n, bb / n, ib / n, cb / n);
+        printf("%-12s %9.2f %9.2f %9.3f %9.2f %9.2f %9.3f %9.3f %9.3f\n",
+               kVariants[vi].name, ba / n, ia / n, ca / n, bb / n, ib / n, cb / n,
+               aa / n, ab / n);
     }
     // ── 광역 발동당 대상 수와 원심력 중첩 — 구간별 ────────────────────
     //
@@ -490,6 +497,9 @@ int main(int argc, char** argv) {
 
     printf("  ※ 유휴틱 = 공격 쿨다운이 끝났는데 사거리 안에 타겟이 없던 틱이다\n");
     printf("     (20Hz이므로 초당 20이 상한이고, 그 값이면 내내 놀았다는 뜻이다)\n");
+    printf("  ※ **광역발동**은 `applyAoeHits` 호출 횟수다 — 캐스트당 E_CHAIN의\n");
+    printf("     타수만큼 돈다. 예산식의 `own_dps`가 가정하는 주기(회전 베기\n");
+    printf("     12.4초 = 0.081/초)와 **이 값이 맞는지**가 원심력 환산의 분모다\n");
     printf("  ※ **발동이 줄면 흡혈·도트가 같이 준다** — 둘 다 스킬에 붙는 효과다.\n");
     printf("     E_LEECH는 '그 스킬 피해의 N%%'이고 기본 공격에는 붙지 않는다\n");
 
@@ -523,6 +533,46 @@ int main(int argc, char** argv) {
     printf("     멀수록 오른다. **실효율**은 주운 구슬 중 실제로 정화된 몫이고,\n");
     printf("     잠식이 구슬량보다 낮을 때 초과분이 버려지는 넘침이 여기 들어온다\n");
     printf("     (progression.json `_orb_amount`가 말하는 실효 64.8%%가 이 열이다)\n");
+
+    // ── 각인이 전달한 피해 — **예산과 같은 단위다** ───────────────────
+    //
+    // 예산은 `대상당 DPS × 대상 수 × 전달률`을 런 전체 평균으로 센다. 그런데
+    // 지금까지 그 값을 **직접 재 본 적이 없다** — 검증은 늘 대리 지표(처치율 ·
+    // 클리어율 · 대상 수)로 했고, 어긋나면 "예산이 틀렸나 환산이 틀렸나"를
+    // 가릴 수 없었다. 이 표가 그 자리다.
+    //
+    // 전달량이라 오버킬 손실이 빠져 있다 — `overkill_keep`이 모델링하던 그 값이고,
+    // 따라서 이 열이 그 보정을 검증한다.
+    printf("\n== 각인이 전달한 피해 (DPS · 도달한 런만) ==\n");
+    printf("%-12s %12s %12s %12s\n", "전설", "접근", "보스전", "보스전÷접근");
+    printf("  %s\n", "--------------------------------------------------------");
+    double baseA = 0, baseB = 0;
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double a = 0, b = 0;
+        int32_t n = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.approachSec <= 0 || r.bossSec <= 0) continue;
+            a += static_cast<double>(r.ldA) / Fixed::ONE_RAW / r.approachSec;
+            b += static_cast<double>(r.ldT - r.ldA) / Fixed::ONE_RAW / r.bossSec;
+            ++n;
+        }
+        if (!n) continue;
+        if (kVariants[vi].legend < 0) { baseA = a / n; baseB = b / n; }
+        const double da = a / n - baseA;
+        const double db = b / n - baseB;
+        printf("%-12s %12.2f %12.2f %12s\n", kVariants[vi].name, da, db,
+               kVariants[vi].legend < 0 ? "—" : "");
+        if (kVariants[vi].legend >= 0 && da > 0.01) {
+            printf("  %-10s %12s %12s %11.2f배\n", "", "", "", db / da);
+        }
+    }
+    printf("  ※ **기준선을 뺀 값이다.** 기준선도 런 후반에 전설을 뽑으므로 0이\n");
+    printf("     아니다(접근 %.2f · 보스전 %.2f DPS). 그 몫을 빼면 강제한 각인의\n",
+           baseA, baseB);
+    printf("     몫이 남는다\n");
+    printf("  ※ **보스전÷접근**이 구간 균형이다. 충격파가 띠를 고치기 전에 이\n");
+    printf("     값이 0.38이었고(발동당 1.44 → 0.55명), 예산비는 100%%였다 —\n");
+    printf("     런 전체 평균 하나로는 보이지 않던 축이다\n");
 
     // ── 잠식 채널 (보스전) ───────────────────────────────────────────
     //

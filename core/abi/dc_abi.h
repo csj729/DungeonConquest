@@ -68,7 +68,7 @@ extern "C" {
 /* 2: 설정이 data 디렉터리의 JSON에서 온다. dc_world_create(seed)가 사라지고
  *    dc_config_* + dc_world_create_with가 그 자리를 대신한다.
  * 3: 렌더 보간용 직전 위치와 엔티티 id가 추가됐다. */
-#define DC_ABI_VERSION 3
+#define DC_ABI_VERSION 4
 
 /* ── 오류 코드 ───────────────────────────────────────────────────────────
  * 예외를 경계 밖으로 내보낼 수 없으므로 모든 실패는 여기로 온다.
@@ -110,6 +110,41 @@ typedef struct DcChecksums {
     uint64_t spawn;
     uint64_t rng;
 } DcChecksums;
+
+/* 출력 이벤트. **상태 버퍼로는 "순간"을 알 수 없다** — 죽은 엔티티는 틱 끝에
+ * 압축되어 사라지므로 어디서 죽었는지가 다음 프레임에 남지 않고, 같은 틱의 두 번째
+ * 타격은 디프로 한 번으로 보인다. 그래서 이벤트가 **위치를 자기 안에 들고 있다.**
+ *
+ * 전부 고정폭 정수라 레이아웃이 안전하다. `value`의 뜻은 종류마다 다르고,
+ * core/include/dc/event.h의 EventKind 주석이 유일한 정의다.
+ *
+ * 좌표는 Fixed raw다 — dc_fixed_one()으로 나눠 쓴다. */
+typedef struct DcEvent {
+    int32_t  kind;      /* DcEventKind */
+    int32_t  tick;
+    uint32_t entity;    /* EntityId raw (0 = 없음) */
+    int32_t  posX;      /* Fixed raw */
+    int32_t  posY;
+    int32_t  value;
+} DcEvent;
+
+typedef enum DcEventKind {
+    DC_EV_NONE         = 0,
+    DC_EV_HIT          = 1,
+    DC_EV_KILL         = 2,
+    DC_EV_ORB_DROP     = 3,
+    DC_EV_ORB_PICK     = 4,
+    DC_EV_LEVEL_UP     = 5,
+    DC_EV_CARD_OFFER   = 6,   /* 드라이버가 0배속으로 전환한다 */
+    DC_EV_QTE_OPEN     = 7,   /* 드라이버가 슬로모로 전환한다 */
+    DC_EV_QTE_RESULT   = 8,
+    DC_EV_CC_TRIGGER   = 9,
+    DC_EV_ZONE_SPAWN   = 10,
+    DC_EV_BOSS_SPAWN   = 11,
+    DC_EV_BOSS_PHASE2  = 12,
+    DC_EV_SEGMENT_CLEAR = 13,
+    DC_EV_RUN_END      = 14,
+} DcEventKind;
 
 /* 불투명 핸들. C#는 World의 내부를 전혀 모르고 IntPtr 하나만 들고 다닌다. */
 typedef struct DcWorld DcWorld;
@@ -220,6 +255,22 @@ DC_API int32_t dc_run_outcome(const DcWorld* w) DC_NOEXCEPT;      /* DcOutcome *
 
 /* 현재 상태의 체크섬. out이 NULL이면 DC_ERR_NULL. */
 DC_API int32_t dc_checksums(const DcWorld* w, DcChecksums* out) DC_NOEXCEPT;
+
+/* ── 출력 이벤트 ─────────────────────────────────────────────────────────── */
+
+/* 쌓인 이벤트를 넘기고 **큐를 비운다.** 포인터는 코어가 소유하므로 복사하지 않고
+ * 그대로 읽는다 (매 틱 구조체 마샬링 금지 — design.md §C ABI 경계).
+ *
+ * **틱마다가 아니라 드레인할 때 비운다.** `TickDriver`가 한 프레임에 여러 틱을
+ * 소비하므로(죽음의 나선을 막는 상한이 있어 1~N틱) 틱마다 플립하면 앞의 틱
+ * 이벤트가 구조적으로 사라진다. 그래서 드레인까지 쌓는다.
+ *
+ * `dropped`에 **버린 개수**가 온다. 한 프레임에 512개를 넘기면 버리는데, 조용히
+ * 삼키지 않고 센다 — 연출 하나가 빠진 것과 큐가 터진 것은 다른 문제다.
+ *
+ * 다음 `dc_step`·`dc_events_drain`에서 무효가 되는 포인터다. */
+DC_API const DcEvent* dc_events_drain(DcWorld* w, int32_t* outCount,
+                                      int32_t* outDropped) DC_NOEXCEPT;
 
 /* **서버용 진입점.** 입력 로그를 재생해 체크섬만 돌려준다 — 상태 버퍼도 이벤트도
  * 만들지 않는다. 클라이언트 표면과 같은 라이브러리의 다른 함수일 뿐이라

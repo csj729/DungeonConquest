@@ -15,6 +15,7 @@
 // 함수 **본문 안에서는** C++를 자유롭게 쓴다. 아래에도 참조·템플릿·RAII가 나온다.
 #include "dc_abi.h"
 
+#include <cstddef>
 #include <new>
 
 #include "../include/dc/sim.h"
@@ -249,6 +250,33 @@ extern "C" int32_t dc_run_outcome(const DcWorld* w) noexcept {
 }
 
 // ── 검증 ──────────────────────────────────────────────────────────────────
+
+extern "C" const DcEvent* dc_events_drain(DcWorld* w, int32_t* outCount,
+                                          int32_t* outDropped) noexcept {
+    if (outCount != nullptr) *outCount = 0;
+    if (outDropped != nullptr) *outDropped = 0;
+    if (w == nullptr) return nullptr;
+    EventQueue& q = self(w)->world.events;
+    if (outCount != nullptr) *outCount = static_cast<int32_t>(q.count);
+    if (outDropped != nullptr) *outDropped = static_cast<int32_t>(q.dropped);
+    // **SimEvent와 DcEvent는 같은 레이아웃이다** — 아래 static_assert가 그걸
+    // 못 박는다. 복사하지 않고 그대로 넘긴다.
+    const DcEvent* p = reinterpret_cast<const DcEvent*>(&q.events[0]);
+    // 다음 드레인까지 포인터가 유효해야 하므로 **count만 0으로 둔다** (배열은
+    // 그대로 남는다). 호출자가 읽는 동안 코어가 덮어쓰지 않는 유일한 방법이
+    // "다음 dc_step까지"라는 약속이고, 그건 헤더에 적혀 있다.
+    q.count = 0;
+    q.dropped = 0;
+    return p;
+}
+
+static_assert(sizeof(DcEvent) == sizeof(SimEvent), "DcEvent 레이아웃이 SimEvent와 다르다");
+static_assert(offsetof(DcEvent, kind)   == offsetof(SimEvent, kind),   "kind 오프셋");
+static_assert(offsetof(DcEvent, tick)   == offsetof(SimEvent, tick),   "tick 오프셋");
+static_assert(offsetof(DcEvent, entity) == offsetof(SimEvent, entity), "entity 오프셋");
+static_assert(offsetof(DcEvent, posX)   == offsetof(SimEvent, posX),   "posX 오프셋");
+static_assert(offsetof(DcEvent, posY)   == offsetof(SimEvent, posY),   "posY 오프셋");
+static_assert(offsetof(DcEvent, value)  == offsetof(SimEvent, value),  "value 오프셋");
 
 extern "C" int32_t dc_checksums(const DcWorld* w, DcChecksums* out) noexcept {
     if (w == nullptr || out == nullptr) return DC_ERR_NULL;

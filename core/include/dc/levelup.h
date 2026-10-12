@@ -156,8 +156,18 @@ inline void gainExp(World& w, const SimConfig& cfg, int64_t amount) {
         w.hero.exp -= cfg.needFor(w.hero.level);
         ++w.hero.level;
         ++w.cards.pendingLevelUps;
+        w.events.push(EventKind::LevelUp, w.tickCount(), w.hero.posX, w.hero.posY,
+                      w.hero.level);
     }
-    if (w.cards.pendingLevelUps > 0 && !w.cards.offer.open()) dealCards(w, cfg);
+    if (w.cards.pendingLevelUps > 0 && !w.cards.offer.open()) {
+        dealCards(w, cfg);
+        // **드라이버가 0배속으로 전환하는 신호다** (design.md §10 자동 일시정지) —
+        // 다음 틱 입력에 플레이어 선택이 필요하다.
+        if (w.cards.offer.open()) {
+            w.events.push(EventKind::CardOffer, w.tickCount(), w.hero.posX, w.hero.posY,
+                          static_cast<int32_t>(w.cards.offer.count));
+        }
+    }
 }
 
 // 선택 적용. 인덱스가 범위를 벗어나면 거부한다 (입력 로그가 오염됐을 수 있다).

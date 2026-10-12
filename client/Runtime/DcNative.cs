@@ -63,6 +63,44 @@ namespace DungeonConquest.Sim
         public ulong Rng;
     }
 
+    /// <summary>출력 이벤트 종류. dc_abi.h의 DcEventKind.</summary>
+    public enum DcEventKind
+    {
+        None         = 0,
+        Hit          = 1,
+        Kill         = 2,
+        OrbDrop      = 3,
+        OrbPick      = 4,
+        LevelUp      = 5,
+        CardOffer    = 6,   // 드라이버가 0배속으로 전환한다
+        QteOpen      = 7,   // 드라이버가 슬로모로 전환한다
+        QteResult    = 8,
+        CcTrigger    = 9,
+        ZoneSpawn    = 10,
+        BossSpawn    = 11,
+        BossPhase2   = 12,
+        SegmentClear = 13,
+        RunEnd       = 14,
+    }
+
+    /// <summary>
+    /// 출력 이벤트. dc_abi.h의 DcEvent와 **레이아웃이 같아야 한다** —
+    /// 코어가 소유한 배열을 복사 없이 그대로 읽는다.
+    ///
+    /// <para>좌표는 Fixed raw다. <c>Value</c>의 뜻은 종류마다 다르고
+    /// core/include/dc/event.h의 EventKind 주석이 유일한 정의다.</para>
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DcEvent
+    {
+        public int  Kind;
+        public int  Tick;
+        public uint Entity;
+        public int  PosX;
+        public int  PosY;
+        public int  Value;
+    }
+
     /// <summary>
     /// `libdc_abi`의 원시 진입점. 직접 부르지 말고 <see cref="SimWorld"/>를 쓴다.
     /// </summary>
@@ -75,7 +113,7 @@ namespace DungeonConquest.Sim
         public const string Lib = "dc_abi";
 
         /// <summary>이 바인딩이 기대하는 ABI 버전. dc_abi.h의 DC_ABI_VERSION.</summary>
-        public const int AbiVersion = 3;
+        public const int AbiVersion = 4;
 
         // ── 버전 ──
         [DllImport(Lib)] public static extern int dc_abi_version();
@@ -123,6 +161,13 @@ namespace DungeonConquest.Sim
 
         // ── 검증 ──
         [DllImport(Lib)] public static extern int dc_checksums(IntPtr w, out DcChecksums outChecksums);
+
+        // ── 출력 이벤트 ──
+        //
+        // **반환 포인터는 코어가 소유한다.** 복사하지 않고 그대로 읽고, 다음
+        // dc_step·dc_events_drain에서 무효가 된다.
+        [DllImport(Lib)] public static extern IntPtr dc_events_drain(
+            IntPtr w, out int outCount, out int outDropped);
         [DllImport(Lib)] public static extern int dc_headless_checksum(IntPtr cfg, ulong seed, int ticks,
                                                                        IntPtr log, int len,
                                                                        out DcChecksums outChecksums);

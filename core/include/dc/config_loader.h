@@ -530,6 +530,7 @@ inline bool ConfigLoader::loadCards(const json::Doc& d, SimConfig* cfg) {
 
         const json::Value ex = ue.at(0);
         cfg->executeThresholdPermille = take32(ex["threshold_permille"]);
+        cfg->executeWeakBonusPermille = take32(ex["weak_damage_bonus_permille"]);
         cfg->executeAllAttacks        = ex["scope"].strEquals("all_attacks");
         feed(cfg->executeAllAttacks ? 1 : 0);
 

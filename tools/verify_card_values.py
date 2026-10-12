@@ -203,16 +203,16 @@ SWARM_DENSITY = 5.0        # 주변 적 평균 수
 # **5000시드로 올렸다**(74분). 1000시드에서 3σ가 약 4%p였는데 실제 Δ가 3~5%p라
 # 여섯 종 중 둘만 유의했다 — 순위를 말할 해상도가 아니었다. 5000시드에서 3σ가
 # 약 2%p로 내려가 다섯 종이 유의해졌다.
-LEGEND_BASE_SEC   = 354.2   # 각인 없음 — 런 길이(초)
-LEGEND_BASE_CLEAR = 9.6     # 각인 없음 — 클리어율(%)
+LEGEND_BASE_SEC   = 354.0   # 각인 없음 — 런 길이(초)
+LEGEND_BASE_CLEAR = 9.9     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
     # id            런 길이  클리어율
-    "W_EXECUTE":    (327.3, 13.1),
-    "W_SHOCKWAVE":  (344.9, 14.9),
-    "W_VORTEX":     (328.9, 15.2),
-    "W_CENTRIFUGE": (341.3, 13.2),
-    "W_AFTERSHOCK": (350.1, 14.3),
-    "W_FISSURE":    (352.3, 14.6),
+    "W_EXECUTE":    (327.1, 17.8),
+    "W_SHOCKWAVE":  (344.8, 15.2),
+    "W_VORTEX":     (328.8, 15.4),
+    "W_CENTRIFUGE": (325.3, 17.9),
+    "W_AFTERSHOCK": (349.9, 14.4),
+    "W_FISSURE":    (352.2, 14.8),
 }
 # **이 지문과 위 표는 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
 #
@@ -226,7 +226,7 @@ LEGEND_MEASURED = {
 # (주석 제외)다. **측정을 무효화하는 것은 데이터만이 아니라 시뮬 코드다.**
 # 입막음은 여전히 가능하지만, 지문이 손으로 지어낼 수 없는 값이라 "측정 없이
 # 갱신"이 눈에 띈다.
-LEGEND_MEASURED_FINGERPRINT = "3990042d641e79b8"
+LEGEND_MEASURED_FINGERPRINT = "9688d4d5fff2e7a6"
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
 # 때문이다. 그래서 한 행만 갈아 끼우면 안 되고 기준선까지 같이 다시 적는다.
@@ -292,6 +292,14 @@ def _measurement_is_current():
 # **유의하지 않은 것과 약한 것을 섞지 말 것.** 절대 %p는 측정의 해상도이고 설계
 # 판단은 상대로 한다 — 유의하지 않은 쪽은 지금 충격파(+8% 상대) 하나다.
 DOMINANT_RATIO_MAX = 1.50   # 1위 Δ ÷ 2위 Δ (2위가 유의할 때)
+# ── 그리고 **1위 대 2위만으로는 구조를 못 본다** ──────────────────
+#
+# 하위 그룹(처형·원심력)을 고친 뒤 둘이 1·2위로 올라붙었다. 지배도는 1.01배로
+# 통과하는데, **그 둘이 나머지 넷보다 1.78배 위**다. "지배 빌드 하나"는 없고
+# "상위 쌍"이 있는 상태인데 1위÷2위 비율에는 그게 전혀 안 나타난다.
+#
+# 가드가 보지 않는 것을 적는 자리다(이 파일에서 네 번째다). 격차를 따로 못 박는다.
+UNIQUE_SPREAD_MAX = 2.00    # 1위 Δ ÷ 최하위 유의 Δ
 DOMINANT_SIGMA_MAX = 3.0    # 대체 눈금: 1위 Δ ÷ 3σ (2위가 유의하지 않을 때)
 
 # ── 전설은 평균이 아니라 바닥과 상한으로 본다 ──────────────────
@@ -510,6 +518,52 @@ def overkill_keep(damage_per_hit):
     return min(1.0, effective_hp(TRASH["hp"], 0) / damage_per_hit)
 
 
+# ── 광역 반경 → 발동당 대상 수 (실측) ───────────────────────────
+#
+# `dc_legend 400`이 **런 안에서** 캐스트 시점의 거리 히스토그램으로 잰 값이다.
+# x는 기본 반경의 배수이고 접근 구간 값이다(런 시간의 대부분).
+#
+# 교차 확인: 1.00 칸이 4.13이고 실측 `대상/발동`이 4.16이다.
+AOE_RADIUS_MEASURED = [
+    (0.500, 0.55), (0.625, 1.11), (0.750, 3.08), (0.875, 3.56), (1.000, 4.13),
+    (1.125, 4.96), (1.250, 6.19), (1.375, 7.66), (1.500, 9.19), (1.625, 10.62),
+    (1.750, 11.88), (1.875, 12.92), (2.000, 14.17),
+]
+# **발동의 절반은 성장을 쓰지 못한다.** 중첩은 1패스에서 기본 반경 안의 적 수로
+# 정해지는데, 실측 `중첩/발동`이 1.65로 상한 3의 절반이다 — 발동의 약 45%가 기본
+# 반경 안에 아무도 없어 중첩 0이다.
+#
+# 그래서 실현율을 곱한다. **두 지점에서 교정했다**(각각 200~400시드 실측):
+#
+#     step  70‰ → 반경 ×1.21 · 실측 extra 0.85 · 히스토그램 1.67 → 0.509
+#     step 130‰ → 반경 ×1.39 · 실측 extra 2.01 · 히스토그램 3.71 → 0.542
+#
+# 1패스는 **step과 무관**하므로(스텝은 2패스부터 쓴다) 이 비율이 대체로 유지된다 —
+# 실제로 0.51 → 0.54로 6%만 움직였다. 남는 기울기는 중첩 1~2에서 나온다(그 발동은
+# step이 크면 2패스에서 더 빨리 상한에 붙는다). 작동점(120~130‰)의 값을 쓴다.
+#
+# 유지되지 않으면 `중첩/발동` 열이 먼저 움직인다 — 실측에서 70‰ 1.65, 130‰ 1.64로
+# 그대로였다. **수치를 바꿀 때 그 열을 함께 볼 것.**
+CENTRI_REALIZED = 0.54
+
+
+def centrifuge_extra(e):
+    """원심력이 추가로 때리는 평균 적 수. **실측 곡선 × 실현율이다.**
+
+    전에는 `centrifuge_targets(e, AOE_TARGETS) - AOE_TARGETS`를 썼는데, 그건
+    **평균 대상 수에 성장을 먹인 값**이다. 성장은 "기본 반경 안에 적이 없으면
+    0"에서 딱 끊기는 함수라 `f(평균) ≠ 평균(f)`이고, 모델이 실측의 **2.18배**를
+    냈다(1.856 대 0.85). 예산비 100%로 적혀 있던 카드가 실제로는 46%였다.
+
+    Jensen 부등식을 모델이 밟은 자리다. 분포를 받아서 평균을 내야 한다.
+    """
+    step, cap = _pm(e["radius_step_permille"]), e["max_stacks"]
+    mult = 1.0 + step * cap
+    grown = _interp(AOE_RADIUS_MEASURED, mult)
+    base  = _interp(AOE_RADIUS_MEASURED, 1.0)
+    return CENTRI_REALIZED * (grown - base)
+
+
 def centrifuge_targets(e, density):
     """원심력 한 발동이 최종적으로 때리는 적 수. `applyAoeHits`를 그대로 옮긴다.
 
@@ -562,9 +616,25 @@ def unique_delta(uid):
         share = {"잡몹": 1 - ELITE_SHARE,
                  "엘리트": ELITE_SHARE * (1 - BOSS_SHARE_IN_ELITE),
                  "보스": ELITE_SHARE * BOSS_SHARE_IN_ELITE}
+        boss_share = share["보스"]
         if BOSS_EXECUTE_IMMUNE:
-            share["보스"] = 0.0        # 면역이면 보스 몫은 가치가 아니다
-        return total * sum(share[k] * _exec_saving(T, rate, ttk[k]) for k in ttk)
+            share["보스"] = 0.0        # 면역이면 즉시 처치 몫은 가치가 아니다
+        kill = total * sum(share[k] * _exec_saving(T, rate, ttk[k]) for k in ttk)
+
+        # ── 임계 이하 피해 증폭 ──
+        #
+        # **면역인 대상만 실제로 받는다** — 아닌 적은 같은 타격에서 즉사한다.
+        # 임계 아래 구간이 TTK의 T만큼이고 그 구간이 1/(1+b)로 줄므로 아끼는
+        # 비율은 `T × b/(1+b)`다. 처형 판정과 달리 **대기 항이 없다** — 발동이
+        # 아니라 상시 배수다.
+        #
+        # **예산이 이 축을 거의 못 본다.** 보스 몫이 평균 8.4%라 b를 무한대로
+        # 올려도 예산비가 117%에서 멈춘다. 보스전이 승패를 가르는데 예산은 런
+        # 전체 평균이라 그렇다 — 충격파에서 배운 것과 같은 구조다. 그래서 이
+        # 수치는 예산이 아니라 **측정**으로 고른다.
+        b = _pm(e["weak_damage_bonus_permille"])
+        weaken = total * boss_share * (T * b / (1 + b)) if BOSS_EXECUTE_IMMUNE else 0.0
+        return kill + weaken
 
     if uid == "W_SHOCKWAVE":
         # 전력 피해로 직선의 적을 추가로 맞힌다. 추가 대상 수는 반폭에 비례한다.
@@ -584,7 +654,7 @@ def unique_delta(uid):
     if uid == "W_CENTRIFUGE":
         # **패스가 반복된다** — `applyAoeHits`는 벤 수만큼 반경을 키워 다시 훑는다.
         # 예산식이 패스를 한 번만 세면 상한이 보이지 않는다 (아래 주석 참조).
-        extra = centrifuge_targets(e, AOE_TARGETS) - AOE_TARGETS
+        extra = centrifuge_extra(e)
         # 회전 베기도 전력 피해다 — 한 대 26.25 vs 실효 체력 20 → 전달률 76%
         return own_dps * extra * overkill_keep(HERO["attack_power"] * mult * crit)
 
@@ -792,6 +862,9 @@ def report():
         print(f"  {uid:<14} {e['name']:<5} {d:>7.2f} {ratio:>5.0%} "
               f"{cr:>+7.0%} {combined:>5.0%}   {sec:>6.1f}s {dclear:>+7.1f}p{flag}")
     print()
+    print("  ※ **잠식 보정은 포화를 세지 않는다.** 런이 짧아 잠식이 낮으면 정화가")
+    print("     넘쳐 버려지므로 그만큼은 가치가 아니다 — 처형의 구슬 실효율이")
+    print("     52.6%(기준선 67.2%)로 여섯 중 최저다. 처형의 보정은 그만큼 과대평가다")
     print(f"  ※ 잠식 유입 {MAP_INFLOW:.1f}/초 (verify_recovery 실측의 가중평균) ·"
           f" 전설 예산 {legend_budget:.2f} DPS")
     # ── 충격파 반폭 절벽 가드 ──
@@ -893,6 +966,21 @@ def report():
         print("     ※ **2위가 유의하지 않아 3σ 눈금으로 적었다.** 이 값은 시드 수에")
         print("        딸려 있으므로 실행 사이에 비교할 수 없다")
     print(f"  유의한 각인 {len(sig)}종 / {len(UNIQUE) - len(pending)}")
+    # ── 격차 — 1위 대 최하위 ──
+    #
+    # **지배도와 분모가 다르다.** 지배도는 "한 장이 혼자 튀는가"를 보고, 격차는
+    # "선택지들이 같은 급인가"를 본다. 상위 쌍이 생기면 지배도는 가만히 있고
+    # 격차만 움직인다 — 실제로 하위 그룹을 고친 뒤 그렇게 됐다.
+    sig_d = sorted((sigma[u][0] for u in sig), reverse=True)
+    if len(sig_d) >= 2 and sig_d[-1] > 0:
+        spread = sig_d[0] / sig_d[-1]
+        sp_ok = spread <= UNIQUE_SPREAD_MAX
+        ok &= sp_ok
+        print(f"  격차: 1위 {sig_d[0]:+.1f}%p ÷ 최하위 유의 {sig_d[-1]:+.1f}%p"
+              f" = {spread:.2f}배 (상한 {UNIQUE_SPREAD_MAX:.2f}배)"
+              f"  {'PASS' if sp_ok else 'FAIL'}")
+        print("     ※ 유의한 것끼리만 비교한다 — 유의하지 않은 행을 분모에 두면")
+        print("        노이즈로 나눈 비율이 된다(지배도에서 같은 실수를 한 번 했다)")
     if not pending:
         # **유의하지 않은 것과 약한 것은 다르다.** 다만 유의하지 않은 카드의
         # 상대값도 확립된 값이 아니다 — 한때 이 줄이 상대 +15%를 기준으로

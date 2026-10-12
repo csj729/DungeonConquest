@@ -104,10 +104,33 @@ int main() {
             const EntityId id = w.entities.spawn(mob(Fixed(1), Fixed{}, 1000), 0, 3);
             const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(id));
             w.entities.damageTaken[i] = Fixed(1000 - left);
-            const bool killed = executeIfBelowThreshold(w, cfg, i);
+            const bool killed = executeIfBelowThreshold(w, cfg, i).raw > 0;
             CHECK_EQ(killed, left <= T);
         }
         printf("    남은 %d‰ 처형 · %d‰ 생존\n", T, T + 1);
+    }
+
+    dctest::section("처형 — **지운 체력이 흡혈의 입력이 된다**");
+    {
+        // 처형이 흡혈을 잡아먹고 있었다. 40%에 걸린 적은 원래 몇 대 더 맞았고
+        // 그 타격마다 흡혈이 붙었는데, 처형이 그 타격들을 없앤다. 실측에서
+        // 처형만 보스전 순유입이 기준선보다 높았던(19.43 대 18.46) 원인이다.
+        //
+        // **장판 흡혈과 같은 종류다** — 피해 비례 효과가 입력을 잃는 자리.
+        int32_t ret[2] = {0, 0};
+        for (int32_t k = 0; k < 2; ++k) {
+            World w = makeWorld(22);
+            if (k == 1) w.cards.legendTake(EXEC);
+            const EntityId id = w.entities.spawn(mob(Fixed(1), Fixed{}, 1000), 0, 22);
+            const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(id));
+            // 남은 체력을 임계 **아래**로 내려 둔다 → 한 대 때리면 처형이 걸린다
+            w.entities.damageTaken[i] = Fixed(1000 - cfg.executeThresholdPermille / 2);
+            ret[k] = applySkillHit(w, cfg, i, Fixed(1)).raw;
+        }
+        // 각인이 없으면 한 대 값(1)만, 있으면 지운 체력까지 돌아온다
+        CHECK(ret[1] > ret[0]);
+        CHECK(ret[0] > 0);
+        printf("    각인 없음 %d raw → 처형 %d raw (지운 체력 포함)\n", ret[0], ret[1]);
     }
 
     dctest::section("처형 — **보스는 면역이다** (페이즈 2를 지킨다)");
@@ -121,7 +144,7 @@ int main() {
         const uint32_t i = static_cast<uint32_t>(w.entities.denseOf(id));
         w.entities.damageTaken[i] = Fixed(950);     // 남은 5% — 임계보다 한참 아래
 
-        CHECK(!executeIfBelowThreshold(w, cfg, i));
+        CHECK_EQ(executeIfBelowThreshold(w, cfg, i).raw, 0);
         CHECK(!w.entities.deadAt(i));
         CHECK(!w.run.over());                        // 보스 처치 = 클리어가 아니다
 
@@ -373,16 +396,26 @@ int main() {
         // 이 절은 구현을 바꿔도 결과가 같아야 하는 **사양**이다. 기대 반경을
         // 거리에서 독립적으로 다시 계산하므로 동어반복이 아니다.
         //
-        // 상한 3 · step 7%에서 패스가 네 번 돌게 배치한다:
-        //   패스0 기본 반경 안 1마리 → 중첩 1 → ×1.07
-        //   패스1 ×1.05 1마리       → 중첩 2 → ×1.14
-        //   패스2 ×1.12 1마리       → 중첩 3 → ×1.21
-        //   패스3 ×1.19 1마리 때리고 상한에서 멈춘다 → ×1.30, ×1.50은 못 맞는다
+        // 패스가 네 번 돌게 배치한다. **위치를 step에서 도출한다** — 전에는
+        // step 7%에서 손으로 고른 값이었고, step이 12%로 오르자 한 패스가 두
+        // 마리를 물어 사다리가 무너졌다(`hit == 4` 가드가 그걸 잡았다).
+        //
+        // 중첩 k에서 반경은 ×(1 + k·step)이므로, **연속한 두 반경의 중간**에
+        // 하나씩 둔다 — 그러면 패스마다 정확히 한 마리씩 새로 물린다:
+        //   패스0 기본 반경 안 1마리(0.25)  → 중첩 1 → ×(1+step)
+        //   패스1 ×(1+0.5·step) 1마리       → 중첩 2 → ×(1+2·step)
+        //   패스2 ×(1+1.5·step) 1마리       → 중첩 3 → ×(1+3·step)
+        //   패스3 ×(1+2.5·step) 1마리 때리고 상한에서 멈춘다
+        // 마지막 둘(×(1+3.5·step) · ×(1+4.5·step))은 최대 반경 밖이라 못 맞는다 —
+        // **양방향으로 물게 하는 음성 탐침이다.**
         World w = makeWorld(14);
         w.hero.posX = Fixed{}; w.hero.posY = Fixed{};
         w.cards.legendTake(CENTRI);
         const Fixed base = w.hero.stats.value(Stat::AoeRadius);
-        const int32_t at[] = {250, 1050, 1120, 1190, 1300, 1500};
+        const int32_t st = cfg.centrifugeStepPermille;
+        const int32_t at[] = {250,
+                              1000 + st / 2, 1000 + (st * 3) / 2, 1000 + (st * 5) / 2,
+                              1000 + (st * 7) / 2, 1000 + (st * 9) / 2};
         const uint32_t n = sizeof(at) / sizeof(at[0]);
         uint32_t di[n];
         for (uint32_t k = 0; k < n; ++k) {

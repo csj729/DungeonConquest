@@ -510,6 +510,52 @@ def overkill_keep(damage_per_hit):
     return min(1.0, effective_hp(TRASH["hp"], 0) / damage_per_hit)
 
 
+# ── 광역 반경 → 발동당 대상 수 (실측) ───────────────────────────
+#
+# `dc_legend 400`이 **런 안에서** 캐스트 시점의 거리 히스토그램으로 잰 값이다.
+# x는 기본 반경의 배수이고 접근 구간 값이다(런 시간의 대부분).
+#
+# 교차 확인: 1.00 칸이 4.13이고 실측 `대상/발동`이 4.16이다.
+AOE_RADIUS_MEASURED = [
+    (0.500, 0.55), (0.625, 1.11), (0.750, 3.08), (0.875, 3.56), (1.000, 4.13),
+    (1.125, 4.96), (1.250, 6.19), (1.375, 7.66), (1.500, 9.19), (1.625, 10.62),
+    (1.750, 11.88), (1.875, 12.92), (2.000, 14.17),
+]
+# **발동의 절반은 성장을 쓰지 못한다.** 중첩은 1패스에서 기본 반경 안의 적 수로
+# 정해지는데, 실측 `중첩/발동`이 1.65로 상한 3의 절반이다 — 발동의 약 45%가 기본
+# 반경 안에 아무도 없어 중첩 0이다.
+#
+# 그래서 실현율을 곱한다. **두 지점에서 교정했다**(각각 200~400시드 실측):
+#
+#     step  70‰ → 반경 ×1.21 · 실측 extra 0.85 · 히스토그램 1.67 → 0.509
+#     step 130‰ → 반경 ×1.39 · 실측 extra 2.01 · 히스토그램 3.71 → 0.542
+#
+# 1패스는 **step과 무관**하므로(스텝은 2패스부터 쓴다) 이 비율이 대체로 유지된다 —
+# 실제로 0.51 → 0.54로 6%만 움직였다. 남는 기울기는 중첩 1~2에서 나온다(그 발동은
+# step이 크면 2패스에서 더 빨리 상한에 붙는다). 작동점(120~130‰)의 값을 쓴다.
+#
+# 유지되지 않으면 `중첩/발동` 열이 먼저 움직인다 — 실측에서 70‰ 1.65, 130‰ 1.64로
+# 그대로였다. **수치를 바꿀 때 그 열을 함께 볼 것.**
+CENTRI_REALIZED = 0.54
+
+
+def centrifuge_extra(e):
+    """원심력이 추가로 때리는 평균 적 수. **실측 곡선 × 실현율이다.**
+
+    전에는 `centrifuge_targets(e, AOE_TARGETS) - AOE_TARGETS`를 썼는데, 그건
+    **평균 대상 수에 성장을 먹인 값**이다. 성장은 "기본 반경 안에 적이 없으면
+    0"에서 딱 끊기는 함수라 `f(평균) ≠ 평균(f)`이고, 모델이 실측의 **2.18배**를
+    냈다(1.856 대 0.85). 예산비 100%로 적혀 있던 카드가 실제로는 46%였다.
+
+    Jensen 부등식을 모델이 밟은 자리다. 분포를 받아서 평균을 내야 한다.
+    """
+    step, cap = _pm(e["radius_step_permille"]), e["max_stacks"]
+    mult = 1.0 + step * cap
+    grown = _interp(AOE_RADIUS_MEASURED, mult)
+    base  = _interp(AOE_RADIUS_MEASURED, 1.0)
+    return CENTRI_REALIZED * (grown - base)
+
+
 def centrifuge_targets(e, density):
     """원심력 한 발동이 최종적으로 때리는 적 수. `applyAoeHits`를 그대로 옮긴다.
 
@@ -600,7 +646,7 @@ def unique_delta(uid):
     if uid == "W_CENTRIFUGE":
         # **패스가 반복된다** — `applyAoeHits`는 벤 수만큼 반경을 키워 다시 훑는다.
         # 예산식이 패스를 한 번만 세면 상한이 보이지 않는다 (아래 주석 참조).
-        extra = centrifuge_targets(e, AOE_TARGETS) - AOE_TARGETS
+        extra = centrifuge_extra(e)
         # 회전 베기도 전력 피해다 — 한 대 26.25 vs 실효 체력 20 → 전달률 76%
         return own_dps * extra * overkill_keep(HERO["attack_power"] * mult * crit)
 

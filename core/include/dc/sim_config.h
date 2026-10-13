@@ -250,6 +250,13 @@ struct SimConfig {
     Fixed    qtePerfectMult{};           // 스킬 증폭 — 완벽
     int32_t  qtePerfectCcGainPermille = 0;  // 위기 회피 완벽 — ccGauge 충전 비율
     int32_t  groggyTicks          = 0;   // 그로기 지속
+    // **CC 게이지 자연 감쇠** — 기준 게이지 대비 초당 비율(permille).
+    // design.md §9 "몰아치지 않으면 다시 빠진다". 0이면 감쇠가 없다.
+    //
+    // 이 값과 보스의 `cc_resist_step_permille`은 **같은 사다리를 만드는 두 항이다**
+    // (monsters.json `_cc_decay`에 유도가 있다). 한쪽만 바꾸면 보스 그로기 사다리가
+    // 움직인다.
+    int32_t  ccDecayPermillePerSec = 0;
 
     SkillConfig skills[MAX_SKILLS]{};
     uint32_t    skillCount = 0;

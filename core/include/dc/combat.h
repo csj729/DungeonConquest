@@ -833,8 +833,13 @@ inline bool applyCc(World& w, const SimConfig& cfg, uint32_t i, int32_t gainPerm
     }
 
     w.entities.ccGauge[i] += w.entities.ccGaugeMax[i] * Fixed::fromPermille(gainPermille);
+    const bool isBoss = w.entities.archetype[i] == Archetype::Boss;
+    ++w.metrics.ccApplyGauge;
+    if (isBoss) ++w.metrics.ccApplyBoss;
     const Fixed threshold = ccThreshold(w.entities, cfg, i);
     if (threshold.raw <= 0 || w.entities.ccGauge[i].raw < threshold.raw) return false;
+    ++w.metrics.ccTriggered;
+    if (isBoss) ++w.metrics.ccTriggerBoss;
 
     w.entities.ccGauge[i] = Fixed{};
     ++w.entities.ccTriggerCount[i];
@@ -843,6 +848,36 @@ inline bool applyCc(World& w, const SimConfig& cfg, uint32_t i, int32_t gainPerm
     w.events.push(EventKind::CcTrigger, w.tickCount(), w.entities.idAt(i),
                   w.entities.posX[i], w.entities.posY[i], cfg.groggyTicks);
     return true;
+}
+
+// CC 게이지 자연 감쇠 — design.md §9 "몰아치지 않으면 다시 빠진다".
+//
+// **기준 게이지 대비 비율로 빠진다** — 임계(`ccThreshold`)는 보스 발동마다 오르지만
+// 빠지는 속도는 그대로여야 "몰아치지 않으면 빠진다"가 임계와 무관하게 성립한다.
+// 임계 대비로 빠지게 하면 저항이 오른 보스일수록 더 빨리 빠져 두 축이 엉킨다.
+//
+// **전투보다 먼저 돈다.** 같은 틱에 들어온 적용이 그 틱에 바로 과세되면 적용량이
+// 틱 경계에 따라 달라 보인다 — 도트·구슬과 같은 이유로 앞에 둔다(sim.h 순서).
+//
+// **절삭이 두 번 있다.** `fromPermille(20)`이 81raw(정확값 81.92)로 깎이고, 틱당
+// 나눗셈이 또 0방향으로 깎인다 — 게이지 100 · 20‰/s · 20Hz에서 틱당 405raw이므로
+// **실효 감쇠는 19.78‰/s**다(명목의 98.9%).
+//
+// 사다리에 영향이 없다: 실효율로 다시 풀면 감쇠율 × 간격 = 0.263이고 step 상한이
+// 0.737인데 실제 step은 0.500이라 여유가 0.237이다. `test_systems`가 세 간격
+// (13.3초 · 30초 · 50초)에서 필요한 적용 수를 직접 못 박는다.
+inline void ccDecayRun(World& w, const SimConfig& cfg) {
+    if (cfg.ccDecayPermillePerSec <= 0 || cfg.tickHz <= 0) return;
+    const Fixed rate = Fixed::fromPermille(cfg.ccDecayPermillePerSec);
+    const uint32_t n = w.entities.count();
+    for (uint32_t i = 0; i < n; ++i) {
+        if (w.entities.deadAt(i)) continue;
+        if (w.entities.ccGauge[i].raw <= 0) continue;
+        const Fixed perTick = (w.entities.ccGaugeMax[i] * rate) / cfg.tickHz;
+        if (perTick.raw <= 0) continue;
+        w.entities.ccGauge[i] -= perTick;
+        if (w.entities.ccGauge[i].raw < 0) w.entities.ccGauge[i] = Fixed{};
+    }
 }
 
 inline void qteRun(World& w, const SimConfig& cfg) {

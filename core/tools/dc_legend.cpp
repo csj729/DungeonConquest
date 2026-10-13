@@ -94,6 +94,8 @@ struct Row {
     int64_t aoeHistT[dc::Metrics::AOE_BUCKETS] = {0};
     // 각인이 전달한 피해 (접근 / 런 전체) — 예산과 같은 단위다
     int64_t ldA = 0, ldT = 0;
+    int64_t ccAgA = 0, ccTrA = 0, ccAbA = 0, ccTbA = 0;
+    int64_t ccAgT = 0, ccTrT = 0, ccAbT = 0, ccTbT = 0;
     // 평균 생존 적 수. **"물량 채널이 상한에 못 박혀 있는가"를 묻는 열이다** —
     // 스폰이 처치를 즉시 메우면 처치율을 올려도 물량 유입이 움직이지 않는다.
     double  aliveAvg = 0;
@@ -128,6 +130,8 @@ static void captureTotals(Row& r, const dc::World& w) {
     r.acT    = w.metrics.aoeCasts;
     r.csT    = w.metrics.centriStacks;
     r.ldT    = w.metrics.legendDelivered;
+    r.ccAgT = w.metrics.ccApplyGauge;  r.ccTrT = w.metrics.ccTriggered;
+    r.ccAbT = w.metrics.ccApplyBoss;   r.ccTbT = w.metrics.ccTriggerBoss;
     for (int32_t b = 0; b < dc::Metrics::AOE_BUCKETS; ++b) {
         r.aoeHistT[b] = w.metrics.aoeRadiusHist[b];
     }
@@ -146,6 +150,8 @@ static void captureChannels(Row& r, const dc::World& w) {
     r.acA    = w.metrics.aoeCasts;
     r.csA    = w.metrics.centriStacks;
     r.ldA    = w.metrics.legendDelivered;
+    r.ccAgA = w.metrics.ccApplyGauge;  r.ccTrA = w.metrics.ccTriggered;
+    r.ccAbA = w.metrics.ccApplyBoss;   r.ccTbA = w.metrics.ccTriggerBoss;
     for (int32_t b = 0; b < dc::Metrics::AOE_BUCKETS; ++b) {
         r.aoeHistA[b] = w.metrics.aoeRadiusHist[b];
     }
@@ -533,6 +539,37 @@ int main(int argc, char** argv) {
     printf("     멀수록 오른다. **실효율**은 주운 구슬 중 실제로 정화된 몫이고,\n");
     printf("     잠식이 구슬량보다 낮을 때 초과분이 버려지는 넘침이 여기 들어온다\n");
     printf("     (progression.json `_orb_amount`가 말하는 실효 64.8%%가 이 열이다)\n");
+
+    // ── CC 게이지 적용 간격 ──────────────────────────────────────────
+    //
+    // **감쇠율은 이 표에서 나온다.** 보스 임계는 발동마다 오르므로 2회째는 두
+    // 적용의 합이 임계를 넘어야 하고, 그 사이에 빠지는 양이 간격에 달려 있다.
+    printf("\n== CC 게이지 (게이지 대상만 · 도달한 런만) ==\n");
+    printf("%-12s %10s %10s %10s %10s %12s\n",
+           "전설", "적용(접근)", "적용(보스전)", "보스 적용", "보스 발동", "보스 적용간격");
+    printf("  %s\n", "--------------------------------------------------------------------------");
+    for (size_t vi = 0; vi < kVarCount; ++vi) {
+        double aa = 0, ab = 0, ba = 0, bt = 0, iv = 0;
+        int32_t n = 0, ni = 0;
+        for (const Row& r : rows[vi]) {
+            if (!r.reached || r.approachSec <= 0 || r.bossSec <= 0) continue;
+            aa += static_cast<double>(r.ccAgA) / r.approachSec;
+            ab += static_cast<double>(r.ccAgT - r.ccAgA) / r.bossSec;
+            const double bapp = static_cast<double>(r.ccAbT - r.ccAbA);
+            ba += bapp;
+            bt += static_cast<double>(r.ccTbT - r.ccTbA);
+            if (bapp > 0) { iv += r.bossSec / bapp; ++ni; }
+            ++n;
+        }
+        if (!n) continue;
+        printf("%-12s %10.3f %10.3f %10.2f %10.2f %10.1fs\n", kVariants[vi].name,
+               aa / n, ab / n, ba / n, bt / n, ni > 0 ? iv / ni : 0.0);
+    }
+    printf("  ※ 잡몹은 ccGaugeMax가 0이라 게이지를 거치지 않고 즉시 기절한다 —\n");
+    printf("     간격 계산에 섞이면 안 되므로 **게이지 대상만** 센다\n");
+    printf("  ※ **보스 적용간격**이 감쇠율의 분모다. 2회째 발동 조건은\n");
+    printf("     `2 − 감쇠율 × 간격 ≥ 1 + resist_step`이고, 3회째는\n");
+    printf("     `3 − 3 × 감쇠율 × 간격 ≥ 1 + 2 × resist_step`이다\n");
 
     // ── 각인이 전달한 피해 — **예산과 같은 단위다** ───────────────────
     //

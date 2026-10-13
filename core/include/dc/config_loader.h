@@ -351,6 +351,7 @@ inline bool ConfigLoader::loadMonsters(const json::Doc& d, SimConfig* cfg) {
     // ── 엘리트 ──
     const int32_t eliteRange    = take32(r["elite_attack_range_millitile"]);
     const int32_t eliteCc       = take32(r["elite_cc_gauge_max"]);
+    cfg->ccDecayPermillePerSec = take32(r["cc_decay_permille_per_sec"]);
     const json::Value es = r["elites"];
     if (es.size() > MAX_ELITE_TYPES) {
         return fail(DataFile::Monsters, "엘리트 종류가 상한을 넘는다", "elites");

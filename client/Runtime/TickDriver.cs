@@ -35,7 +35,7 @@ namespace DungeonConquest.Sim
         private readonly SimWorld _world;
         private float _accum;
         private float _speed = 1.0f;
-        private float _speedBeforeAutoPause = 1.0f;
+        private float _slowMo = 1.0f;
         private bool  _autoPaused;
 
         public TickDriver(SimWorld world)
@@ -56,10 +56,28 @@ namespace DungeonConquest.Sim
             set => _speed = value < 0f ? 0f : value;
         }
 
-        public bool IsPaused => _speed <= 0f;
+        /// <summary>
+        /// 프레젠테이션이 거는 배속 인자 (QTE 슬로모 · 히트스톱). **플레이어의
+        /// 배속과 곱해진다** — 따로 두는 이유는 섞으면 복원이 깨지기 때문이다.
+        ///
+        /// <para>전에는 슬로모도 <see cref="Speed"/>를 직접 덮었고, 자동 일시정지가
+        /// "직전 배속"을 저장해 두는 구조였다. 둘이 겹치면(QTE 창에서 카드가 뜨면)
+        /// 저장된 값이 **슬로모 값**이라 선택 뒤에 4배속이 0.35배속으로 돌아온다.
+        /// 인자를 분리하면 저장·복원이 아예 필요 없어져 그 버그 종류가 사라진다.</para>
+        /// </summary>
+        public float SlowMoFactor
+        {
+            get => _slowMo;
+            set => _slowMo = value < 0f ? 0f : value;
+        }
+
+        /// <summary>실제로 틱을 소비하는 속도. 자동 일시정지가 걸리면 0이다.</summary>
+        public float EffectiveSpeed => _autoPaused ? 0f : _speed * _slowMo;
+
+        public bool IsPaused => EffectiveSpeed <= 0f;
 
         /// <summary>마지막으로 소비한 틱 이후 진행도 0..1. 렌더 보간에 쓴다.</summary>
-        public float Alpha => _speed <= 0f ? 0f : Clamp01(_accum / TickSeconds);
+        public float Alpha => IsPaused ? 0f : Clamp01(_accum / TickSeconds);
 
         /// <summary>이번 프레임에 실제로 소비한 틱 수. 밀림 진단용이다.</summary>
         public int LastConsumed { get; private set; }
@@ -73,20 +91,7 @@ namespace DungeonConquest.Sim
         /// 돌아간다 (§10). 플레이어가 누른 수동 일시정지와 섞이지 않도록
         /// 직전 배속을 따로 기억한다.
         /// </summary>
-        public void SetAutoPause(bool paused)
-        {
-            if (paused == _autoPaused) return;
-            _autoPaused = paused;
-            if (paused)
-            {
-                _speedBeforeAutoPause = _speed;
-                _speed = 0f;
-            }
-            else
-            {
-                _speed = _speedBeforeAutoPause;
-            }
-        }
+        public void SetAutoPause(bool paused) => _autoPaused = paused;
 
         public bool IsAutoPaused => _autoPaused;
 
@@ -94,17 +99,24 @@ namespace DungeonConquest.Sim
         /// 프레임 델타(초)만큼 시간을 흘리고 필요한 만큼 틱을 소비한다.
         /// 소비한 틱 수를 돌려준다.
         /// </summary>
-        public int Advance(float deltaSeconds)
+        /// <param name="afterTick">
+        /// 틱마다 부른다. **false를 돌려주면 이번 프레임의 소비를 멈춘다** —
+        /// 카드 제시처럼 "다음 틱 입력에 선택이 필요한" 이벤트에서 그 자리에
+        /// 서기 위한 손잡이다 (§10). 프레임 끝에 한 번만 보면 제시가 뜬 뒤의
+        /// 틱이 이미 지나간다.
+        /// </param>
+        public int Advance(float deltaSeconds, Func<bool> afterTick = null)
         {
             LastConsumed = 0;
             LastFrameThrottled = false;
-            if (deltaSeconds <= 0f || _speed <= 0f) return 0;
+            const float kMin = 1e-6f;
+            if (deltaSeconds <= 0f || EffectiveSpeed <= kMin) return 0;
 
             // 런이 끝났으면 더 소비하지 않는다 — 결과를 읽기 전에 상태가 더
             // 움직이면 "어느 틱에 끝났는가"가 흐려진다.
             if (_world.IsOver) return 0;
 
-            _accum += deltaSeconds * _speed;
+            _accum += deltaSeconds * EffectiveSpeed;
 
             int consumed = 0;
             while (_accum >= TickSeconds)
@@ -120,6 +132,7 @@ namespace DungeonConquest.Sim
                 _world.Step(1);
                 ++consumed;
                 if (_world.IsOver) { _accum = 0f; break; }
+                if (afterTick != null && !afterTick()) break;
             }
             LastConsumed = consumed;
             return consumed;

@@ -130,6 +130,25 @@ namespace DungeonConquest.Sim
         public bool Input(DcInputKind kind, uint value)
             => DcNative.dc_input(_handle, (int)kind, value) == (int)DcStatus.Ok;
 
+        /// <summary>
+        /// 프레젠테이션이 알아야 하는 설정 상수 (완벽 구간 · 그로기 길이 …).
+        ///
+        /// <para><b>이 값들을 C#에 적어 두지 말 것.</b> design.md §3이 "등급 판정은
+        /// 프레젠테이션이 한다"고 정했으므로 UI가 완벽 구간을 알아야 하는데, 그 수치를
+        /// 클라이언트 상수로 두면 `hero.json`과 두 곳에 산다 (CLAUDE.md).</para>
+        /// </summary>
+        public DcViewConfig ViewConfig
+        {
+            get
+            {
+                if (DcNative.dc_view_config(_handle, out DcViewConfig v) != (int)DcStatus.Ok)
+                {
+                    throw new InvalidOperationException("dc_view_config 실패");
+                }
+                return v;
+            }
+        }
+
         public int Tick        => DcNative.dc_run_tick(_handle);
         public int Segment     => DcNative.dc_run_segment(_handle);
         public int ClearPoints => DcNative.dc_run_clear_points(_handle);

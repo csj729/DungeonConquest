@@ -68,7 +68,7 @@ extern "C" {
 /* 2: 설정이 data 디렉터리의 JSON에서 온다. dc_world_create(seed)가 사라지고
  *    dc_config_* + dc_world_create_with가 그 자리를 대신한다.
  * 3: 렌더 보간용 직전 위치와 엔티티 id가 추가됐다. */
-#define DC_ABI_VERSION 4
+#define DC_ABI_VERSION 5
 
 /* ── 오류 코드 ───────────────────────────────────────────────────────────
  * 예외를 경계 밖으로 내보낼 수 없으므로 모든 실패는 여기로 온다.
@@ -110,6 +110,24 @@ typedef struct DcChecksums {
     uint64_t spawn;
     uint64_t rng;
 } DcChecksums;
+
+/* 프레젠테이션이 알아야 하는 **설정 상수**. 전부 고정폭 정수라 레이아웃이 안전하다.
+ *
+ * **왜 노출하는가**: design.md §3이 "등급 판정은 프레젠테이션이, 검증은 시뮬이 한다"고
+ * 정했다. 그러면 UI는 완벽 구간이 어디인지 알아야 하는데, 그 수치가 ABI에 없으면
+ * 클라이언트가 `hero.json`의 값을 **따로 적어 두는** 수밖에 없다 — CLAUDE.md가 금지하는
+ * 이중 거주다("두 곳에 살면 한쪽만 고치는 사고가 반드시 난다").
+ *
+ * 하나씩 게터를 늘리는 대신 구조체 하나로 둔다. 늘릴 때 ABI 버전만 올리면 된다.
+ *
+ * **월드에서 읽는다**(설정 핸들이 아니라). 클라이언트가 월드를 만든 뒤 설정을 버려도
+ * 되게 하려는 것이다 — 실제로 SimConfig는 IDisposable이다. */
+typedef struct DcViewConfig {
+    int32_t tickHz;                 /* 고정 틱레이트. 드라이버가 이 값으로 소비한다 */
+    int32_t qtePerfectWindowTicks;  /* 완벽 구간 반폭. 창의 **끝에서** 이만큼이 완벽이다 */
+    int32_t groggyTicks;            /* 그로기 지속 — 스태거 연출 길이 */
+    int32_t orbPickupRadiusMilli;   /* 구슬 습득 반경 (millitile) */
+} DcViewConfig;
 
 /* 출력 이벤트. **상태 버퍼로는 "순간"을 알 수 없다** — 죽은 엔티티는 틱 끝에
  * 압축되어 사라지므로 어디서 죽었는지가 다음 프레임에 남지 않고, 같은 틱의 두 번째
@@ -271,6 +289,10 @@ DC_API int32_t dc_checksums(const DcWorld* w, DcChecksums* out) DC_NOEXCEPT;
  * 다음 `dc_step`·`dc_events_drain`에서 무효가 되는 포인터다. */
 DC_API const DcEvent* dc_events_drain(DcWorld* w, int32_t* outCount,
                                       int32_t* outDropped) DC_NOEXCEPT;
+
+/* ── 프레젠테이션 상수 ───────────────────────────────────────────────────── */
+
+DC_API int32_t dc_view_config(const DcWorld* w, DcViewConfig* out) DC_NOEXCEPT;
 
 /* **서버용 진입점.** 입력 로그를 재생해 체크섬만 돌려준다 — 상태 버퍼도 이벤트도
  * 만들지 않는다. 클라이언트 표면과 같은 라이브러리의 다른 함수일 뿐이라

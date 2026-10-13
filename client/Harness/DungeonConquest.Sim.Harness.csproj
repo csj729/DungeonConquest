@@ -1,0 +1,38 @@
+<!--
+  C# 레이어 하네스 — **Unity 없이 한 명령으로 돌린다.**
+
+  이 저장소에는 C# 컴파일러가 없다(CI도 돌리지 않는다). `verify_abi_bindings.py`가
+  P/Invoke 선언을 헤더와 대조하지만, 그건 **선언**만 본다 — RunLoop의 정책이 실제로
+  도는지는 돌려봐야 안다.
+
+  쓰는 법:
+      cmake --build build/release --target dc_abi
+      dotnet run --project client/Harness -- data
+
+  Runtime/*.cs를 그대로 컴파일한다(별도 라이브러리로 묶지 않는다) — Unity도 Assets
+  아래 .cs를 그대로 컴파일하므로 구조를 같게 두는 쪽이 어긋날 자리가 적다.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>DungeonConquest.Sim.Harness</RootNamespace>
+    <AssemblyName>dc_harness</AssemblyName>
+    <!-- 네이티브 라이브러리를 찾는 곳. CMake 출력 경로다. -->
+    <DcNativeDir>$(MSBuildProjectDirectory)/../../build/release/core</DcNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Runtime/*.cs" />
+  </ItemGroup>
+
+  <!-- `[DllImport("dc_abi")]`가 찾을 수 있도록 출력 디렉터리에 복사한다. -->
+  <Target Name="CopyNative" BeforeTargets="Build">
+    <ItemGroup>
+      <DcNativeLib Include="$(DcNativeDir)/libdc_abi.so;$(DcNativeDir)/dc_abi.dll;$(DcNativeDir)/libdc_abi.dylib" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DcNativeLib)" DestinationFolder="$(OutDir)" ContinueOnError="true" />
+  </Target>
+</Project>

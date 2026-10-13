@@ -63,6 +63,22 @@ namespace DungeonConquest.Sim
         public ulong Rng;
     }
 
+    /// <summary>
+    /// 프레젠테이션이 알아야 하는 설정 상수. dc_abi.h의 DcViewConfig.
+    ///
+    /// <para><b>이 값들을 클라이언트에 적어 두지 말 것.</b> design.md §3이 "등급 판정은
+    /// 프레젠테이션이 한다"고 정했으므로 UI가 완벽 구간을 알아야 하는데, 그 수치를
+    /// 여기 상수로 두면 `hero.json`과 두 곳에 살게 된다 (CLAUDE.md).</para>
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DcViewConfig
+    {
+        public int TickHz;
+        public int QtePerfectWindowTicks;
+        public int GroggyTicks;
+        public int OrbPickupRadiusMilli;
+    }
+
     /// <summary>출력 이벤트 종류. dc_abi.h의 DcEventKind.</summary>
     public enum DcEventKind
     {
@@ -113,7 +129,7 @@ namespace DungeonConquest.Sim
         public const string Lib = "dc_abi";
 
         /// <summary>이 바인딩이 기대하는 ABI 버전. dc_abi.h의 DC_ABI_VERSION.</summary>
-        public const int AbiVersion = 4;
+        public const int AbiVersion = 5;
 
         // ── 버전 ──
         [DllImport(Lib)] public static extern int dc_abi_version();
@@ -161,6 +177,9 @@ namespace DungeonConquest.Sim
 
         // ── 검증 ──
         [DllImport(Lib)] public static extern int dc_checksums(IntPtr w, out DcChecksums outChecksums);
+
+        // ── 프레젠테이션 상수 ──
+        [DllImport(Lib)] public static extern int dc_view_config(IntPtr w, out DcViewConfig outConfig);
 
         // ── 출력 이벤트 ──
         //

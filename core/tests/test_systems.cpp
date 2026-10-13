@@ -1048,8 +1048,9 @@ int main() {
         w.entities.ccTriggerCount[k] = 4;
         CHECK_EQ(ccThreshold(w.entities, cfg, k).raw, w.entities.ccGaugeMax[k].raw);
 
-        // QTE 완벽이 기준치의 100%를 채우므로, n번째 발동에 완벽 n회가 필요하다 —
-        // 누적 1 · 3 · 6회째에 그로기. 이게 step 1000permille을 고른 근거다.
+        // **이 루프에는 시간이 흐르지 않는다** — 감쇠 없이 적용만 쌓는다.
+        // 그래서 사다리를 구분하지 못한다: step이 (0, 1000‰] 어디에 있어도
+        // 1·3이 나온다. 감쇠가 들어간 실제 사다리는 아래 "CC 감쇠" 절이 본다.
         const Fixed gain = base * Fixed::fromPermille(cfg.qtePerfectCcGainPermille);
         w.entities.ccTriggerCount[b] = 0;
         w.entities.ccGauge[b] = Fixed{};
@@ -1069,6 +1070,83 @@ int main() {
         CHECK_EQ(secondAt, 3);
         printf("    완벽 %d회에 그로기 %d번 (1번째 %d회 · 2번째 %d회)\n",
                perfects, triggers, firstAt, secondAt);
+    }
+
+    dctest::section("CC 감쇠 — **몰아치지 않으면 쌓이지 않는다**");
+    {
+        // design.md §9와 monsters_vertical_slice.md §4가 약속한 자연 감쇠다.
+        //
+        // **감쇠율과 보스 저항 상승은 같은 사다리를 만드는 두 항이다.** k회째 발동에
+        // 필요한 적용 수 m은 `m − (m−1)×감쇠율×간격 ≥ 1 + (k−1)×step`을 푸는 값이고,
+        // 문서의 삼각 사다리(누적 1·3·6·10)는 `step ≤ 1 − 감쇠율 × 간격`에서 성립한다.
+        // 한쪽만 바꾸면 사다리가 움직이므로 둘을 함께 검사한다.
+        CHECK(cfg.ccDecayPermillePerSec > 0);    // 0이면 이 절이 아무것도 안 본다
+        CHECK(cfg.bossCcResistStepPermille > 0);
+
+        World w = makeWorld(91);
+        SpawnDesc bd = makeDesc(cfg.boss, cfg.boss.hp);
+        bd.posX = Fixed(400); bd.posY = Fixed(400);
+        const uint32_t b =
+            static_cast<uint32_t>(w.entities.denseOf(w.entities.spawn(bd, 0, 91)));
+
+        // ① 틱당 감쇠량이 데이터와 맞는다
+        w.entities.ccGauge[b] = w.entities.ccGaugeMax[b];
+        const Fixed before = w.entities.ccGauge[b];
+        ccDecayRun(w, cfg);
+        const int32_t drop = before.raw - w.entities.ccGauge[b].raw;
+        const int32_t want = (w.entities.ccGaugeMax[b]
+                            * Fixed::fromPermille(cfg.ccDecayPermillePerSec)).raw / cfg.tickHz;
+        CHECK_EQ(drop, want);
+        printf("    틱당 %d raw (기준 게이지 %d raw · %d‰/s · %dHz)\n",
+               drop, w.entities.ccGaugeMax[b].raw, cfg.ccDecayPermillePerSec, cfg.tickHz);
+
+        // ② 0 아래로 내려가지 않는다
+        for (int32_t t = 0; t < 10000; ++t) ccDecayRun(w, cfg);
+        CHECK_EQ(w.entities.ccGauge[b].raw, 0);
+
+        // ③ **적용 간격이 길어지면 2회째가 불가능해진다** — 설계가 말한 그것이다.
+        //    실측 간격 13.3초(266틱) · 그보다 긴 30초 · 한 칸이 다 빠지는 50초.
+        struct Case { int32_t gapTicks; int32_t wantApplies; const char* label; };
+        const Case cases[] = {
+            {266,  2, "13.3초 (실측 간격)"},
+            {600,  3, "30초"},
+            {1000, 0, "50초 (한 칸이 다 빠진다)"},   // 0 = 불가능
+        };
+        for (const Case& c : cases) {
+            w.entities.ccGauge[b] = Fixed{};
+            w.entities.ccTriggerCount[b] = 0;
+            w.entities.groggyLeft[b] = 0;
+            int32_t applies = 0, triggers = 0, secondAt = 0;
+            while (applies < 40 && secondAt == 0) {
+                ++applies;
+                if (applyCc(w, cfg, b, cfg.qtePerfectCcGainPermille)) {
+                    ++triggers;
+                    if (triggers == 2) secondAt = applies;
+                }
+                if (secondAt != 0) break;
+                for (int32_t t = 0; t < c.gapTicks; ++t) ccDecayRun(w, cfg);
+            }
+            // 1회째는 적용 1회에 바로다(임계 = 기준 게이지, 공급 = 기준 게이지).
+            // 2회째까지 걸린 적용 수에서 1을 빼면 "리셋 이후 필요한 적용 수"다.
+            const int32_t need = secondAt > 0 ? secondAt - 1 : 0;
+            CHECK_EQ(need, c.wantApplies);
+            printf("    %-22s 2회째에 적용 %s\n", c.label,
+                   need > 0 ? (need == 2 ? "2회" : (need == 3 ? "3회" : "그 외")) : "불가능");
+        }
+
+        // ④ **엘리트는 영향이 없다** — 임계가 고정이고 공급이 한 칸이므로
+        //    1회 적용 = 1회 발동이고, 게이지가 부분으로 차는 일이 없다.
+        SpawnDesc ed = makeDesc(cfg.elites[0], Fixed(1000));
+        ed.posX = Fixed(600); ed.posY = Fixed(600);
+        const uint32_t e2 =
+            static_cast<uint32_t>(w.entities.denseOf(w.entities.spawn(ed, 0, 91)));
+        for (int32_t k = 0; k < 3; ++k) {
+            w.entities.groggyLeft[e2] = 0;
+            CHECK(applyCc(w, cfg, e2, cfg.qtePerfectCcGainPermille));
+            CHECK_EQ(w.entities.ccGauge[e2].raw, 0);     // 발동 후 리셋 — 남는 게 없다
+            for (int32_t t = 0; t < 1000; ++t) ccDecayRun(w, cfg);
+        }
+        printf("    엘리트는 1회 적용 = 1회 발동 — 감쇠가 닿을 잔량이 없다\n");
     }
 
     dctest::section("보스 페이즈 2 졸개 소환 — 일부러 상한을 넘긴다");

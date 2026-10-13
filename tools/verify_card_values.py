@@ -207,12 +207,12 @@ LEGEND_BASE_SEC   = 354.0   # 각인 없음 — 런 길이(초)
 LEGEND_BASE_CLEAR = 9.9     # 각인 없음 — 클리어율(%)
 LEGEND_MEASURED = {
     # id            런 길이  클리어율
-    "W_EXECUTE":    (327.1, 17.8),
-    "W_SHOCKWAVE":  (344.8, 15.2),
+    "W_EXECUTE":    (327.1, 17.9),
+    "W_SHOCKWAVE":  (344.8, 15.3),
     "W_VORTEX":     (328.8, 15.4),
-    "W_CENTRIFUGE": (325.3, 17.9),
+    "W_CENTRIFUGE": (325.3, 18.0),
     "W_AFTERSHOCK": (349.9, 14.4),
-    "W_FISSURE":    (352.2, 14.8),
+    "W_FISSURE":    (352.2, 14.7),
 }
 # **이 지문과 위 표들은 같은 실행에서 함께 적는다.** 하나만 고치면 거짓말이 된다.
 # 지문 하나가 `LEGEND_MEASURED`와 `LEGEND_DPS_MEASURED`를 **둘 다** 덮는다 —
@@ -242,7 +242,7 @@ LEGEND_MEASURED = {
 # (주석 제외)다. **측정을 무효화하는 것은 데이터만이 아니라 시뮬 코드다.**
 # 입막음은 여전히 가능하지만, 지문이 손으로 지어낼 수 없는 값이라 "측정 없이
 # 갱신"이 눈에 띈다.
-LEGEND_MEASURED_FINGERPRINT = "3cca2c515f71341e"
+LEGEND_MEASURED_FINGERPRINT = "dd66c433d08b01c6"
 # **표 전체가 한 실행에서 나온다.** 원심력만 바꿨는데 다른 행도 ±0.5초 움직이는데,
 # 강제 부여는 틱 0의 한 장뿐이고 **나머지 런에서도 원심력이 나중에 뽑힐 수 있기**
 # 때문이다. 그래서 한 행만 갈아 끼우면 안 되고 기준선까지 같이 다시 적는다.

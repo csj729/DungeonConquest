@@ -19,6 +19,7 @@ import sys
 sys.path.insert(0, "tools")
 
 from balance_baseline import elite_pressure
+import gamedata as gd
 from gamedata import PROGRESSION as _PROG, HERO as _HERO, SEGMENTS_DATA as _SEG
 
 CORRUPTION_MAX = _HERO["corruption_max"]
@@ -68,12 +69,12 @@ ELITE_IN_RANGE_MIN = 0.40
 #
 # 50시드로도 재봤는데 생존이 37.1%로 나왔다. 100시드에서 26.3%이고 기록값과
 # 맞으므로 50시드 쪽이 표본 부족이다 — **이 지표는 100시드 아래로 내려가지 말 것.**
-BOSS_SEC        = 54.2    # 실측. 처치와 사망이 섞인 평균이라 설계 밴드(60~90,
+BOSS_SEC        = 53.2    # 실측. 처치와 사망이 섞인 평균이라 설계 밴드(60~90,
                           # monsters.json:boss.target_sec)보다 낮게 나온다
-BOSS_INFLOW     = 34.0    # /초. 맵 구간(22.8)보다 높다 — 보스 피해가 얹힌다
-BOSS_ORB        = 13.8    # /초. 보스전에도 잡몹 스폰이 상한을 유지해 구슬은 계속 나온다
-BOSS_LEECH      = 2.8     # /초. 회복 카드 몫
-BOSS_ARRIVE     = 338.2   # 도달 시 잠식 (최대치 1250)
+BOSS_INFLOW     = 34.2    # /초. 맵 구간(22.8)보다 높다 — 보스 피해가 얹힌다
+BOSS_ORB        = 13.6    # /초. 보스전에도 잡몹 스폰이 상한을 유지해 구슬은 계속 나온다
+BOSS_LEECH      = 2.9     # /초. 회복 카드 몫
+BOSS_ARRIVE     = 336.6   # 도달 시 잠식 (최대치 1250)
 BOSS_PHASE2_PURGE = _PROG["boss_phase2_purge"]
 
 # **게이트는 평균 수지가 아니라 도달 후 생존율이다.**
@@ -92,9 +93,28 @@ BOSS_PHASE2_PURGE = _PROG["boss_phase2_purge"]
 # 걸고, 무입력 쪽은 밴드 아래에 있을 것을 따로 요구한다. 둘을 한 숫자로 뭉개면
 # "QTE를 쳐도 안 쳐도 비슷하다"는 상태가 초록불로 통과한다 — 패턴 시스템이
 # 존재할 이유가 사라지는데도 검사는 조용하다.
-BOSS_SURVIVE_SKILLED = 0.263   # QTE 항상 완벽 (dc_boss 100 1)
-BOSS_SURVIVE_NOINPUT = 0.100   # QTE 무입력    (dc_boss 100 0)
+BOSS_SURVIVE_SKILLED = 0.274   # QTE 항상 완벽 (dc_boss 100 1)
+BOSS_SURVIVE_NOINPUT = 0.126   # QTE 무입력    (dc_boss 100 0)
 BOSS_SURVIVE_BAND = (0.25, 0.60)
+
+# ── 이 상수들이 지금 시뮬에서 나온 것인가 ─────────────────────────
+#
+# **이 파일에 빠져 있던 가드다.** 위 주석이 스스로 그 고장을 적어 두었다 — "보스
+# 패턴 순환이 붙어 보스 화력이 2배가 됐는데도 run_all은 전부 초록불이었다. 검사가
+# 낡은 상수를 검사하고 있었기 때문이다." 그런데 **그 뒤로도 가드는 없었다.**
+#
+# CC 게이지 자연 감쇠를 넣으면서 다시 밟았다: 감쇠는 보스 그로기를 바꾸므로 위
+# 생존율이 낡는데, `run_all`은 조용히 통과했다. 그래서 `verify_card_values`와 같은
+# 지문을 여기도 둔다 — `data/*.json` + 코어 헤더(주석 제외)의 해시다.
+#
+# **갱신 절차**: `./build/release/core/dc_boss 100 1`과 `... 100 0`을 돌려 위
+# 상수를 채우고, 그 뒤 아래 지문을 같이 고친다. 하나만 고치면 거짓말이 된다.
+BOSS_MEASURED_FINGERPRINT = "dd66c433d08b01c6"
+
+
+def _boss_measurement_is_current():
+    live = gd.sim_fingerprint()
+    return [] if live == BOSS_MEASURED_FINGERPRINT else [(live, BOSS_MEASURED_FINGERPRINT)]
 
 # **"기저만으로는 못 버티는가"도 이제 모델이 아니라 실측이다.**
 # 전에는 닫힌 식(유입 − 구슬 − 페이즈2)으로 적자를 계산해 남은 게이지와 비교했다.
@@ -269,6 +289,17 @@ def report():
     print(f"  {'회복 카드 포함':>11} {-total_net:>8.1f} {total_net * BOSS_SEC:>7.0f} "
           f"{total_net * BOSS_SEC / room:>13.0%}")
     print("  ※ 위 표는 분해를 보여줄 뿐 판정하지 않는다 — 판정은 아래 실측 생존율이다")
+
+    stale = _boss_measurement_is_current()
+    if stale:
+        ok = False
+        live, pinned = stale[0]
+        print("  ← **보스 실측이 낡았다.** 위 생존율이 지금 시뮬의 것이 아니다.")
+        print(f"       시뮬 지문  측정 당시 {pinned} → 지금 {live}")
+        print("     `./build/release/core/dc_boss 100 1`과 `... 100 0`을 다시 돌려")
+        print("     상수와 BOSS_MEASURED_FINGERPRINT를 **같이** 고칠 것")
+        print("     ※ 이 파일의 위 주석이 적어 둔 고장이 바로 이것이다 —")
+        print("        '검사가 낡은 상수를 검사하고 있었다'")
 
     lo, hi = BOSS_SURVIVE_BAND
     bare_dies   = BOSS_SURVIVE_BARE <= BOSS_SURVIVE_BARE_MAX

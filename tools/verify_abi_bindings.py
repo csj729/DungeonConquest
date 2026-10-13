@@ -46,6 +46,7 @@ TYPE_MAP = {
     "const uint8_t*": "IntPtr",
     "const uint32_t*": "IntPtr",
     "DcChecksums*": "out DcChecksums",
+    "DcViewConfig*": "out DcViewConfig",
     # **이벤트 배열은 복사하지 않는다** — 코어가 소유한 포인터를 그대로 받는다
     # (design.md: 매 틱 구조체 마샬링 금지). C#는 IntPtr로 받아 Span으로 감싼다.
     "const DcEvent*": "IntPtr",
@@ -290,6 +291,30 @@ def report():
     ok &= good
     print(f"  {'OK ' if good else 'X  '} {'드라이버 틱레이트':<20} "
           f"TickDriver {drv}Hz · progression.json {want}Hz")
+
+    # ── `client/Runtime/`은 **엔진 비의존이어야 한다** ──
+    #
+    # CLAUDE.md의 레이어 분리를 C# 쪽에 적용한 것이다("시뮬레이션 코드에 렌더링·입력·
+    # 오디오 헤더 include 금지"). 이 폴더는 Unity 밖에서도 컴파일돼야 한다 —
+    # `client/Harness`가 `dotnet run`으로 그걸 돌리고, 그게 C# 레이어의 유일한
+    # 실행 검증이다(저장소에 C# 컴파일러가 없다).
+    #
+    # `using UnityEngine;` 한 줄이 들어오면 하네스가 깨지고, 그러면 검증이 사라진다.
+    runtime_dir = DRIVER.parent
+    leaked = []
+    for cs in sorted(runtime_dir.glob("*.cs")):
+        text = cs.read_text(encoding="utf-8")
+        for bad in ("UnityEngine", "UnityEditor"):
+            if re.search(r"\b" + bad + r"\b", text):
+                leaked.append(f"{cs.name}: {bad}")
+    good = not leaked
+    ok &= good
+    print(f"  {'OK ' if good else 'X  '} {'엔진 비의존':<20} "
+          + ("client/Runtime/에 Unity 참조 없음"
+             if good else "Unity 참조 유입: " + ", ".join(leaked)))
+    if not good:
+        print("     ※ client/Runtime/은 Unity 밖에서도 컴파일돼야 한다 —")
+        print("        Unity에 의존하는 코드는 Assets 쪽(MonoBehaviour)에 둘 것")
 
     print("\n전체: " + ("PASS" if ok else "FAIL"))
     return bool(ok)

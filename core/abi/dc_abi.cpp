@@ -278,6 +278,16 @@ static_assert(offsetof(DcEvent, posX)   == offsetof(SimEvent, posX),   "posX 오
 static_assert(offsetof(DcEvent, posY)   == offsetof(SimEvent, posY),   "posY 오프셋");
 static_assert(offsetof(DcEvent, value)  == offsetof(SimEvent, value),  "value 오프셋");
 
+extern "C" int32_t dc_view_config(const DcWorld* w, DcViewConfig* out) noexcept {
+    if (w == nullptr || out == nullptr) return DC_ERR_NULL;
+    const SimConfig& cfg = self(w)->cfg;
+    out->tickHz                = cfg.tickHz;
+    out->qtePerfectWindowTicks = cfg.qtePerfectWindowTicks;
+    out->groggyTicks           = cfg.groggyTicks;
+    out->orbPickupRadiusMilli  = cfg.orbPickupRadiusMilli;
+    return DC_OK;
+}
+
 extern "C" int32_t dc_checksums(const DcWorld* w, DcChecksums* out) noexcept {
     if (w == nullptr || out == nullptr) return DC_ERR_NULL;
     try {

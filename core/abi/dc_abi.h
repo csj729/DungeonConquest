@@ -68,7 +68,7 @@ extern "C" {
 /* 2: 설정이 data 디렉터리의 JSON에서 온다. dc_world_create(seed)가 사라지고
  *    dc_config_* + dc_world_create_with가 그 자리를 대신한다.
  * 3: 렌더 보간용 직전 위치와 엔티티 id가 추가됐다. */
-#define DC_ABI_VERSION 5
+#define DC_ABI_VERSION 6
 
 /* ── 오류 코드 ───────────────────────────────────────────────────────────
  * 예외를 경계 밖으로 내보낼 수 없으므로 모든 실패는 여기로 온다.
@@ -128,6 +128,27 @@ typedef struct DcViewConfig {
     int32_t groggyTicks;            /* 그로기 지속 — 스태거 연출 길이 */
     int32_t orbPickupRadiusMilli;   /* 구슬 습득 반경 (millitile) */
 } DcViewConfig;
+
+/* 열려 있는 QTE 창. **UI가 창 구조를 재구성하지 않게 하려고 그대로 내보낸다.**
+ *
+ * design.md §3이 "등급 판정은 프레젠테이션이, 검증은 시뮬이 한다"고 정했고, 시뮬의
+ * `QteWindow::judge`는 **완벽 주장을 강등한다** — 틱이 완벽 구간 밖이면 Success로
+ * 내린다. 그래서 UI의 게이지가 코어의 구간과 한 틱이라도 어긋나면 **플레이어는 완벽을
+ * 눌렀는데 Success를 받는다.** QTE 게임에서 그건 치명적인 종류의 버그다.
+ *
+ * 클라이언트가 `closeTick`과 완벽 반폭으로 구간을 **계산하게 두면** 그 어긋남이 언제든
+ * 생긴다(실제로 초안이 한 틱 밀려 있었다). 구간을 그대로 주면 계산할 것이 없다.
+ *
+ * `kind`가 0이면 열린 창이 없다. 입력을 받을 수 있는 마지막 틱은 `closeTick - 1`이고,
+ * 완벽 구간은 **닫힌 구간** `[perfectFrom, perfectTo]`다. */
+typedef struct DcQteState {
+    int32_t  kind;         /* 0 = 없음 · 1 = 스킬 증폭 · 2 = 위기 회피 */
+    int32_t  openTick;
+    int32_t  closeTick;    /* 이 틱에는 이미 판정이 끝나 있다 */
+    int32_t  perfectFrom;
+    int32_t  perfectTo;
+    uint32_t source;       /* 위기 회피: 패턴을 낸 적 (EntityId raw · 0 = 없음) */
+} DcQteState;
 
 /* 출력 이벤트. **상태 버퍼로는 "순간"을 알 수 없다** — 죽은 엔티티는 틱 끝에
  * 압축되어 사라지므로 어디서 죽었는지가 다음 프레임에 남지 않고, 같은 틱의 두 번째
@@ -293,6 +314,9 @@ DC_API const DcEvent* dc_events_drain(DcWorld* w, int32_t* outCount,
 /* ── 프레젠테이션 상수 ───────────────────────────────────────────────────── */
 
 DC_API int32_t dc_view_config(const DcWorld* w, DcViewConfig* out) DC_NOEXCEPT;
+
+/* 열려 있는 QTE 창. 없으면 `kind`가 0이다. */
+DC_API int32_t dc_qte_state(const DcWorld* w, DcQteState* out) DC_NOEXCEPT;
 
 /* **서버용 진입점.** 입력 로그를 재생해 체크섬만 돌려준다 — 상태 버퍼도 이벤트도
  * 만들지 않는다. 클라이언트 표면과 같은 라이브러리의 다른 함수일 뿐이라

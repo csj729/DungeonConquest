@@ -79,6 +79,27 @@ namespace DungeonConquest.Sim
         public int OrbPickupRadiusMilli;
     }
 
+    /// <summary>
+    /// 열려 있는 QTE 창. dc_abi.h의 DcQteState.
+    ///
+    /// <para><b>구간을 계산하지 말 것.</b> 시뮬의 `judge`가 완벽 주장을 강등하므로,
+    /// UI 게이지가 한 틱이라도 어긋나면 플레이어는 완벽을 눌렀는데 Success를 받는다.
+    /// `PerfectFrom`·`PerfectTo`를 그대로 쓴다 — 완벽 구간은 **닫힌 구간**이다.</para>
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct DcQteState
+    {
+        public int  Kind;          // 0 = 없음
+        public int  OpenTick;
+        public int  CloseTick;     // 이 틱에는 이미 판정이 끝나 있다
+        public int  PerfectFrom;
+        public int  PerfectTo;
+        public uint Source;        // 위기 회피: 패턴을 낸 적 (0 = 없음)
+
+        public bool Open => Kind != 0;
+        public bool IsPerfectAt(int tick) => tick >= PerfectFrom && tick <= PerfectTo;
+    }
+
     /// <summary>출력 이벤트 종류. dc_abi.h의 DcEventKind.</summary>
     public enum DcEventKind
     {
@@ -129,7 +150,7 @@ namespace DungeonConquest.Sim
         public const string Lib = "dc_abi";
 
         /// <summary>이 바인딩이 기대하는 ABI 버전. dc_abi.h의 DC_ABI_VERSION.</summary>
-        public const int AbiVersion = 5;
+        public const int AbiVersion = 6;
 
         // ── 버전 ──
         [DllImport(Lib)] public static extern int dc_abi_version();
@@ -180,6 +201,8 @@ namespace DungeonConquest.Sim
 
         // ── 프레젠테이션 상수 ──
         [DllImport(Lib)] public static extern int dc_view_config(IntPtr w, out DcViewConfig outConfig);
+
+        [DllImport(Lib)] public static extern int dc_qte_state(IntPtr w, out DcQteState outState);
 
         // ── 출력 이벤트 ──
         //

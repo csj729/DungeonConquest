@@ -50,8 +50,6 @@ namespace DungeonConquest.Sim
         private int _frameCount;
         private int _droppedTotal;
 
-        // 슬로모 상태. 창이 열리면 배속을 낮추고, 판정이 나면 되돌린다.
-        private bool _inQteWindow;
         // **델리게이트를 미리 만들어 둔다** — 프레임마다 람다를 새로 만들면 그만큼
         // GC 압력이 되고, Unity에서 그건 곧 프레임 끊김이다.
         private readonly Func<bool> _afterTick;
@@ -83,15 +81,15 @@ namespace DungeonConquest.Sim
         /// <summary>선택을 기다리는 카드 수. 0이면 기다리는 것이 없다.</summary>
         public int PendingChoiceCount { get; private set; }
 
-        /// <summary>QTE 창이 열려 있는가. 열려 있으면 배속이 낮아져 있다.</summary>
-        public bool InQteWindow => _inQteWindow;
-
         /// <summary>
-        /// 이번 QTE 창이 닫히는 틱. 프레젠테이션이 **등급을 판정하는 데 쓴다** —
-        /// 완벽 구간은 `[CloseTick − View.QtePerfectWindowTicks, CloseTick)`이다
-        /// (design.md §3: 판정은 프레젠테이션이, 검증은 시뮬이 한다).
+        /// 열려 있는 QTE 창. **구간을 계산하지 말 것** — 시뮬이 완벽 주장을
+        /// 강등하므로 한 틱만 어긋나도 "완벽을 눌렀는데 Success"가 된다.
+        /// <c>Qte.IsPerfectAt(world.Tick)</c>을 쓴다 (design.md §3).
         /// </summary>
-        public int QteCloseTick { get; private set; }
+        public DcQteState Qte { get; private set; }
+
+        /// <summary>QTE 창이 열려 있는가. 열려 있으면 배속이 낮아져 있다.</summary>
+        public bool InQteWindow => Qte.Open;
 
         /// <summary>
         /// 프레임을 전진시킨다. 소비한 틱 수를 돌려준다.
@@ -132,6 +130,14 @@ namespace DungeonConquest.Sim
         private bool AfterTick()
         {
             Collect();
+
+            // **슬로모는 창 상태에서 끌어온다 — 이벤트를 세지 않는다.**
+            // 전에는 QteOpen에서 켜고 QteResult에서 껐는데, 그러면 이벤트 하나를
+            // 놓치거나 순서가 뒤집히면 배속이 눌린 채로 남는다. 상태를 그냥 읽으면
+            // 그 실패 양식이 사라진다 — 매 틱 P/Invoke 한 번이 그 값이다.
+            Qte = _world.QteState;
+            _driver.SlowMoFactor = Qte.Open ? QteSlowMoSpeed : 1.0f;
+
             return PendingChoiceCount == 0;   // 선택을 기다리는 중이면 멈춘다
         }
 
@@ -170,19 +176,8 @@ namespace DungeonConquest.Sim
                     _driver.SetAutoPause(true);
                     break;
 
-                case DcEventKind.QteOpen:
-                    // 창에서만 틱 소비를 늦춘다 — 4배속 중에도 판정이 가능해진다 (§3).
-                    // **플레이어 배속을 건드리지 않는다** — 곱셈 인자라 복원이 필요 없다.
-                    _inQteWindow = true;
-                    _driver.SlowMoFactor = QteSlowMoSpeed;
-                    QteCloseTick = e.Tick + e.Value;
-                    break;
-
-                case DcEventKind.QteResult:
-                    _inQteWindow = false;
-                    _driver.SlowMoFactor = 1.0f;
-                    QteCloseTick = 0;
-                    break;
+                // QteOpen · QteResult는 **연출 신호로만** 쓴다. 배속은 창 상태에서
+                // 끌어오므로(AfterTick) 여기서 만지지 않는다.
             }
         }
     }

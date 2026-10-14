@@ -69,7 +69,7 @@ internal static class Program
         // 프레임을 흉내 낸다: 60fps에 16.67ms. 카드가 뜨면 **드라이버가 0배속으로
         // 내려가 더 소비하지 않아야 한다** — 그걸 직접 확인한다.
         int frames = 0, ticks = 0, offers = 0, pausedFrames = 0;
-        int hits = 0, kills = 0, levelUps = 0, qteOpens = 0;
+        int hits = 0, kills = 0, levelUps = 0, qteOpens = 0, perfectSubmits = 0;
         bool sawPauseHold = false;
         const float dt = 1.0f / 60.0f;
 
@@ -114,17 +114,22 @@ internal static class Program
                 }
             }
 
-            // QTE는 **프레젠테이션이 등급을 판정한다** (§3). 여기서는 항상 완벽으로
-            // 민다 — 완벽 구간이 창의 끝 N틱이라는 규약을 그대로 쓴다.
-            if (loop.InQteWindow && world.Tick >= loop.QteCloseTick - view.QtePerfectWindowTicks)
+            // QTE는 **프레젠테이션이 등급을 판정한다** (§3). 여기서는 항상 완벽으로 민다.
+            //
+            // **구간을 계산하지 않는다.** 시뮬의 `judge`가 완벽 주장을 강등하므로
+            // 한 틱만 어긋나도 Success가 되고, 그러면 이 하네스가 "완벽을 쳤다"고
+            // 믿으면서 실제로는 아닌 상태가 된다 — 조용히 틀리는 쪽이다.
+            if (loop.Qte.IsPerfectAt(world.Tick))
             {
                 loop.SubmitQte(2);   // QteGrade::Perfect — core/include/dc/qte.h
+                ++perfectSubmits;
             }
         }
 
         Console.WriteLine($"  런 종료: {world.Outcome} · {world.Tick}틱 · 프레임 {frames}");
         Console.WriteLine($"  이벤트: 타격 {hits} · 처치 {kills} · 레벨업 {levelUps} · QTE창 {qteOpens}");
         Console.WriteLine($"  카드 선택 {offers}회 · 일시정지 확인 {pausedFrames}회 · 버린 이벤트 {loop.DroppedTotal}");
+        Console.WriteLine($"  QTE 완벽 제출 {perfectSubmits}회 (창 {qteOpens}개)");
 
         Check(world.IsOver, "런이 끝났다 (타임아웃이 아니다)");
         Check(ticks > 0 && ticks == world.Tick, $"소비한 틱과 월드 틱이 같다 ({ticks} · {world.Tick})");
@@ -133,6 +138,7 @@ internal static class Program
         Check(levelUps > 0, "레벨업 이벤트가 나온다");
         Check(offers > 0, "카드 제시가 나온다");
         Check(sawPauseHold, "자동 일시정지를 실제로 밟았다");
+        Check(qteOpens == 0 || perfectSubmits > 0, "QTE 창이 열렸으면 완벽 구간을 잡았다");
         Check(loop.DroppedTotal == 0, "이벤트 큐가 넘치지 않았다");
 
         // ── 보간 읽기가 도는가 ──

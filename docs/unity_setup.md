@@ -100,17 +100,23 @@ void Update()
 시뮬은 `(틱 번호, 등급)`을 받는다.
 
 ```csharp
-if (_loop.InQteWindow)
+DcQteState q = _loop.Qte;
+if (q.Open)
 {
-    int perfectFrom = _loop.QteCloseTick - _loop.View.QtePerfectWindowTicks;
-    ShowQteGauge(_world.Tick, perfectFrom, _loop.QteCloseTick);
+    ShowQteGauge(_world.Tick, q.OpenTick, q.PerfectFrom, q.PerfectTo, q.CloseTick);
     if (playerPressed)
-        _loop.SubmitQte(_world.Tick >= perfectFrom ? 2 : 1);   // Perfect : Success
+        _loop.SubmitQte(q.IsPerfectAt(_world.Tick) ? 2 : 1);   // Perfect : Success
 }
 ```
 
-**완벽 구간을 C#에 적어 두지 말 것.** `_loop.View`가 코어에서 읽어 온다 — 그 수치를
-클라이언트 상수로 두면 `hero.json`과 두 곳에 산다(CLAUDE.md).
+**구간을 계산하지 말 것.** 코어의 `QteWindow::judge`가 **완벽 주장을 강등한다** — 틱이
+완벽 구간 밖이면 Success로 내린다. 그래서 UI 게이지가 코어의 구간과 **한 틱이라도
+어긋나면 플레이어는 완벽을 눌렀는데 Success를 받는다.** QTE 게임에서 그건 치명적인
+종류의 버그다.
+
+초안은 `CloseTick − 완벽반폭`으로 구간을 계산했고 **실제로 한 틱 밀려 있었다**(코어는
+`perfectTo = closeTick − 1`에서 반폭을 뺀다). 그래서 창을 그대로 노출하도록 바꿨다 —
+`q.PerfectFrom`·`q.PerfectTo`를 쓰면 계산할 것이 없다. 완벽 구간은 **닫힌 구간**이다.
 
 ### 5. 배속 · 일시정지
 

@@ -288,6 +288,18 @@ extern "C" int32_t dc_view_config(const DcWorld* w, DcViewConfig* out) noexcept 
     return DC_OK;
 }
 
+extern "C" int32_t dc_qte_state(const DcWorld* w, DcQteState* out) noexcept {
+    if (w == nullptr || out == nullptr) return DC_ERR_NULL;
+    const QteWindow& q = self(w)->world.hero.qte;
+    out->kind        = static_cast<int32_t>(q.kind);
+    out->openTick    = q.openTick;
+    out->closeTick   = q.closeTick;
+    out->perfectFrom = q.perfectFrom;
+    out->perfectTo   = q.perfectTo;
+    out->source      = q.source.bits;
+    return DC_OK;
+}
+
 extern "C" int32_t dc_checksums(const DcWorld* w, DcChecksums* out) noexcept {
     if (w == nullptr || out == nullptr) return DC_ERR_NULL;
     try {

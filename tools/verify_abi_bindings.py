@@ -47,6 +47,7 @@ TYPE_MAP = {
     "const uint32_t*": "IntPtr",
     "DcChecksums*": "out DcChecksums",
     "DcViewConfig*": "out DcViewConfig",
+    "DcQteState*": "out DcQteState",
     # **이벤트 배열은 복사하지 않는다** — 코어가 소유한 포인터를 그대로 받는다
     # (design.md: 매 틱 구조체 마샬링 금지). C#는 IntPtr로 받아 Span으로 감싼다.
     "const DcEvent*": "IntPtr",

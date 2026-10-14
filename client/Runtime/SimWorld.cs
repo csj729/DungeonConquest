@@ -149,6 +149,24 @@ namespace DungeonConquest.Sim
             }
         }
 
+        /// <summary>
+        /// 열려 있는 QTE 창. 없으면 <c>Open</c>이 false.
+        ///
+        /// <para><b>완벽 구간을 계산하지 말 것</b> — 시뮬이 완벽 주장을 강등하므로
+        /// 한 틱만 어긋나도 "완벽을 눌렀는데 Success"가 된다. <c>IsPerfectAt</c>을 쓴다.</para>
+        /// </summary>
+        public DcQteState QteState
+        {
+            get
+            {
+                if (DcNative.dc_qte_state(_handle, out DcQteState q) != (int)DcStatus.Ok)
+                {
+                    throw new InvalidOperationException("dc_qte_state 실패");
+                }
+                return q;
+            }
+        }
+
         public int Tick        => DcNative.dc_run_tick(_handle);
         public int Segment     => DcNative.dc_run_segment(_handle);
         public int ClearPoints => DcNative.dc_run_clear_points(_handle);

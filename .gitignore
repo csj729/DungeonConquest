@@ -15,6 +15,40 @@ build/
 tools/*_bench
 tools/*_bench.out
 
+# .NET (client/Harness를 `dotnet run`으로 돌릴 때 생성)
+bin/
+obj/
+*.user
+
+# Unity — 에디터가 만드는 것은 전부 재생성된다
+#
+# **Library/는 수 GB다.** 프로젝트를 열고 `git add -A`를 한 번 하면 그게 그대로
+# 들어간다. .sln/.csproj도 에디터가 asmdef에서 다시 만들므로 커밋하지 않는다.
+Library/
+Temp/
+Logs/
+Obj/
+UserSettings/
+MemoryCaptures/
+Recordings/
+*.csproj
+*.sln
+*.unityproj
+*.booproj
+*.pidb
+*.suo
+*.svd
+*.userprefs
+sysinfo.txt
+*.apk
+*.aab
+*.unitypackage
+crashlytics-build.properties
+
+# **예외: 하네스 프로젝트는 손으로 쓴 것이다.** 위 `*.csproj` 규칙에 걸리면
+# 저장소에서 사라지므로 되살린다.
+!client/Harness/*.csproj
+
 # 에디터 · OS
 .vscode/
 .idea/
